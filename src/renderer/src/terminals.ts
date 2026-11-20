@@ -472,8 +472,10 @@ async function showImageLightbox(path: string): Promise<void> {
 function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void {
   let composing = false
   let sent = '' // text of the current composition already typed into the prompt
-  let lastCommit = ''
-  let lastCommitAt = 0
+  // With an IME on, one keystroke can deliver the same text on several routes (keypress, an
+  // insertText input, compositionend): whatever this keystroke already sent is not sent again.
+  let thisKey: string[] = []
+  let imeKey = false // the IME took the current keystroke (keydown 229): xterm doesn't see it
   const log = (...a: unknown[]): void => {
     try {
       if (localStorage.getItem('vibe.imeDebug')) console.log('[ime]', ...a)
@@ -481,7 +483,11 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
       /* storage unavailable */
     }
   }
-
+  const once = (text: string): void => {
+    if (!text || thisKey.includes(text)) return log('skip duplicate', JSON.stringify(text))
+    thisKey.push(text)
+    send(text)
+  }
   const typeTo = (text: string): void => {
     const a = [...sent]
     const b = [...text]
@@ -491,14 +497,38 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
     if (out) send(out)
     sent = text
   }
+  const clear = (): void => {
+    setTimeout(() => {
+      if (!composing) ta.value = ''
+    }, 0)
+  }
   const stop = (e: Event): void => e.stopImmediatePropagation()
 
   ta.addEventListener(
     'keydown',
     (e) => {
       log('keydown', e.key, e.keyCode, e.isComposing)
+      thisKey = []
+      imeKey = composing || e.isComposing || e.keyCode === 229
       // keys the IME takes: xterm must not read the textarea for them
-      if (composing || e.isComposing || e.keyCode === 229) stop(e)
+      if (imeKey) stop(e)
+    },
+    true
+  )
+  ta.addEventListener(
+    'keypress',
+    (e) => {
+      log('keypress', e.key, e.charCode, imeKey)
+      const printable = e.charCode >= 32 && !e.ctrlKey && !e.metaKey && !e.altKey
+      if (imeKey) {
+        // xterm skipped this key's keydown, so it can't judge the keypress either: send it here
+        stop(e)
+        if (e.charCode === 13) once('\r')
+        else if (printable) once(String.fromCharCode(e.charCode))
+      } else if (printable) {
+        // xterm sends it; remember it so an IME copy of the same character is dropped
+        thisKey.push(String.fromCharCode(e.charCode))
+      }
     },
     true
   )
@@ -527,14 +557,10 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
       log('compositionend', JSON.stringify(e.data))
       stop(e)
       typeTo(e.data ?? '')
-      lastCommit = e.data ?? ''
-      lastCommitAt = performance.now()
+      if (e.data) thisKey.push(e.data)
       composing = false
       sent = ''
-      // nothing in the textarea is ever read again; keep it empty so it can't build up
-      setTimeout(() => {
-        if (!composing) ta.value = ''
-      }, 0)
+      clear()
     },
     true
   )
@@ -547,18 +573,17 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
         stop(e)
         return
       }
-      // text an IME commits without a composition (or WebKit's copy of the one just ended)
+      // text an IME commits without a composition (or another copy of one just sent)
       if (ev.inputType === 'insertText' && ev.data) {
         stop(e)
-        if (!(ev.data === lastCommit && performance.now() - lastCommitAt < 100)) send(ev.data)
-        lastCommit = ''
-        ta.value = ''
+        once(ev.data)
+        clear()
         return
       }
       if (ev.inputType === 'deleteContentBackward') {
         stop(e)
         send('\x7f')
-        ta.value = ''
+        clear()
       }
     },
     true
