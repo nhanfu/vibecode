@@ -136,7 +136,9 @@ export const api = {
     context: (sessionId: string): Promise<{ used: number; model: string } | null> => invoke('sessions_context', { sessionId }),
     tasks: (sessionId: string): Promise<ChatTask[]> => invoke('sessions_tasks', { sessionId }),
     /** ids of the sessions whose transcript changed (empty: only project folders came or went) */
-    onChanged: (cb: (ids: string[]) => void): Off => on('sessions:changed', cb)
+    onChanged: (cb: (ids: string[]) => void): Off => on('sessions:changed', cb),
+    /** a chat's Claude Code reported the session it writes to (on each prompt: it changes on /clear, forks…) */
+    onChatSession: (cb: (chatId: string, sessionId: string) => void): Off => on('chat:session', cb)
   },
   db: {
     list: (): Promise<DbConnection[]> => invoke('db_list'),

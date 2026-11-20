@@ -5,6 +5,13 @@
 //!   vibe-mssql    http://127.0.0.1:<port>/db/<chatId>    — SQL Server connections
 //!   vibe-zalo     http://127.0.0.1:<port>/zalo/<chatId>  — the personal Zalo account
 //! Streamable HTTP transport with plain JSON replies (no SSE), guarded by a per-launch token.
+//!
+//! The same server takes the chat's Claude Code hooks (`--settings <file>`, see settings_for):
+//!   POST http://127.0.0.1:<port>/hook/<chatId>  — the session id the chat is writing to now
+//! Claude Code moves a chat to a new session on /clear, /resume, and when it forks one (a chat
+//! sent to the background, or picked up again after the app restarted). Each prompt reports the
+//! session it lands in, and the page follows it, so the sidebar marks the right conversation and a
+//! restart resumes the right one.
 
 use std::{
     future::Future,
@@ -27,7 +34,10 @@ use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use rand::RngExt;
 use serde_json::{Value, json};
 
-use crate::{browser, core::user_data};
+use crate::{
+    browser,
+    core::{emit, user_data},
+};
 
 const BROWSER: &str = "vibe-browser";
 const DB: &str = "vibe-mssql";
@@ -56,17 +66,37 @@ pub async fn start() -> anyhow::Result<()> {
 
 /// `--mcp-config` file for one chat (rewritten each launch: the port and token change).
 pub fn config_for(chat: &str) -> Option<String> {
+    let chat_enc = urlencode(chat);
+    let server = |port: u16, kind: &str| json!({ "type": "http", "url": format!("http://127.0.0.1:{port}/{kind}/{chat_enc}"), "headers": { "Authorization": format!("Bearer {}", token()) } });
+    write_for(chat, "json", |port| json!({ "mcpServers": { BROWSER: server(port, "mcp"), DB: server(port, "db"), ZALO: server(port, "zalo") } }))
+}
+
+/// `--settings` file for one chat: a hook that reports, with each prompt, the session it goes into.
+/// (UserPromptSubmit: Claude Code 2.1.329 sends it to an HTTP hook, a forked session's new id
+/// included; SessionStart didn't reach one.)
+pub fn settings_for(chat: &str) -> Option<String> {
+    let chat_enc = urlencode(chat);
+    write_for(chat, "settings.json", |port| {
+        let hook = json!([{ "hooks": [{
+            "type": "http",
+            "url": format!("http://127.0.0.1:{port}/hook/{chat_enc}"),
+            "headers": { "Authorization": format!("Bearer {}", token()) },
+            "timeout": 5
+        }] }]);
+        json!({ "hooks": { "UserPromptSubmit": hook } })
+    })
+}
+
+/// `<userData>/mcp/<chat>.<ext>` with the server's current port in it, or None before the server runs.
+fn write_for(chat: &str, ext: &str, content: impl FnOnce(u16) -> Value) -> Option<String> {
     let port = PORT.load(Ordering::SeqCst);
     if port == 0 {
         return None;
     }
     let dir = user_data().join("mcp");
     std::fs::create_dir_all(&dir).ok()?;
-    let file = dir.join(format!("{}.json", chat.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect::<String>()));
-    let chat_enc = urlencode(chat);
-    let server = |kind: &str| json!({ "type": "http", "url": format!("http://127.0.0.1:{port}/{kind}/{chat_enc}"), "headers": { "Authorization": format!("Bearer {}", token()) } });
-    let config = json!({ "mcpServers": { BROWSER: server("mcp"), DB: server("db"), ZALO: server("zalo") } });
-    std::fs::write(&file, serde_json::to_vec_pretty(&config).ok()?).ok()?;
+    let file = dir.join(format!("{}.{ext}", chat.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect::<String>()));
+    std::fs::write(&file, serde_json::to_vec_pretty(&content(port)).ok()?).ok()?;
     Some(file.to_string_lossy().into_owned())
 }
 
@@ -82,12 +112,15 @@ async fn not_post() -> Response {
 }
 
 async fn on_post(Path((kind, chat)): Path<(String, String)>, headers: HeaderMap, body: Bytes) -> Response {
-    if !matches!(kind.as_str(), "mcp" | "db" | "zalo") {
+    if !matches!(kind.as_str(), "mcp" | "db" | "zalo" | "hook") {
         return StatusCode::NOT_FOUND.into_response();
     }
     let auth = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
     if auth != Some(format!("Bearer {}", token()).as_str()) {
         return StatusCode::UNAUTHORIZED.into_response();
+    }
+    if kind == "hook" {
+        return on_hook(&chat, &body);
     }
     let Ok(msg) = serde_json::from_slice::<Value>(&body) else {
         return json_reply(json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": "Parse error" } }));
@@ -103,6 +136,18 @@ async fn on_post(Path((kind, chat)): Path<(String, String)>, headers: HeaderMap,
         Err((code, message)) => json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }),
     };
     json_reply(reply)
+}
+
+/// A Claude Code hook of the chat: pass the session id it runs in to the page. The empty reply
+/// changes nothing in Claude Code (no decision, no added context).
+fn on_hook(chat: &str, body: &[u8]) -> Response {
+    let input = serde_json::from_slice::<Value>(body).unwrap_or(Value::Null);
+    if let Some(session) = input["session_id"].as_str().filter(|s| !s.is_empty()) {
+        let event = input["hook_event_name"].as_str().unwrap_or_default();
+        let source = input["source"].as_str().unwrap_or_default();
+        emit("chat:session", (chat, session, event, source));
+    }
+    StatusCode::OK.into_response()
 }
 
 fn json_reply(v: Value) -> Response {

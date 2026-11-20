@@ -321,6 +321,19 @@ export async function openFolder(folder?: string | null, opts: { autoChat?: bool
 
 /* ---------------- Claude session store (shared with the Claude app) ---------------- */
 
+/**
+ * A chat's Claude Code reported the session it is writing to (a hook on each prompt). It moves to a
+ * new one on /clear, /resume, and when Claude Code forks the session (a chat sent to the background,
+ * or picked up after the app restarted); without this the sidebar kept marking the old one, showed
+ * the new one as a separate conversation, and a restart resumed the old one.
+ */
+export function followChatSession(chatId: string, sessionId: string): void {
+  const c = st().chats.find((x) => x.id === chatId)
+  if (!c || c.sessionId === sessionId) return
+  st().patchChat(chatId, { sessionId })
+  loadSessions()
+}
+
 let sessTimer: ReturnType<typeof setTimeout> | null = null
 let lastProjects = ''
 export function loadSessions(): void {

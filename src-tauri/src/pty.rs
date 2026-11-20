@@ -150,6 +150,12 @@ pub async fn pty_spawn(opts: SpawnOptions, out: Channel<PtyMsg>) -> Res<()> {
         let cmd = agent_cmd(opts.agent.as_deref());
         let mut parts = vec![cmd.to_owned()];
         parts.extend(opts.claude_args.unwrap_or_default());
+        // hooks that tell the app which session the chat writes to (it changes on /clear, forks…)
+        if cmd == "claude"
+            && let Some(settings) = crate::mcp::settings_for(&opts.id)
+        {
+            parts.extend(["--settings".to_owned(), settings]);
+        }
         // the chat's own Web tab, database and Zalo as MCP tools (Claude only); last, because
         // --mcp-config takes several values
         if cmd == "claude"

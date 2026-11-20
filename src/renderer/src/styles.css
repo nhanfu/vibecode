@@ -489,6 +489,57 @@ kbd {
   pointer-events: auto;
   transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s;
 }
+.sidebar-float {
+  max-width: 80%;
+}
+.sidebar-float.shown {
+  box-shadow: 0 0 0 1px var(--w-0c), 8px 0 36px rgba(0, 0, 0, 0.42);
+}
+/* the workbench dims a little behind the open sidebar */
+.sidebar-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  background: rgba(6, 8, 12, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+.sidebar-backdrop.shown {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sidebar-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+}
+.sidebar-resize::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.sidebar-resize:hover::after,
+.sidebar-resize.dragging::after {
+  background: var(--accent, #0a84ff);
+}
+/* the row the arrow keys are on */
+.proj-row[data-kbd],
+.sess-row[data-kbd],
+.sess-more[data-kbd] {
+  background: var(--bg-hover);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px #0a84ff80;
+}
 .section-header {
   height: 38px;
   flex: none;

@@ -28,6 +28,7 @@ import { FileIcon, FolderIcon, StatusDot, statusLabel } from './icons'
 import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, GitFile, ProjectGroup, SessionInfo } from '../../../shared/types'
 import { agentDef } from '../../../shared/agents'
 import { NewChatMenu } from './AgentMenu'
+import { focusTerm } from '../terminals'
 import { ZaloSideGroup } from './zalo/ZaloSide'
 
 export function Sidebar(): React.JSX.Element {
@@ -168,6 +169,113 @@ function ProjectsTree(): React.JSX.Element {
   const [more, setMore] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState<Set<string>>(loadHidden)
   const [q, setQ] = useState('')
+  const rootRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const pinned = useStore((s) => s.sidebarOpen)
+  /** the row the arrow keys are on (marked with data-kbd: React leaves that attribute alone) */
+  const kbd = useRef<HTMLElement | null>(null)
+
+  const mark = (el: HTMLElement | null): void => {
+    if (kbd.current) delete kbd.current.dataset.kbd
+    kbd.current = el
+    if (!el) return
+    el.dataset.kbd = ''
+    el.scrollIntoView({ block: 'nearest' })
+  }
+  /**
+   * Every row the keys can reach, top to bottom: project / group heads, chats, "Show more"; not the
+   * ones in a closed group. A group is closed by its chevron, not its .collapse: that one only gets
+   * "open" a couple of frames later, for the animation.
+   */
+  const rows = (): HTMLElement[] =>
+    [...(rootRef.current?.querySelectorAll<HTMLElement>('.proj-row:not(.recent-head), .sess-row, .sess-more') ?? [])].filter((el) => {
+      if (!el.closest('.collapse')) return true
+      const chev = el.closest('.proj')?.querySelector(':scope > .proj-row .proj-chev')
+      return !chev || chev.classList.contains('open')
+    })
+  const backToChat = (): void => {
+    const id = useStore.getState().activeChatId
+    if (id) focusTerm(id)
+    else (document.activeElement as HTMLElement | null)?.blur()
+  }
+  const close = (): void => {
+    mark(null)
+    useStore.setState({ sidebarOpen: false, sidebarHover: false })
+    backToChat()
+  }
+
+  // Opened (Ctrl+B, the title-bar button): the cursor goes to the filter, to type or arrow down.
+  // Closed while the cursor was in here: it goes back to the chat, not into a hidden box.
+  // (Peeking with the pointer over the project button leaves the cursor where it was.)
+  useEffect(() => {
+    if (pinned) {
+      const t = setTimeout(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }, 0)
+      return () => clearTimeout(t)
+    }
+    mark(null)
+    if (rootRef.current?.closest('.sidebar-float')?.contains(document.activeElement)) backToChat()
+    return undefined
+  }, [pinned])
+
+  /**
+   * ↑ ↓ move along the rows, Enter opens the row (a chat: and closes the sidebar), → ← open and
+   * close a project (← from a chat goes to its project), Esc clears the filter, then closes. The
+   * cursor stays in the filter box, so typing keeps filtering.
+   */
+  const onKey = (e: React.KeyboardEvent): void => {
+    const list = rows()
+    const cur = kbd.current && list.includes(kbd.current) ? kbd.current : null
+    const i = cur ? list.indexOf(cur) : -1
+    const inField = e.target === inputRef.current
+    switch (e.key) {
+      case 'ArrowDown':
+        if (list.length) mark(list[Math.min(i + 1, list.length - 1)])
+        break
+      case 'ArrowUp':
+        if (i <= 0) {
+          mark(null)
+          inputRef.current?.focus()
+        } else mark(list[i - 1])
+        break
+      case 'Enter': {
+        // nothing picked yet but a filter typed: the first chat it found
+        const target = cur ?? (q.trim() ? (list.find((el) => el.classList.contains('sess-row')) ?? null) : null)
+        if (!target) return
+        const chat = target.classList.contains('sess-row')
+        target.click()
+        if (chat) close()
+        break
+      }
+      case 'ArrowRight':
+      case 'ArrowLeft': {
+        // in a filter with text, the arrows move the text cursor
+        if (!cur || (inField && q)) return
+        const right = e.key === 'ArrowRight'
+        if (cur.classList.contains('proj-row')) {
+          const open = !!cur.querySelector('.proj-chev.open')
+          if (open !== right) cur.click()
+          else if (right && list[i + 1]) mark(list[i + 1])
+        } else if (!right) {
+          const head = cur.closest('.proj')?.querySelector<HTMLElement>(':scope > .proj-row')
+          if (head) mark(head)
+        } else return
+        break
+      }
+      case 'Escape':
+        if (q) {
+          setQ('')
+          mark(null)
+        } else close()
+        break
+      default:
+        return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+  }
 
   // the project you're in starts open
   useEffect(() => {
@@ -231,7 +339,7 @@ function ProjectsTree(): React.JSX.Element {
     })
 
   return (
-    <div className="side-group">
+    <div className="side-group" ref={rootRef} onKeyDown={onKey}>
       <SlidePill selector=".sess-row.active" className="sess-pill" />
       <div className="side-group-label">
         Projects
@@ -244,7 +352,15 @@ function ProjectsTree(): React.JSX.Element {
       </div>
       <div className="tree-filter">
         <Search size={12} />
-        <input placeholder="Filter chats…" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Escape' && setQ('')} />
+        <input
+          ref={inputRef}
+          placeholder="Filter chats…  ↑↓ Enter"
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value)
+            mark(null)
+          }}
+        />
       </div>
 
       {/* the 5 newest chats across every project */}
