@@ -5,6 +5,7 @@ import { useStore } from '../store'
 import { defaultAgent, newChat } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { load, save } from '../localPref'
+import { SideGroup } from './SideGroup'
 
 /** plans and tasks the user added by hand (kept on this machine) */
 const PLANS_KEY = 'vibe.plansTasks'
@@ -505,17 +506,20 @@ export function PlansGroup(): React.JSX.Element {
   )
 
   return (
-    <div className="side-group">
-      <div className="side-group-label">
-        Plans & tasks
-        <span className="agent-head-spacer" />
-        <button className="icon-btn tiny" title="Add a plan" onClick={() => addNear('plan')}>
-          <ListPlus size={12} />
-        </button>
-        <button className="icon-btn tiny" title="Add a task" onClick={() => addNear('task')}>
-          <Plus size={12} />
-        </button>
-      </div>
+    <SideGroup
+      id="plans"
+      label="Plans & tasks"
+      actions={
+        <>
+          <button className="icon-btn tiny" title="Add a plan" onClick={() => addNear('plan')}>
+            <ListPlus size={12} />
+          </button>
+          <button className="icon-btn tiny" title="Add a task" onClick={() => addNear('task')}>
+            <Plus size={12} />
+          </button>
+        </>
+      }
+    >
       {items.length === 0 && <div className="tree-empty">No plans or tasks. Add one with +.</div>}
       {items.length > 0 && (
         <div
@@ -529,6 +533,6 @@ export function PlansGroup(): React.JSX.Element {
         </div>
       )}
       {popItem && createPortal(popover, document.body)}
-    </div>
+    </SideGroup>
   )
 }

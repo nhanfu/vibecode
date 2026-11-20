@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Copy, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
+import { Check, Copy, FolderOpen, GitBranch, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
 import { closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
@@ -8,6 +8,7 @@ import { writeToTerm } from '../terminals'
 import { StatusDot } from './icons'
 import { useSessionFeed } from './sessionFeed'
 import { PlansGroup } from './PlansTree'
+import { SideGroup } from './SideGroup'
 import { load, save } from '../localPref'
 
 const SIDE_W_KEY = 'vibe.agentSideWidth'
@@ -167,6 +168,44 @@ function ChatBranch({ chat: c }: { chat: Chat }): React.JSX.Element {
 }
 
 /**
+ * Which project and folder the agents work in: the opened folder (name, git branch, full path) and,
+ * when the chat you are in runs somewhere else under it, that folder. The hide button lives here.
+ */
+function ProjectHead({ onHide }: { onHide: () => void }): React.JSX.Element {
+  const root = useStore((s) => s.root)
+  const branch = useStore((s) => s.git.branch)
+  const chatCwd = useStore((s) => s.chats.find((c) => c.id === s.activeChatId)?.cwd)
+  const norm = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '')
+  const elsewhere = root && chatCwd && norm(chatCwd).toLowerCase() !== norm(root).toLowerCase() ? chatCwd : null
+  const rel = elsewhere && root && norm(elsewhere).toLowerCase().startsWith(norm(root).toLowerCase() + '/') ? norm(elsewhere).slice(norm(root).length + 1) : elsewhere
+  return (
+    <div className="project-head" title={root ?? undefined}>
+      <FolderOpen size={14} className="project-icon" />
+      <div className="project-main">
+        <div className="project-name">
+          <span>{root ? basename(root) : 'No folder open'}</span>
+          {branch && (
+            <span className="project-branch" title="Git branch">
+              <GitBranch size={10} />
+              {branch}
+            </span>
+          )}
+        </div>
+        <div className="project-path">{root ?? 'Open a folder to start chats'}</div>
+        {rel && (
+          <div className="project-path chat" title={elsewhere ?? undefined}>
+            chat in {rel}
+          </div>
+        )}
+      </div>
+      <button className="icon-btn tiny" title="Hide the agents" onClick={onHide}>
+        <PanelLeftClose size={12} />
+      </button>
+    </div>
+  )
+}
+
+/**
  * Every coding agent the app can run (installed or not, which one a plain New chat uses), and the
  * chats running now, by agent.
  */
@@ -198,17 +237,16 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
 
   return (
     <div className="agents-panel">
-      <div className="side-group">
-        <div className="side-group-label">
-          Agents
-          <span className="agent-head-spacer" />
+      <ProjectHead onHide={onHide} />
+      <SideGroup
+        id="agents"
+        label="Agents"
+        actions={
           <button className="icon-btn tiny" title="Look for installed agents again" onClick={() => void refresh()}>
             <RefreshCw size={12} className={busy ? 'spin' : ''} />
           </button>
-          <button className="icon-btn tiny" title="Hide the agents" onClick={onHide}>
-            <PanelLeftClose size={12} />
-          </button>
-        </div>
+        }
+      >
         {AGENTS.map((a) => {
           const ok = installed(a.id)
           const n = chatsOf(a.id).length
@@ -248,15 +286,11 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
             </div>
           )
         })}
-      </div>
+      </SideGroup>
 
       <PlansGroup />
 
-      <div className="side-group">
-        <div className="side-group-label">
-          Running
-          {chats.length > 0 && <span className="count">{chats.length}</span>}
-        </div>
+      <SideGroup id="running" label="Running" count={chats.length}>
         {running.length === 0 && <div className="tree-empty">No chats open.</div>}
         {running.map((a) => (
           <div key={a.id} className="agent-chats">
@@ -266,7 +300,7 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
             ))}
           </div>
         ))}
-      </div>
+      </SideGroup>
     </div>
   )
 }

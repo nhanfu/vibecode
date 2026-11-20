@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, ChevronDown, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
@@ -198,17 +198,16 @@ function StackButton(props: {
       <button
         className={`stack-btn${shown ? ' on' : ''}${pinned ? ' pinned' : ''}${dragging ? ' dragging' : ''}`}
         data-panel={id}
-        title={`${meta.label}: hover to look, ${what}, double-click to ${pinned ? 'unpin' : 'pin'}, right-click for more, drag to reorder${keys ? ` (${keys})` : ''}`}
+        aria-label={label}
+        title={`${label}: hover to look, ${what}, double-click to ${pinned ? 'unpin' : 'pin'}, right-click for more, drag to reorder${keys ? ` (${keys})` : ''}`}
         onMouseEnter={() => !dragging && peekPanel(id)}
         onPointerDown={press}
         onClick={click}
         onContextMenu={openMenu}
       >
         <Icon size={13} />
-        <span className="stack-label">{label}</span>
         {files > 0 && <span className="center-count">{files}</span>}
         {running > 0 && <span className="center-count">{running}</span>}
-        {pinned ? <Pin size={10} className="stack-pin" /> : <ChevronDown size={11} className="stack-chev" />}
       </button>
       {menu && <FolderMenu close={() => setMenu(false)} />}
       {ctx && <StackMenu id={id} x={ctx.x} y={ctx.y} onClose={() => setCtx(null)} />}
