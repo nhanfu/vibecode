@@ -459,6 +459,112 @@ async function showImageLightbox(path: string): Promise<void> {
   document.body.appendChild(box)
 }
 
+/**
+ * Input methods (Unikey, Telex through ibus; also Chinese/Japanese IMEs) talk to the terminal through
+ * composition events. xterm turns those into keystrokes by diffing its hidden textarea, and under
+ * WebKitGTK + ibus that diff runs twice for one letter (keydown 229 and compositionend each send the
+ * text), so Vietnamese letters came out doubled: "Vieetj" → "VVieệệt".
+ *
+ * Here the composition never reaches xterm. Each compositionupdate is typed straight into the prompt
+ * as the difference from what was sent so far (backspaces for the changed tail, then the new tail), so
+ * you see "â" replace "a" live, and compositionend only sends what is still missing.
+ */
+function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void {
+  let composing = false
+  let sent = '' // text of the current composition already typed into the prompt
+  let lastCommit = ''
+  let lastCommitAt = 0
+  const log = (...a: unknown[]): void => {
+    try {
+      if (localStorage.getItem('vibe.imeDebug')) console.log('[ime]', ...a)
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  const typeTo = (text: string): void => {
+    const a = [...sent]
+    const b = [...text]
+    let i = 0
+    while (i < a.length && i < b.length && a[i] === b[i]) i++
+    const out = '\x7f'.repeat(a.length - i) + b.slice(i).join('')
+    if (out) send(out)
+    sent = text
+  }
+  const stop = (e: Event): void => e.stopImmediatePropagation()
+
+  ta.addEventListener(
+    'keydown',
+    (e) => {
+      log('keydown', e.key, e.keyCode, e.isComposing)
+      // keys the IME takes: xterm must not read the textarea for them
+      if (composing || e.isComposing || e.keyCode === 229) stop(e)
+    },
+    true
+  )
+  ta.addEventListener(
+    'compositionstart',
+    (e) => {
+      log('compositionstart')
+      stop(e)
+      composing = true
+      sent = ''
+    },
+    true
+  )
+  ta.addEventListener(
+    'compositionupdate',
+    (e) => {
+      log('compositionupdate', JSON.stringify(e.data))
+      stop(e)
+      typeTo(e.data ?? '')
+    },
+    true
+  )
+  ta.addEventListener(
+    'compositionend',
+    (e) => {
+      log('compositionend', JSON.stringify(e.data))
+      stop(e)
+      typeTo(e.data ?? '')
+      lastCommit = e.data ?? ''
+      lastCommitAt = performance.now()
+      composing = false
+      sent = ''
+      // nothing in the textarea is ever read again; keep it empty so it can't build up
+      setTimeout(() => {
+        if (!composing) ta.value = ''
+      }, 0)
+    },
+    true
+  )
+  ta.addEventListener(
+    'input',
+    (e) => {
+      const ev = e as InputEvent
+      log('input', ev.inputType, JSON.stringify(ev.data), ev.isComposing)
+      if (composing || ev.isComposing || /Composition/.test(ev.inputType)) {
+        stop(e)
+        return
+      }
+      // text an IME commits without a composition (or WebKit's copy of the one just ended)
+      if (ev.inputType === 'insertText' && ev.data) {
+        stop(e)
+        if (!(ev.data === lastCommit && performance.now() - lastCommitAt < 100)) send(ev.data)
+        lastCommit = ''
+        ta.value = ''
+        return
+      }
+      if (ev.inputType === 'deleteContentBackward') {
+        stop(e)
+        send('\x7f')
+        ta.value = ''
+      }
+    },
+    true
+  )
+}
+
 export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void {
   wire()
   if (entries.has(spawn.id)) return
@@ -553,7 +659,7 @@ export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void 
     return true
   })
 
-  term.onData((raw) => {
+  const send = (raw: string): void => {
     /*
      * Focus in/out reports (ESC[I / ESC[O) never reach the process. xterm sends ESC[O whenever a
      * chat's terminal loses focus, e.g. when you switch to another chat and this one is parked, and
@@ -574,13 +680,15 @@ export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void 
       return
     }
     window.api.pty.write(spawn.id, d)
-  })
+  }
+  term.onData(send)
   term.onTitleChange((t) => handlers.title?.(spawn.id, t))
 
   const el = document.createElement('div')
   el.className = 'xterm-host'
   parkingLot().appendChild(el)
   term.open(el)
+  if (term.textarea) handleIme(term.textarea, send)
 
   // Ctrl+V with a picture (or files copied in Explorer) on the clipboard: into the attachment tray.
   el.addEventListener(
