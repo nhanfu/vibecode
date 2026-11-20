@@ -707,6 +707,8 @@ export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void 
 
   const el = document.createElement('div')
   el.className = 'xterm-host'
+  // chat or shell: keybindings' chatFocus / shellFocus read it
+  el.dataset.kind = spawn.kind
   parkingLot().appendChild(el)
   term.open(el)
   if (term.textarea) handleIme(el, term.textarea, preeditView(term), send)

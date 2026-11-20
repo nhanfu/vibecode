@@ -1,12 +1,14 @@
 /**
- * Every app command with its keyboard shortcut, in one table: the global key handler and the
- * command palette (Ctrl+Shift+P / F1) both read it, so a shortcut shown in the palette is always
- * the one that works.
+ * Every app command, and the keys that run them, VS Code style: rules of `{ key, command, when }`
+ * (DEFAULT_KEYS below, then the user's `keybindings.json` on top — see keybindings.ts). The global
+ * key handler and the command palette (Ctrl+Shift+P / F1) both read them, so a shortcut shown in the
+ * palette is always the one that works.
  *
  * Bindings follow VS Code (and Windows Terminal for the terminal keys). Keys that mean something
- * inside a terminal — readline (Ctrl+W, Ctrl+L…) and Claude Code (Ctrl+B background, Ctrl+O
- * transcript, Ctrl+J newline, Ctrl+T todos…) — go to the terminal when it has the cursor; the app
- * only takes them elsewhere.
+ * inside a terminal — readline (Ctrl+W, Ctrl+L…) and Claude Code (Ctrl+O transcript, Ctrl+J
+ * newline, Ctrl+T todos…) — carry `!terminalFocus`, so they go to the terminal when it has the
+ * cursor. Ctrl+B toggles the sidebar everywhere; `{ "key": "ctrl+b", "command": "passToTerminal",
+ * "when": "chatFocus" }` in keybindings.json gives it back to Claude Code (run in background).
  */
 import { useStore } from './store'
 import {
@@ -19,6 +21,7 @@ import {
   newShell,
   openBrowser,
   openFolder,
+  openFile,
   reopenClosedTab,
   selectChat,
   toggleBottom,
@@ -26,11 +29,12 @@ import {
 } from './actions'
 import { focusTerm } from './terminals'
 import { saveFile } from './fileModelsLite'
+import { buildBindings, keysFor, pressOf, resolve, type Binding, type Context, type KeyRule } from './keybindings'
 
 export interface Command {
   id: string
   label: string
-  /** shown in the palette, e.g. "Ctrl+Shift+P" */
+  /** shown in the palette, e.g. "Ctrl+Shift+P": the key that runs it now (defaults + keybindings.json) */
   keys?: string
   run: () => void
 }
@@ -47,16 +51,16 @@ const showCode = (codeSide: 'files' | 'changes'): void => useStore.setState({ ce
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
 
 export const COMMANDS: Command[] = [
-  { id: 'palette', label: 'Show all commands', keys: 'Ctrl+Shift+P', run: () => palette('>') },
-  { id: 'quickOpen', label: 'Go to file…', keys: 'Ctrl+P', run: () => st().root && palette('') },
-  { id: 'symbol', label: 'Go to symbol in file…', keys: 'Ctrl+Shift+O', run: () => window.dispatchEvent(new Event('go-to-symbol')) },
-  { id: 'line', label: 'Go to line…', keys: 'Ctrl+G', run: () => window.dispatchEvent(new Event('go-to-line')) },
-  { id: 'openFolder', label: 'Open folder…', keys: 'Ctrl+O', run: () => void openFolder(null, { autoChat: false }) },
+  { id: 'palette', label: 'Show all commands', run: () => palette('>') },
+  { id: 'quickOpen', label: 'Go to file…', run: () => st().root && palette('') },
+  { id: 'symbol', label: 'Go to symbol in file…', run: () => window.dispatchEvent(new Event('go-to-symbol')) },
+  { id: 'line', label: 'Go to line…', run: () => window.dispatchEvent(new Event('go-to-line')) },
+  { id: 'openFolder', label: 'Open folder…', run: () => void openFolder(null, { autoChat: false }) },
 
-  { id: 'newChat', label: 'New chat', keys: 'Ctrl+Shift+N', run: () => void (defaultAgent() && newChat()) },
-  { id: 'nextChat', label: 'Next chat', keys: 'Ctrl+Alt+→', run: () => cycleChat(1) },
-  { id: 'prevChat', label: 'Previous chat', keys: 'Ctrl+Alt+←', run: () => cycleChat(-1) },
-  { id: 'focusChat', label: 'Focus chat', keys: 'Ctrl+Shift+L', run: () => focusActiveChat() },
+  { id: 'newChat', label: 'New chat', run: () => void (defaultAgent() && newChat()) },
+  { id: 'nextChat', label: 'Next chat', run: () => cycleChat(1) },
+  { id: 'prevChat', label: 'Previous chat', run: () => cycleChat(-1) },
+  { id: 'focusChat', label: 'Focus chat', run: () => focusActiveChat() },
   {
     id: 'closeChat',
     label: 'Close chat',
@@ -66,30 +70,37 @@ export const COMMANDS: Command[] = [
     }
   },
 
-  { id: 'save', label: 'Save file', keys: 'Ctrl+S', run: () => saveActive() },
-  { id: 'closeTab', label: 'Close editor tab', keys: 'Ctrl+W', run: () => closeActiveTab() },
-  { id: 'reopenTab', label: 'Reopen closed editor tab', keys: 'Ctrl+Shift+T', run: () => reopenClosedTab() },
-  { id: 'nextTab', label: 'Next editor tab', keys: 'Ctrl+Tab', run: () => cycleTab(1) },
-  { id: 'prevTab', label: 'Previous editor tab', keys: 'Ctrl+Shift+Tab', run: () => cycleTab(-1) },
+  { id: 'save', label: 'Save file', run: () => saveActive() },
+  { id: 'closeTab', label: 'Close editor tab', run: () => closeActiveTab() },
+  { id: 'reopenTab', label: 'Reopen closed editor tab', run: () => reopenClosedTab() },
+  { id: 'nextTab', label: 'Next editor tab', run: () => cycleTab(1) },
+  { id: 'prevTab', label: 'Previous editor tab', run: () => cycleTab(-1) },
 
-  { id: 'explorer', label: 'Show Explorer (files)', keys: 'Ctrl+Shift+E', run: () => showCode('files') },
-  { id: 'changes', label: 'Show Source Control (changes)', keys: 'Ctrl+Shift+G', run: () => showCode('changes') },
-  { id: 'chats', label: 'Show chats sidebar', keys: 'Ctrl+Shift+C', run: () => useStore.setState({ sidebarView: 'chats', sidebarOpen: true }) },
-  { id: 'sidebar', label: 'Toggle sidebar', keys: 'Ctrl+B', run: () => useStore.setState({ sidebarOpen: !st().sidebarOpen }) },
-  { id: 'terminal', label: 'Toggle terminal', keys: 'Ctrl+`', run: () => toggleBottom() },
-  { id: 'panel', label: 'Toggle bottom panel', keys: 'Ctrl+J', run: () => toggleBottom() },
-  { id: 'newTerminal', label: 'New terminal', keys: 'Ctrl+Shift+`', run: () => newShell() },
+  { id: 'explorer', label: 'Show Explorer (files)', run: () => showCode('files') },
+  { id: 'changes', label: 'Show Source Control (changes)', run: () => showCode('changes') },
+  { id: 'chats', label: 'Show chats sidebar', run: () => useStore.setState({ sidebarView: 'chats', sidebarOpen: true }) },
+  { id: 'sidebar', label: 'Toggle sidebar', run: () => useStore.setState({ sidebarOpen: !st().sidebarOpen }) },
+  { id: 'terminal', label: 'Toggle terminal', run: () => toggleBottom() },
+  { id: 'panel', label: 'Toggle bottom panel', run: () => toggleBottom() },
+  { id: 'newTerminal', label: 'New terminal', run: () => newShell() },
 
-  { id: 'viewCode', label: 'Show Source code tab', keys: 'Ctrl+1', run: () => useStore.setState({ centerView: 'code' }) },
-  { id: 'viewWeb', label: 'Show Web tab', keys: 'Ctrl+2', run: () => openBrowser() },
-  { id: 'viewDb', label: 'Show Database tab', keys: 'Ctrl+3', run: () => useStore.setState({ centerView: 'db' }) },
-  { id: 'viewZalo', label: 'Show Zalo tab', keys: 'Ctrl+4', run: () => useStore.setState({ centerView: 'zalo' }) },
+  { id: 'viewCode', label: 'Show Source code tab', run: () => useStore.setState({ centerView: 'code' }) },
+  { id: 'viewWeb', label: 'Show Web tab', run: () => openBrowser() },
+  { id: 'viewDb', label: 'Show Database tab', run: () => useStore.setState({ centerView: 'db' }) },
+  { id: 'viewZalo', label: 'Show Zalo tab', run: () => useStore.setState({ centerView: 'zalo' }) },
 
-  { id: 'theme', label: 'Toggle light / dark theme', run: () => void toggleTheme() }
+  { id: 'theme', label: 'Toggle light / dark theme', run: () => void toggleTheme() },
+  { id: 'keybindings', label: 'Open keyboard shortcuts (keybindings.json)', run: () => void openKeybindings() },
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: `chat${n}`, label: `Switch to chat ${n}`, run: () => switchChat(n) })),
+  {
+    id: 'passToTerminal',
+    label: 'Send the key to the terminal (for keybindings.json)',
+    // as a binding, it lets the key through to the terminal; from the palette there's no key to send
+    run: () => {}
+  }
 ]
 
 const byId = new Map(COMMANDS.map((c) => [c.id, c]))
-const run = (id: string): void => byId.get(id)!.run()
 
 function focusActiveChat(): void {
   const id = st().activeChatId
@@ -106,88 +117,158 @@ function closeActiveTab(): void {
   if (id && st().centerView === 'code') closeTab(id)
 }
 
-/** The cursor is in a terminal (a chat or a shell). */
-const inTerminal = (): boolean => !!(document.activeElement as HTMLElement | null)?.closest?.('.xterm')
-/** The cursor is in a text field of the page (not Monaco, which handles its own keys). */
-const inTextField = (): boolean => {
-  const el = document.activeElement as HTMLElement | null
-  return !!el && !el.closest('.monaco-editor') && !el.closest('.xterm') && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+function switchChat(n: number): void {
+  const c = st().chats[n - 1]
+  if (c) selectChat(c.id)
 }
+
+/* ---------------- the keys ---------------- */
 
 /**
- * The command a key press means, or null to let it through. `e.code` is used for keys whose
- * character changes with the keyboard layout (` and digits).
+ * The built-in rules. Later rules win over earlier ones, and keybindings.json comes after all of
+ * these. `when` contexts: see context() below.
  */
-function commandFor(e: KeyboardEvent): string | null {
-  const ctrl = e.ctrlKey || e.metaKey
-  const { shiftKey: shift, altKey: alt } = e
-  const k = e.key.toLowerCase()
-  const term = inTerminal()
+export const DEFAULT_KEYS: KeyRule[] = [
+  { key: 'ctrl+shift+p', command: 'palette' },
+  { key: 'f1', command: 'palette' },
+  { key: 'ctrl+p', command: 'quickOpen', when: 'hasFolder' },
+  { key: 'ctrl+shift+o', command: 'symbol' },
+  // Monaco opens its own "go to line" when it has the cursor
+  { key: 'ctrl+g', command: 'line', when: '!terminalFocus && !editorFocus && !textInputFocus' },
+  { key: 'ctrl+o', command: 'openFolder', when: '!terminalFocus && !textInputFocus' },
 
-  if (e.key === 'F1' && !ctrl && !alt) return 'palette'
-  // Alt+1…9: switch chat
-  if (alt && !ctrl && !shift && /^Digit[1-9]$/.test(e.code)) return `chat:${e.code.slice(5)}`
-  if (!ctrl) return null
+  { key: 'ctrl+shift+n', command: 'newChat' },
+  { key: 'ctrl+alt+right', command: 'nextChat' },
+  { key: 'ctrl+alt+left', command: 'prevChat' },
+  { key: 'ctrl+shift+l', command: 'focusChat' },
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `alt+${n}`, command: `chat${n}` })),
 
-  if (alt && !shift) {
-    if (e.key === 'ArrowRight') return 'nextChat'
-    if (e.key === 'ArrowLeft') return 'prevChat'
-    return null
+  // nothing unsaved: the key is left alone
+  { key: 'ctrl+s', command: 'save', when: '!terminalFocus && fileDirty' },
+  { key: 'ctrl+w', command: 'closeTab', when: "!terminalFocus && !textInputFocus && centerView == 'code'" },
+  { key: 'ctrl+f4', command: 'closeTab', when: "!terminalFocus && centerView == 'code'" },
+  { key: 'ctrl+shift+t', command: 'reopenTab' },
+  { key: 'ctrl+tab', command: 'nextTab' },
+  { key: 'ctrl+pagedown', command: 'nextTab' },
+  { key: 'ctrl+shift+tab', command: 'prevTab' },
+  { key: 'ctrl+pageup', command: 'prevTab' },
+
+  { key: 'ctrl+shift+e', command: 'explorer' },
+  { key: 'ctrl+shift+g', command: 'changes' },
+  // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
+  { key: 'ctrl+shift+c', command: 'chats', when: '!terminalFocus' },
+  { key: 'ctrl+b', command: 'sidebar' },
+  { key: 'ctrl+`', command: 'terminal' },
+  { key: 'ctrl+j', command: 'panel', when: '!terminalFocus && !textInputFocus' },
+  { key: 'ctrl+shift+`', command: 'newTerminal' },
+
+  // in a terminal too: shells don't use them
+  { key: 'ctrl+1', command: 'viewCode' },
+  { key: 'ctrl+2', command: 'viewWeb' },
+  { key: 'ctrl+3', command: 'viewDb' },
+  { key: 'ctrl+4', command: 'viewZalo' }
+]
+
+/** The cursor is in a text field of the page (not Monaco or a terminal, which handle their own keys). */
+const inTextField = (el: HTMLElement | null): boolean =>
+  !!el && !el.closest('.monaco-editor') && !el.closest('.xterm') && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+
+/** What `when` clauses can test. Listed in the comment at the top of a new keybindings.json. */
+function context(): Context {
+  const el = document.activeElement as HTMLElement | null
+  const term = el?.closest?.('.xterm') ? (el.closest('.xterm-host') as HTMLElement | null) : null
+  const editor = !!el?.closest?.('.monaco-editor')
+  const field = inTextField(el)
+  const s = st()
+  return {
+    terminalFocus: !!term,
+    chatFocus: !!term && term.dataset.kind === 'claude',
+    shellFocus: !!term && term.dataset.kind === 'shell',
+    editorFocus: editor,
+    textInputFocus: field,
+    inputFocus: editor || field,
+    sidebarOpen: s.sidebarOpen,
+    hasFolder: !!s.root,
+    fileDirty: !!activeFile()?.dirty,
+    centerView: s.centerView
   }
-  if (alt) return null
-
-  if (e.code === 'Backquote') return shift ? 'newTerminal' : 'terminal'
-  if (e.key === 'Tab') return shift ? 'prevTab' : 'nextTab'
-  if (e.key === 'PageDown' && !shift) return 'nextTab'
-  if (e.key === 'PageUp' && !shift) return 'prevTab'
-  if (e.key === 'F4' && !shift) return term ? null : 'closeTab'
-
-  if (shift) {
-    switch (k) {
-      case 'p':
-        return 'palette'
-      case 'n':
-        return 'newChat'
-      case 'o':
-        return 'symbol'
-      case 'e':
-        return 'explorer'
-      case 'g':
-        return 'changes'
-      case 't':
-        return 'reopenTab'
-      case 'l':
-        return 'focusChat'
-      // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
-      case 'c':
-        return term ? null : 'chats'
-    }
-    return null
-  }
-
-  // Ctrl+1…4: the center tabs (in a terminal too: shells don't use them)
-  if (/^Digit[1-4]$/.test(e.code)) return ['viewCode', 'viewWeb', 'viewDb', 'viewZalo'][Number(e.code.slice(5)) - 1]
-  if (k === 'p') return 'quickOpen'
-  // the rest mean something to readline / Claude Code: theirs while a terminal has the cursor
-  if (term) return null
-  switch (k) {
-    case 'b':
-      return 'sidebar'
-    case 'j':
-      return 'panel'
-    case 'o':
-      return 'openFolder'
-    case 'w':
-      return 'closeTab'
-    case 'g':
-      // Monaco opens its own "go to line" when it has the cursor
-      return document.activeElement?.closest('.monaco-editor') ? null : 'line'
-    case 's':
-      // nothing unsaved: leave the key alone
-      return activeFile()?.dirty ? 'save' : null
-  }
-  return null
 }
+const CONTEXT_HELP = [
+  'terminalFocus      the cursor is in a terminal (a chat or a shell)',
+  'chatFocus          … in a chat (Claude Code or another coding agent)',
+  'shellFocus         … in a shell terminal',
+  'editorFocus        … in the code editor',
+  'textInputFocus     … in a text box (address bar, search, filter…)',
+  'inputFocus         editorFocus || textInputFocus',
+  'sidebarOpen        the sidebar is pinned open',
+  'hasFolder          a project folder is open',
+  'fileDirty          the open file has unsaved changes',
+  "centerView         'code' | 'web' | 'db' | 'zalo'   e.g. centerView == 'code'"
+]
+
+let bindings: Binding[] = []
+let lastProblems = ''
+
+function apply(text: string | null): void {
+  const built = buildBindings(DEFAULT_KEYS, text, (id) => byId.has(id))
+  bindings = built.bindings
+  for (const c of COMMANDS) c.keys = keysFor(bindings, c.id)
+  const problems = built.problems.join('\n')
+  if (problems && problems !== lastProblems) {
+    console.warn('[keybindings]', problems)
+    window.alert(`keybindings.json — these rules were skipped:\n\n${problems}`)
+  }
+  lastProblems = problems
+}
+
+async function loadKeybindings(): Promise<void> {
+  apply(await window.api.keybindings.read().catch(() => null))
+}
+
+/** A new keybindings.json: how to write rules, every command id, and the defaults (commented out). */
+function template(): string {
+  const width = Math.max(...COMMANDS.map((c) => c.id.length)) + 2
+  const lines = [
+    '// Keyboard shortcuts, in VS Code\'s format. Rules here come after the defaults and win over them:',
+    '// for a key press, the last rule whose key matches and whose "when" holds runs its command.',
+    '// The file applies as soon as it is saved.',
+    '//',
+    '//   { "key": "ctrl+b", "command": "sidebar", "when": "!editorFocus" }',
+    '//   { "key": "ctrl+k ctrl+t", "command": "theme" }                  a chord: one key, then the other',
+    '//   { "key": "ctrl+b", "command": "-sidebar" }                      remove the default Ctrl+B → sidebar',
+    '//   { "key": "ctrl+b", "command": "passToTerminal", "when": "chatFocus" }   Ctrl+B goes to Claude Code',
+    '//',
+    '// Keys: ctrl shift alt + a-z 0-9 f1-f12 ` - = [ ] \\ ; \' , . / space enter tab escape backspace',
+    '//       delete insert home end pageup pagedown left right up down numpad0-9   (Cmd counts as Ctrl)',
+    '//',
+    '// "when": names, ! && || == != and parentheses. Names:',
+    ...CONTEXT_HELP.map((l) => '//   ' + l),
+    '//',
+    '// Commands:',
+    ...COMMANDS.map((c) => `//   ${c.id.padEnd(width)}${c.label}`),
+    '//',
+    '// Defaults:',
+    ...DEFAULT_KEYS.map((r) => '//   ' + JSON.stringify(r).replace(/"(\w+)":/g, '"$1": ').replace(/,"/g, ', "')),
+    '[',
+    ']',
+    ''
+  ]
+  return lines.join('\n')
+}
+
+/** Open keybindings.json in the editor, writing the commented template first if there is none yet. */
+async function openKeybindings(): Promise<void> {
+  const path = await window.api.keybindings.path()
+  const text = await window.api.keybindings.read().catch(() => null)
+  if (text === null) await window.api.fs.writeFile(path, template())
+  useStore.setState({ centerView: 'code' })
+  openFile(path)
+}
+
+// before the first key press; again on every save of the file
+apply(null)
+void loadKeybindings()
+window.api.keybindings.onChanged(() => void loadKeybindings())
 
 /** The page is a web view: its reload keys would wipe every chat's screen. */
 function isReload(e: KeyboardEvent): boolean {
@@ -195,23 +276,28 @@ function isReload(e: KeyboardEvent): boolean {
   return e.key === 'F5' || (ctrl && e.key.toLowerCase() === 'r')
 }
 
+/** The first key of a chord ("ctrl+k" of "ctrl+k ctrl+t"), waiting for the second. */
+let pending: string | null = null
+
 export function onGlobalKey(e: KeyboardEvent): void {
   if (e.defaultPrevented) return
-  if (isReload(e) && !inTerminal()) {
+  const inTerminal = !!(document.activeElement as HTMLElement | null)?.closest?.('.xterm')
+  if (isReload(e) && !inTerminal) {
     // Ctrl+Shift+R still reloads while developing
     if (!(import.meta.env.DEV && e.shiftKey)) e.preventDefault()
     return
   }
-  const id = commandFor(e)
-  if (!id) return
-  // typing in a field (address bar, search box…): only app-wide combos, not plain Ctrl+letters it edits with
-  if (inTextField() && ['closeTab', 'line', 'openFolder', 'sidebar', 'panel'].includes(id)) return
+  // a key the input method is using to compose a word (Unikey, Telex…)
+  if (e.isComposing || e.keyCode === 229) return
+  const press = pressOf(e)
+  if (!press) return
+  const r = resolve(bindings, press, pending, context())
+  pending = null
+  if (r.kind === 'none') return
+  // the rule says: this key is the terminal's
+  if (r.kind === 'run' && r.command === 'passToTerminal') return
   e.preventDefault()
   e.stopPropagation()
-  if (id.startsWith('chat:')) {
-    const c = st().chats[Number(id.slice(5)) - 1]
-    if (c) selectChat(c.id)
-    return
-  }
-  run(id)
+  if (r.kind === 'chord') pending = r.first
+  else if (r.kind === 'run') byId.get(r.command)?.run()
 }

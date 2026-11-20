@@ -8,6 +8,7 @@ mod appcmds;
 mod browser;
 mod fsx;
 mod git;
+mod keybindings;
 mod mcp;
 mod mssql;
 mod pty;
@@ -44,6 +45,8 @@ pub fn run() {
             appcmds::claude_usage,
             appcmds::sys_memory,
             appcmds::claude_get_project_bypass,
+            keybindings::keybindings_path,
+            keybindings::keybindings_read,
             appcmds::claude_set_project_bypass,
             // built-in browser
             browser::web_open,

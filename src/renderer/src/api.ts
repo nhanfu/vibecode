@@ -208,6 +208,13 @@ export const api = {
     branches: (root: string): Promise<GitBranch[]> => invoke('git_branches', { root }),
     checkout: (root: string, name: string, remote: boolean): Promise<void> => invoke('git_checkout', { root, name, remote })
   },
+  keybindings: {
+    /** `<userData>/keybindings.json` (it may not exist yet) */
+    path: (): Promise<string> => invoke('keybindings_path'),
+    /** the file's text, null when there is none; starts the watch behind onChanged */
+    read: (): Promise<string | null> => invoke('keybindings_read'),
+    onChanged: (cb: () => void): Off => on('keybindings:changed', cb)
+  },
   app: {
     settings: (): Promise<AppSettings> => invoke('app_settings'),
     rememberFolder: (folder: string): Promise<AppSettings> => invoke('app_remember_folder', { folder }),
