@@ -462,18 +462,19 @@ async function showImageLightbox(path: string): Promise<void> {
 /**
  * Input methods (Unikey, Telex through ibus; also Chinese/Japanese IMEs) talk to the terminal through
  * composition events. xterm turns those into keystrokes by diffing its hidden textarea, and under
- * WebKitGTK + ibus that diff runs twice for one letter (keydown 229 and compositionend each send the
- * text), so Vietnamese letters came out doubled: "Vieetj" → "VVieệệt".
+ * WebKitGTK + ibus the same text came out on several routes, so letters and spaces were doubled.
  *
- * Here the composition never reaches xterm. Each compositionupdate is typed straight into the prompt
- * as the difference from what was sent so far (backspaces for the changed tail, then the new tail), so
- * you see "â" replace "a" live, and compositionend only sends what is still missing.
+ * Here IME input never reaches xterm: the listeners sit on an ancestor in the capture phase, which runs
+ * before anything on the textarea itself (WebKit runs a target's own listeners in the order they were
+ * added, and xterm's came first). The word being composed is only shown (`preedit`) and goes to the
+ * prompt once, when the IME commits it. Typing it live doesn't work: Claude Code reads "\x7fô" written
+ * in one go as pasted text and drops the backspace.
+ *
+ * One keystroke can still deliver the same text on several routes (keypress, an insertText input,
+ * compositionend, or only the textarea's value): each piece is sent once per keystroke.
  */
-function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void {
+function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: string) => void, send: (data: string) => void): void {
   let composing = false
-  let sent = '' // text of the current composition already typed into the prompt
-  // With an IME on, one keystroke can deliver the same text on several routes (keypress, an
-  // insertText input, compositionend): whatever this keystroke already sent is not sent again.
   let thisKey: string[] = []
   let imeKey = false // the IME took the current keystroke (keydown 229): xterm doesn't see it
   const log = (...a: unknown[]): void => {
@@ -483,24 +484,12 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
       /* storage unavailable */
     }
   }
-  const once = (text: string): void => {
+  const once = (raw: string): void => {
+    const text = raw.replace(/\r?\n/g, '\r')
     if (!text || thisKey.includes(text)) return log('skip duplicate', JSON.stringify(text))
+    log('send', JSON.stringify(text))
     thisKey.push(text)
     send(text)
-  }
-  const typeTo = (text: string): void => {
-    const a = [...sent]
-    const b = [...text]
-    let i = 0
-    while (i < a.length && i < b.length && a[i] === b[i]) i++
-    const out = '\x7f'.repeat(a.length - i) + b.slice(i).join('')
-    if (out) send(out)
-    sent = text
-  }
-  const clear = (): void => {
-    setTimeout(() => {
-      if (!composing) ta.value = ''
-    }, 0)
   }
   /*
    * Text the browser puts into the textarea with no event saying what it was: under WebKitGTK the
@@ -512,103 +501,104 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
     setTimeout(() => {
       if (composing || key !== thisKey) return
       const v = ta.value
-      const extra = v.startsWith(base) ? v.slice(base.length) : ''
       log('sweep', JSON.stringify(base), JSON.stringify(v))
-      if (extra) once(extra)
+      if (v.startsWith(base)) once(v.slice(base.length))
       ta.value = ''
     }, 0)
   }
-  const stop = (e: Event): void => e.stopImmediatePropagation()
+  const on = <K extends keyof HTMLElementEventMap>(type: K, fn: (e: HTMLElementEventMap[K]) => void): void =>
+    host.addEventListener(
+      type,
+      (e) => {
+        if (e.target === ta) fn(e)
+      },
+      true
+    )
+  const stop = (e: Event): void => e.stopPropagation()
 
-  ta.addEventListener(
-    'keydown',
-    (e) => {
-      log('keydown', e.key, e.keyCode, e.isComposing)
-      thisKey = []
-      imeKey = composing || e.isComposing || e.keyCode === 229
-      // keys the IME takes: xterm must not read the textarea for them
-      if (imeKey) {
-        stop(e)
-        if (!composing && !e.isComposing) sweep(ta.value)
-      }
-    },
-    true
-  )
-  ta.addEventListener(
-    'keypress',
-    (e) => {
-      log('keypress', e.key, e.charCode, imeKey)
-      const printable = e.charCode >= 32 && !e.ctrlKey && !e.metaKey && !e.altKey
-      if (imeKey) {
-        // xterm skipped this key's keydown, so it can't judge the keypress either: send it here
-        stop(e)
-        if (e.charCode === 13) once('\r')
-        else if (printable) once(String.fromCharCode(e.charCode))
-      } else if (printable) {
-        // xterm sends it; remember it so an IME copy of the same character is dropped
-        thisKey.push(String.fromCharCode(e.charCode))
-      }
-    },
-    true
-  )
-  ta.addEventListener(
-    'compositionstart',
-    (e) => {
-      log('compositionstart')
+  on('keydown', (e) => {
+    log('keydown', e.key, e.keyCode, e.isComposing)
+    thisKey = []
+    imeKey = composing || e.isComposing || e.keyCode === 229
+    if (!imeKey) return
+    // a key the IME takes: xterm must not read the textarea for it
+    stop(e)
+    if (!composing && !e.isComposing) sweep(ta.value)
+  })
+  on('keypress', (e) => {
+    log('keypress', e.key, e.charCode, imeKey)
+    const printable = e.charCode >= 32 && !e.ctrlKey && !e.metaKey && !e.altKey
+    if (imeKey) {
+      // xterm skipped this key's keydown, so it can't judge the keypress either: send it here
       stop(e)
-      composing = true
-      sent = ''
-    },
-    true
-  )
-  ta.addEventListener(
-    'compositionupdate',
-    (e) => {
-      log('compositionupdate', JSON.stringify(e.data))
+      if (e.charCode === 13) once('\r')
+      else if (printable) once(String.fromCharCode(e.charCode))
+    } else if (printable) {
+      // xterm sends it; remember it so an IME copy of the same character is dropped
+      thisKey.push(String.fromCharCode(e.charCode))
+    }
+  })
+  on('compositionstart', (e) => {
+    log('compositionstart')
+    stop(e)
+    composing = true
+  })
+  on('compositionupdate', (e) => {
+    log('compositionupdate', JSON.stringify(e.data))
+    stop(e)
+    preedit(e.data ?? '')
+  })
+  on('compositionend', (e) => {
+    log('compositionend', JSON.stringify(e.data))
+    stop(e)
+    preedit('')
+    composing = false
+    const word = e.data ?? ''
+    once(word)
+    // the textarea may already hold the key that ended the word: base stops after the word itself
+    const at = word ? ta.value.lastIndexOf(word) : -1
+    sweep(at < 0 ? ta.value : ta.value.slice(0, at + word.length))
+  })
+  on('input', (e) => {
+    const ev = e as InputEvent
+    log('input', ev.inputType, JSON.stringify(ev.data), ev.isComposing)
+    if (composing || ev.isComposing || /Composition/.test(ev.inputType)) return stop(e)
+    // text an IME commits without a composition (or another copy of one just sent)
+    if (ev.inputType === 'insertText' && ev.data) {
       stop(e)
-      typeTo(e.data ?? '')
-    },
-    true
-  )
-  ta.addEventListener(
-    'compositionend',
-    (e) => {
-      log('compositionend', JSON.stringify(e.data))
+      once(ev.data)
+    } else if (ev.inputType === 'deleteContentBackward') {
       stop(e)
-      typeTo(e.data ?? '')
-      if (e.data) thisKey.push(e.data)
-      composing = false
-      sent = ''
-      // the textarea may already hold the key that ended the word: base stops after the word itself
-      const at = e.data ? ta.value.lastIndexOf(e.data) : -1
-      sweep(at < 0 ? ta.value : ta.value.slice(0, at + e.data.length))
-    },
-    true
-  )
-  ta.addEventListener(
-    'input',
-    (e) => {
-      const ev = e as InputEvent
-      log('input', ev.inputType, JSON.stringify(ev.data), ev.isComposing)
-      if (composing || ev.isComposing || /Composition/.test(ev.inputType)) {
-        stop(e)
-        return
-      }
-      // text an IME commits without a composition (or another copy of one just sent)
-      if (ev.inputType === 'insertText' && ev.data) {
-        stop(e)
-        once(ev.data)
-        clear()
-        return
-      }
-      if (ev.inputType === 'deleteContentBackward') {
-        stop(e)
-        send('\x7f')
-        clear()
-      }
-    },
-    true
-  )
+      send('\x7f')
+    }
+  })
+}
+
+/** The word an IME is composing, drawn over the cursor (xterm's own composition view, styled here). */
+function preeditView(term: Terminal): (text: string) => void {
+  return (text) => {
+    const view = term.element?.querySelector<HTMLElement>('.composition-view')
+    const screen = term.element?.querySelector<HTMLElement>('.xterm-screen')
+    if (!view || !screen) return
+    view.textContent = text
+    view.classList.toggle('active', !!text)
+    if (!text) return
+    const w = screen.clientWidth / term.cols
+    const h = screen.clientHeight / term.rows
+    const buf = term.buffer.active
+    const theme = term.options.theme ?? {}
+    Object.assign(view.style, {
+      left: `${Math.min(buf.cursorX, term.cols - 1) * w}px`,
+      top: `${buf.cursorY * h}px`,
+      height: `${h}px`,
+      lineHeight: `${h}px`,
+      fontFamily: term.options.fontFamily ?? '',
+      fontSize: `${term.options.fontSize}px`,
+      background: theme.background && theme.background !== 'transparent' ? theme.background : 'var(--bg, #000)',
+      color: theme.foreground ?? '#fff',
+      textDecoration: 'underline'
+    })
+  }
 }
 
 export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void {
@@ -734,7 +724,7 @@ export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void 
   el.className = 'xterm-host'
   parkingLot().appendChild(el)
   term.open(el)
-  if (term.textarea) handleIme(term.textarea, send)
+  if (term.textarea) handleIme(el, term.textarea, preeditView(term), send)
 
   // Ctrl+V with a picture (or files copied in Explorer) on the clipboard: into the attachment tray.
   el.addEventListener(
