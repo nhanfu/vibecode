@@ -1,4 +1,5 @@
 import { Suspense, lazy, memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { SiteIcon } from './SiteIcon'
 import { Columns2, Database, FileDiff, FileText, Rows2, X, Command, GitCompare, Globe, MessageSquarePlus, Plus, Search } from 'lucide-react'
 import { fileUri, panelShown, useStore, type EditorTab } from '../store'
 import { HOME_URL, browserKey, closeBrowserTab, closeTab, ensureBrowser, newBrowserTab, openBrowser, openFile, selectBrowserTab } from '../actions'
@@ -117,7 +118,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
             }}
             title={t.url === HOME_URL ? 'New tab' : t.url}
           >
-            <Globe size={13} />
+            <SiteIcon url={t.url} />
             <span className="tab-title">{t.title || (t.url === HOME_URL ? 'New tab' : t.url.replace(/^https?:\/\//, ''))}</span>
             <button
               className="tab-close"

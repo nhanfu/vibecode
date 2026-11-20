@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["nsis", "deb"],
     "publisher": "TINJS",
     "category": "DeveloperTool",
     "shortDescription": "A desktop workspace for Claude Code",
