@@ -835,6 +835,21 @@ export function closeBrowserTab(key: string, id: string): void {
   })
 }
 
+/** Close every tab (torn-off pages included), leaving a single blank one. */
+export function closeAllBrowserTabs(key: string): void {
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    if (!b) return s
+    const pages = new Set(b.tabs.map((t) => `page:${t.id}`))
+    const blank = blankTab()
+    return {
+      browsers: { ...s.browsers, [key]: { tabs: [blank], active: blank.id } },
+      panelOrder: s.panelOrder.filter((p) => !pages.has(p)),
+      pinned: s.pinned.filter((p) => !pages.has(p))
+    }
+  })
+}
+
 /**
  * Tear a tab off the Web drop-down into a title-bar button of its own (a panel next to the others:
  * pin it, move it, resize it). The page keeps running, it is only shown somewhere else.
