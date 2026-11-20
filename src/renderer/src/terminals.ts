@@ -466,17 +466,18 @@ async function showImageLightbox(path: string): Promise<void> {
  *
  * Here IME input never reaches xterm: the listeners sit on an ancestor in the capture phase, which runs
  * before anything on the textarea itself (WebKit runs a target's own listeners in the order they were
- * added, and xterm's came first). The word being composed is only shown (`preedit`) and goes to the
- * prompt once, when the IME commits it. Typing it live doesn't work: Claude Code reads "\x7fô" written
- * in one go as pasted text and drops the backspace.
+ * added, and xterm's came first). The word being composed is only shown (`preedit`).
  *
- * One keystroke can still deliver the same text on several routes (keypress, an insertText input,
- * compositionend, or only the textarea's value): each piece is sent once per keystroke.
+ * What gets sent is read from the textarea, never from the events: whatever the IME commits (the word,
+ * then the space or "," that ended it) lands there exactly once, while ibus may report it on several
+ * events, late, or on none at all. Once the IME is done, the new text goes to the prompt and the
+ * textarea is emptied. (Typing the word live with backspaces doesn't work: Claude Code reads "\x7fô"
+ * written in one go as pasted text and drops the backspace.)
  */
 function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: string) => void, send: (data: string) => void): void {
   let composing = false
-  let thisKey: string[] = []
   let imeKey = false // the IME took the current keystroke (keydown 229): xterm doesn't see it
+  let timer: ReturnType<typeof setTimeout> | undefined
   const log = (...a: unknown[]): void => {
     try {
       if (localStorage.getItem('vibe.imeDebug')) console.log('[ime]', ...a)
@@ -484,27 +485,18 @@ function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: s
       /* storage unavailable */
     }
   }
-  const once = (raw: string): void => {
-    const text = raw.replace(/\r?\n/g, '\r')
-    if (!text || thisKey.includes(text)) return log('skip duplicate', JSON.stringify(text))
-    log('send', JSON.stringify(text))
-    thisKey.push(text)
-    send(text)
+  const flush = (): void => {
+    timer = undefined
+    if (composing) return
+    const v = ta.value
+    ta.value = ''
+    if (!v) return
+    log('send', JSON.stringify(v))
+    send(v.replace(/\r?\n/g, '\r'))
   }
-  /*
-   * Text the browser puts into the textarea with no event saying what it was: under WebKitGTK the
-   * space (or "." …) that ends a Unikey word arrives on the same keydown 229 as the commit, and only
-   * shows up in the textarea. After the keystroke settles, whatever is past `base` is that text.
-   */
-  const sweep = (base: string): void => {
-    const key = thisKey
-    setTimeout(() => {
-      if (composing || key !== thisKey) return
-      const v = ta.value
-      log('sweep', JSON.stringify(base), JSON.stringify(v))
-      if (v.startsWith(base)) once(v.slice(base.length))
-      ta.value = ''
-    }, 0)
+  // after the event chain settles, so the browser has updated the textarea
+  const later = (): void => {
+    if (!timer) timer = setTimeout(flush, 0)
   }
   const on = <K extends keyof HTMLElementEventMap>(type: K, fn: (e: HTMLElementEventMap[K]) => void): void =>
     host.addEventListener(
@@ -518,24 +510,24 @@ function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: s
 
   on('keydown', (e) => {
     log('keydown', e.key, e.keyCode, e.isComposing)
-    thisKey = []
     imeKey = composing || e.isComposing || e.keyCode === 229
-    if (!imeKey) return
-    // a key the IME takes: xterm must not read the textarea for it
-    stop(e)
-    if (!composing && !e.isComposing) sweep(ta.value)
+    if (imeKey) {
+      // a key the IME takes: xterm must not read the textarea for it
+      stop(e)
+      later()
+    } else if (!composing) {
+      // xterm's key: anything still waiting goes first, so the order stays right
+      if (timer) clearTimeout(timer)
+      flush()
+    }
   })
   on('keypress', (e) => {
     log('keypress', e.key, e.charCode, imeKey)
-    const printable = e.charCode >= 32 && !e.ctrlKey && !e.metaKey && !e.altKey
+    // xterm skipped this key's keydown, so it can't judge the keypress either; the character it
+    // types into the textarea is sent from there
     if (imeKey) {
-      // xterm skipped this key's keydown, so it can't judge the keypress either: send it here
       stop(e)
-      if (e.charCode === 13) once('\r')
-      else if (printable) once(String.fromCharCode(e.charCode))
-    } else if (printable) {
-      // xterm sends it; remember it so an IME copy of the same character is dropped
-      thisKey.push(String.fromCharCode(e.charCode))
+      later()
     }
   })
   on('compositionstart', (e) => {
@@ -553,24 +545,17 @@ function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: s
     stop(e)
     preedit('')
     composing = false
-    const word = e.data ?? ''
-    once(word)
-    // the textarea may already hold the key that ended the word: base stops after the word itself
-    const at = word ? ta.value.lastIndexOf(word) : -1
-    sweep(at < 0 ? ta.value : ta.value.slice(0, at + word.length))
+    later()
   })
   on('input', (e) => {
     const ev = e as InputEvent
     log('input', ev.inputType, JSON.stringify(ev.data), ev.isComposing)
-    if (composing || ev.isComposing || /Composition/.test(ev.inputType)) return stop(e)
-    // text an IME commits without a composition (or another copy of one just sent)
-    if (ev.inputType === 'insertText' && ev.data) {
-      stop(e)
-      once(ev.data)
-    } else if (ev.inputType === 'deleteContentBackward') {
-      stop(e)
-      send('\x7f')
-    }
+    // xterm's own input handling would send the text a second time
+    stop(e)
+    if (composing || ev.isComposing) return
+    // deleting text that hasn't gone out yet only changes the textarea; a Backspace on sent text
+    // isn't the IME's (keyCode 8, not 229) and xterm sends it
+    later()
   })
 }
 
