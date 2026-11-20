@@ -158,11 +158,14 @@ const stopPeekTimer = (): void => {
   peekTimer = undefined
 }
 
-/** Hovering a drop-down's button (or the drop-down) shows it, and keeps it shown. */
+/**
+ * Hovering a drop-down's button (or the drop-down) shows it, and keeps it shown. A pinned one's
+ * button is already on screen: the one floating from hovering hides, as when leaving it.
+ */
 export function peekPanel(id: PanelId): void {
-  stopPeekTimer()
   const s = useStore.getState()
-  if (s.pinned.includes(id)) return
+  if (s.pinned.includes(id)) return leavePanel()
+  stopPeekTimer()
   if (s.peek !== id) useStore.setState({ peek: id })
 }
 

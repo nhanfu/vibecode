@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Bot, ChevronDown, Clock, Code2, Database, FolderOpen, Globe, Pin, PinOff, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ArrowLeft, ArrowRight, Bot, ChevronDown, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
@@ -8,6 +9,7 @@ import {
   movePanel,
   PANEL_IDS,
   peekPanel,
+  showPanel,
   togglePanel,
   togglePin,
   useStore,
@@ -18,12 +20,14 @@ import { COMMANDS } from '../shortcuts'
 import { Sidebar } from './Sidebar'
 import { CodePanel, DbPanel, WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
+import { AgentSplit } from './Agents'
 
 /*
  * The title-bar drop-downs as a horizontal stack (store.ts PanelId). A drop-down floats under its
  * button while hovered, or opened by a click / its key until a click elsewhere; a double-click on
- * the button pins it into the stack beside the chat, and another unpins it. Dragging the buttons
- * sideways reorders the stack.
+ * the button pins it into the stack, and another unpins it. Right-click on a button has the same
+ * and more (move, reset width), like a tab in Chrome. Dragging the buttons sideways reorders the
+ * stack.
  */
 
 interface PanelMeta {
@@ -119,6 +123,7 @@ function StackButton(props: {
   // Agent: named after the agent of the chat you are in ("Claude Code", "Codex"…)
   const agent = useStore((s) => (id === 'agents' ? agentDef(s.chats.find((c) => c.id === s.activeChatId)?.agent).label : ''))
   const [menu, setMenu] = useState(false)
+  const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
   const clickTimer = useRef<number | undefined>(undefined)
   // a drag ends with a click on the button: that one is not a click
   const dragged = useRef(false)
@@ -182,15 +187,22 @@ function StackButton(props: {
   const label = id === 'project' && root ? basename(root) : id === 'agents' && agent ? agent : meta.label
   const keys = keysOf(id)
   const what = id === 'project' ? 'click for folders' : 'click to open'
+  const openMenu = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    window.clearTimeout(clickTimer.current)
+    setMenu(false)
+    setCtx({ x: e.clientX, y: e.clientY })
+  }
   return (
     <div className={`stack-btn-wrap${mark ? ` mark-${mark}` : ''}`}>
       <button
         className={`stack-btn${shown ? ' on' : ''}${pinned ? ' pinned' : ''}${dragging ? ' dragging' : ''}`}
         data-panel={id}
-        title={`${meta.label}: hover to look, ${what}, double-click to ${pinned ? 'unpin' : 'pin'}, drag to reorder${keys ? ` (${keys})` : ''}`}
+        title={`${meta.label}: hover to look, ${what}, double-click to ${pinned ? 'unpin' : 'pin'}, right-click for more, drag to reorder${keys ? ` (${keys})` : ''}`}
         onMouseEnter={() => !dragging && peekPanel(id)}
         onPointerDown={press}
         onClick={click}
+        onContextMenu={openMenu}
       >
         <Icon size={13} />
         <span className="stack-label">{label}</span>
@@ -199,7 +211,87 @@ function StackButton(props: {
         {pinned ? <Pin size={10} className="stack-pin" /> : <ChevronDown size={11} className="stack-chev" />}
       </button>
       {menu && <FolderMenu close={() => setMenu(false)} />}
+      {ctx && <StackMenu id={id} x={ctx.x} y={ctx.y} onClose={() => setCtx(null)} />}
     </div>
+  )
+}
+
+/** Right-click on a title-bar button: pin, open / close, move, reset width (like a tab in Chrome). */
+function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; onClose: () => void }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<React.CSSProperties>({ left: x, top: y, visibility: 'hidden' })
+  const pinned = useStore((s) => s.pinned.includes(id))
+  const open = useStore((s) => floating(s) === id)
+  const order = useStore((s) => s.panelOrder)
+  const at = order.indexOf(id)
+  const keys = keysOf(id)
+
+  // kept on screen, measured before paint so it never jumps
+  useLayoutEffect(() => {
+    const r = ref.current?.getBoundingClientRect()
+    if (!r) return
+    setPos({ left: Math.max(4, Math.min(x, window.innerWidth - r.width - 4)), top: Math.max(4, Math.min(y, window.innerHeight - r.height - 4)) })
+  }, [x, y])
+
+  useEffect(() => {
+    const down = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) onClose()
+    }
+    const key = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('mousedown', down, true)
+    window.addEventListener('keydown', key, true)
+    window.addEventListener('blur', onClose)
+    window.addEventListener('resize', onClose)
+    return () => {
+      window.removeEventListener('mousedown', down, true)
+      window.removeEventListener('keydown', key, true)
+      window.removeEventListener('blur', onClose)
+      window.removeEventListener('resize', onClose)
+    }
+  }, [onClose])
+
+  const run = (f: () => void) => (): void => {
+    onClose()
+    f()
+  }
+  type Item = { icon: React.ReactNode; label: string; hint?: string; act: () => void; off?: boolean } | 'sep'
+  const items: Item[] = [
+    pinned
+      ? { icon: <PinOff size={14} />, label: 'Unpin', hint: 'Double-click', act: () => togglePin(id) }
+      : { icon: <Pin size={14} />, label: 'Pin', hint: 'Double-click', act: () => togglePin(id) },
+    // a pinned one is always on screen: nothing to open or close
+    ...(pinned
+      ? []
+      : [
+          open
+            ? { icon: <X size={14} />, label: 'Close', hint: keys, act: () => closeFloat() }
+            : { icon: <PanelTop size={14} />, label: 'Open', hint: keys, act: () => showPanel(id) }
+        ]),
+    'sep',
+    { icon: <ArrowLeft size={14} />, label: 'Move left', act: () => movePanel(id, at - 1), off: at <= 0 },
+    { icon: <ArrowRight size={14} />, label: 'Move right', act: () => movePanel(id, at + 1), off: at >= order.length - 1 },
+    'sep',
+    { icon: <MoveHorizontal size={14} />, label: 'Reset width', act: () => window.dispatchEvent(new CustomEvent('stack-reset-width', { detail: id })) }
+  ]
+
+  // portal to <body>: inside the title bar a transformed / blurred ancestor breaks position:fixed
+  return createPortal(
+    <div ref={ref} className="menu ctx-menu" style={pos} onContextMenu={(e) => e.preventDefault()}>
+      {items.map((it, i) =>
+        it === 'sep' ? (
+          <div key={`sep${i}`} className="ctx-divider" />
+        ) : (
+          <button key={it.label} className="menu-item" disabled={it.off} onClick={run(it.act)}>
+            {it.icon}
+            <span className="menu-item-main">{it.label}</span>
+            {it.hint && <span className="menu-item-sub ctx-hint">{it.hint}</span>}
+          </button>
+        )
+      )}
+    </div>,
+    document.body
   )
 }
 
@@ -258,6 +350,10 @@ function useFloatTracking(): void {
     if (!peeking) return
     const move = (e: MouseEvent): void => {
       const t = e.target
+      // on a title-bar button, that button decides: another unpinned one floats instead, a pinned
+      // one hides what floats (the bar as a whole only bridges the gap between buttons)
+      const btn = t instanceof Element ? t.closest<HTMLElement>('.stack-btn[data-panel]') : null
+      if (btn) return peekPanel(btn.dataset.panel as PanelId)
       if (t instanceof Element && t.closest(FLOAT_PARTS)) {
         const id = useStore.getState().peek
         if (id) peekPanel(id)
@@ -305,7 +401,7 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
     <div className="workbench stack">
       {PANEL_IDS.map((id) => (
         <StackPanel key={id} id={id} fill={id === fill}>
-          {id === 'agents' ? children : <PanelBody id={id} />}
+          {id === 'agents' ? <AgentSplit>{children}</AgentSplit> : <PanelBody id={id} />}
         </StackPanel>
       ))}
       {!fill && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
@@ -339,8 +435,15 @@ function StackPanel({ id, fill, children }: { id: PanelId; fill: boolean; childr
     return () => window.removeEventListener('resize', place)
   }, [pinned, shown, width, id])
 
-  const Icon = meta.icon
-  const keys = keysOf(id)
+  // "Reset width" in the button's right-click menu
+  useEffect(() => {
+    const reset = (e: Event): void => {
+      if ((e as CustomEvent<PanelId>).detail === id) resetWidth()
+    }
+    window.addEventListener('stack-reset-width', reset)
+    return () => window.removeEventListener('stack-reset-width', reset)
+  }, [id, resetWidth])
+
   return (
     <div
       ref={ref}
@@ -349,20 +452,6 @@ function StackPanel({ id, fill, children }: { id: PanelId; fill: boolean; childr
       style={pinned ? { order, flexBasis: width, minWidth: meta.size.min } : { width, left }}
       onMouseEnter={() => !pinned && shown && peekPanel(id)}
     >
-      <div className="stack-head">
-        <Icon size={12} />
-        <span className="stack-head-title">{meta.label}</span>
-        {keys && <kbd className="stack-head-keys">{keys}</kbd>}
-        <span className="stack-head-spacer" />
-        <button className="icon-btn tiny" title={pinned ? 'Unpin: float it again (or double-click its title-bar button)' : 'Pin it beside the chat (or double-click its title-bar button)'} onClick={() => togglePin(id)}>
-          {pinned ? <PinOff size={12} /> : <Pin size={12} />}
-        </button>
-        {!pinned && (
-          <button className="icon-btn tiny" title="Close" onClick={() => closeFloat()}>
-            <X size={12} />
-          </button>
-        )}
-      </div>
       <div className="stack-body">{children}</div>
       {/* the stretched one has no width of its own to drag */}
       {!(pinned && fill) && <div className="sidebar-resize" title="Drag to resize · double-click to reset" onPointerDown={startResize} onDoubleClick={resetWidth} />}

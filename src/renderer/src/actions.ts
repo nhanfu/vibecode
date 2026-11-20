@@ -549,7 +549,7 @@ function newAgentChat(cwd: string, agentId: AgentId, opts: NewChatOpts, blank: b
   // Other agents only know default or bypass, so a Claude-only mode (plan, accept edits…) falls back to default.
   const last = remembered(PERMISSION_KEY, NEW_CHAT_DEFAULTS.permissionMode)
   const permissionMode = agent.yolo.length && last === 'bypassPermissions' ? last : undefined
-  const args = [...(opts.args ?? []), ...agentFlags(agentId, permissionMode)]
+  const args = [...(opts.args ?? []), ...agentFlags(agentId, permissionMode), ...(opts.prompt ? [opts.prompt] : [])]
   const n = st().chats.filter((c) => c.agent === agentId).length + 1
   const chat: Chat = {
     id: 'chat-' + uid(),

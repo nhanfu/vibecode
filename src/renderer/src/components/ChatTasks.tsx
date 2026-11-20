@@ -1,43 +1,15 @@
 import { useEffect, useState } from 'react'
 import { ChevronRight, CircleCheck, CircleX, Loader } from 'lucide-react'
 import type { ChatTask } from '../../../shared/types'
+import { useSessionFeed } from './sessionFeed'
+
+const readTasks = (sessionId: string): Promise<ChatTask[]> =>
+  typeof window.api.sessions.tasks === 'function' ? window.api.sessions.tasks(sessionId) : Promise.resolve([])
+const anyRunning = (list: ChatTask[]): boolean => list.some((t) => t.status === 'running')
 
 /** A chat's background tasks, reloaded as the transcript changes and every few seconds while one runs. */
 export function useChatTasks(sessionId: string | undefined): ChatTask[] {
-  const [tasks, setTasks] = useState<ChatTask[]>([])
-  useEffect(() => {
-    setTasks([])
-    if (!sessionId || typeof window.api.sessions.tasks !== 'function') return
-    let alive = true
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let poll: ReturnType<typeof setInterval> | undefined
-    const load = (): void => {
-      window.api.sessions
-        .tasks(sessionId)
-        .then((list) => {
-          if (!alive) return
-          // same list (a poll while nothing changed): no re-render
-          setTasks((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list))
-          // running ones write output without touching the transcript: keep looking
-          clearInterval(poll)
-          if (list.some((t) => t.status === 'running')) poll = setInterval(load, 3000)
-        })
-        .catch(() => {})
-    }
-    load()
-    const off = window.api.sessions.onChanged((ids) => {
-      if (!ids.includes(sessionId) && !ids.includes('*')) return
-      clearTimeout(timer)
-      timer = setTimeout(load, 700)
-    })
-    return () => {
-      alive = false
-      clearTimeout(timer)
-      clearInterval(poll)
-      off()
-    }
-  }, [sessionId])
-  return tasks
+  return useSessionFeed(sessionId, readTasks, anyRunning)
 }
 
 function dur(ms: number): string {

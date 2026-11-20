@@ -103,6 +103,11 @@ pub async fn sessions_tasks(session_id: String) -> Res<Vec<ChatTask>> {
     Ok(tokio::task::spawn_blocking(move || session_tasks(&session_id)).await?)
 }
 
+#[tauri::command]
+pub async fn sessions_subagents(session_id: String) -> Res<Vec<SubAgent>> {
+    Ok(tokio::task::spawn_blocking(move || session_subagents(&session_id)).await?)
+}
+
 /* ---------------- session list ---------------- */
 
 pub fn projects_dir() -> PathBuf {
@@ -889,6 +894,80 @@ fn session_tasks(session_id: &str) -> Vec<ChatTask> {
         }
     }
     tasks
+}
+
+/* ---------------- sub-agents ---------------- */
+
+/// Sub-agents a chat started with the Agent tool (its subagent_type and description), and whether
+/// each one has returned yet.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgent {
+    pub id: String,
+    /// the agent type: general-purpose, Explore, a plugin's agent…
+    pub kind: String,
+    pub description: String,
+    /// running, completed or failed
+    pub status: String,
+    pub started_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<i64>,
+}
+
+#[derive(Default)]
+struct SubAgentScan {
+    /// in the order they started
+    agents: Vec<SubAgent>,
+    /// tool_use id -> position in `agents`
+    index: HashMap<String, usize>,
+}
+
+impl SubAgentScan {
+    fn feed(&mut self, text: &str) {
+        let SubAgentScan { agents, index } = self;
+        for line in text.split('\n') {
+            if !line.contains("\"Agent\"") && !line.contains("\"Task\"") && !line.contains("tool_use_id") {
+                continue;
+            }
+            let Ok(row) = serde_json::from_str::<Obj>(line) else { continue };
+            let at = match row.get("timestamp") {
+                None | Some(Value::Null) => None,
+                Some(v) => parse_date(&js_string(v)),
+            }
+            .unwrap_or(0);
+            let Some(content) = row.get("message").and_then(|m| m.get("content")).and_then(Value::as_array) else { continue };
+            for b in content {
+                let Some(b) = b.as_object() else { continue };
+                if is_type(b, "tool_use") && matches!(str_of(b, "name"), Some("Agent" | "Task")) {
+                    let Some(id) = str_of(b, "id").filter(|id| !id.is_empty()) else { continue };
+                    let input = b.get("input").and_then(Value::as_object);
+                    let kind = js_string_coalesce(input, &["subagent_type"]);
+                    index.insert(id.to_owned(), agents.len());
+                    agents.push(SubAgent {
+                        id: id.to_owned(),
+                        kind: if kind.is_empty() { "general-purpose".into() } else { kind },
+                        description: js_string_coalesce(input, &["description"]),
+                        status: "running".into(),
+                        started_at: at,
+                        ended_at: None,
+                    });
+                } else if is_type(b, "tool_result")
+                    && let Some(&i) = str_of(b, "tool_use_id").and_then(|id| index.get(id))
+                {
+                    let failed = truthy(b.get("is_error"));
+                    agents[i].status = if failed { "failed" } else { "completed" }.into();
+                    agents[i].ended_at = Some(at);
+                }
+            }
+        }
+    }
+}
+
+static SUBAGENT_SCANS: ScanCache<SubAgentScan> = LazyLock::new(Default::default);
+
+/// The sub-agents a chat's Claude started, oldest first.
+fn session_subagents(session_id: &str) -> Vec<SubAgent> {
+    scan(&SUBAGENT_SCANS, session_id, SubAgentScan::feed, |s| s.agents.clone()).unwrap_or_default()
 }
 
 /* ---------------- dates ---------------- */

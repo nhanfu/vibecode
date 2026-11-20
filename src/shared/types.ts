@@ -238,3 +238,15 @@ export interface ChatTask {
   /** the end of its output */
   output?: string
 }
+
+/** A sub-agent a chat started with the Agent tool. */
+export interface SubAgent {
+  id: string
+  /** the agent type: general-purpose, Explore, a plugin's agent… */
+  kind: string
+  description: string
+  /** running, completed or failed */
+  status: string
+  startedAt: number
+  endedAt?: number
+}

@@ -65,6 +65,7 @@ pub fn run() {
             sessions::sessions_images,
             sessions::sessions_context,
             sessions::sessions_tasks,
+            sessions::sessions_subagents,
             // SQL Server
             mssql::db_list,
             mssql::db_get,

@@ -58,10 +58,15 @@ the agent you are talking to, named after it: "Claude Code", "Codex"…) are dro
 bar. Each one floats: hovering its button shows it, a click (or its key) keeps it open, a second click
 or a click elsewhere closes it.
 
-**Double-click** a button (or the pin in the drop-down's header) to pin it: pinned drop-downs sit side
+**Double-click** a button (or right-click it → Pin) to pin it: pinned drop-downs sit side
 by side in a horizontal stack and stay there; the last one (the chat, when pinned) takes the room
 left. Double-click again to float it again. Agent starts pinned. **Drag the buttons** left and right
-to reorder the stack; the order and the pins are remembered. Drag a drop-down's right edge to resize it.
+to reorder the stack (or right-click → Move left / right); the order and the pins are remembered.
+
+On the left of the chat, the Agent drop-down lists every coding agent (installed or not, with its
+install command; the star marks the one a plain New chat uses; `+` starts a chat with it) and the
+chats running now by agent, to switch to, restart or close. Hide it with its button; a thin rail
+brings it back. Drag a drop-down's right edge to resize it.
 
 ## Claude history
 

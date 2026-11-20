@@ -12,6 +12,7 @@ import type {
   AgentInfo,
   AppSettings,
   ChatTask,
+  SubAgent,
   ClaudeInfo,
   DbColumn,
   DbConnection,
@@ -132,6 +133,8 @@ export const api = {
     images: (sessionId: string, since?: number): Promise<{ version: number; images: string[] | null }> => invoke('sessions_images', { sessionId, since }),
     context: (sessionId: string): Promise<{ used: number; model: string } | null> => invoke('sessions_context', { sessionId }),
     tasks: (sessionId: string): Promise<ChatTask[]> => invoke('sessions_tasks', { sessionId }),
+    /** the sub-agents a chat started (Agent tool), oldest first */
+    subagents: (sessionId: string): Promise<SubAgent[]> => invoke('sessions_subagents', { sessionId }),
     /** ids of the sessions whose transcript changed (empty: only project folders came or went) */
     onChanged: (cb: (ids: string[]) => void): Off => on('sessions:changed', cb),
     /** a chat's Claude Code reported the session it writes to (on each prompt: it changes on /clear, forks…) */
