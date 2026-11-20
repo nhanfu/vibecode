@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, Puzzle, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
@@ -27,6 +27,7 @@ import { Sidebar } from './Sidebar'
 import { CodePanel, DbPanel, WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
+import { PluginManager } from './PluginManager'
 
 /*
  * The title-bar drop-downs as a horizontal stack (store.ts PanelId). A drop-down floats under its
@@ -57,6 +58,7 @@ const PANELS: Record<StaticPanelId, PanelMeta> = {
   code: { label: 'Source code', icon: Code2, command: 'viewCode', size: { key: 'vibe.centerWidth', initial: () => Math.round(window.innerWidth * 0.55), min: 360 } },
   web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
   db: { label: 'Database', icon: Database, command: 'viewDb', size: { key: 'vibe.dbWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 360 } },
+  plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
   agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
 }
 
@@ -545,6 +547,8 @@ function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.
       return <WebPanel />
     case 'db':
       return <DbPanel />
+    case 'plugins':
+      return <PluginManager />
   }
 }
 

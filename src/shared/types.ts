@@ -265,4 +265,35 @@ export interface PluginInfo {
   available: boolean
   /** brings an MCP server to every chat */
   mcp: boolean
+  mcpName: string | null
+  /** bundled with the app, installed by the user, or from $VIBE_PLUGINS_DIR */
+  source: 'bundled' | 'user' | 'dev'
+  /** hides a copy of the same id found in another folder */
+  overrides: boolean
+  enabled: boolean
+  hasSidecar: boolean
+  /** starts with the app */
+  autostart: boolean
+  status: 'running' | 'starting' | 'stopped' | 'error' | 'disabled' | 'unavailable' | 'ready'
+  /** why it is unavailable or failed */
+  error: string | null
+  port: number | null
+  platforms: string[]
+}
+
+/** A plugin on offer in the registry's index.json. */
+export interface PluginOffer {
+  id: string
+  name: string
+  version: string
+  description: string
+  license: string
+  homepage: string
+  /** the .zip / .tar.gz to install from */
+  url: string
+  sha256: string | null
+  minAppVersion: string
+  platforms: string[]
+  /** works on this system and app version */
+  compatible: boolean
 }

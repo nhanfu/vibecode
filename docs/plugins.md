@@ -31,9 +31,15 @@ build script (`plugins/dbx/`).
     "url": "/",
     "autostart": true
   },
-  "mcp": { "name": "vibe-dbx", "path": "/mcp", "bearer": true }
+  "mcp": { "name": "vibe-dbx", "path": "/mcp", "bearer": true },
+  "minAppVersion": "0.2.0",
+  "platforms": ["linux", "windows", "macos"]
 }
 ```
+
+`id` is lowercase letters, digits, `-` and `_`. `minAppVersion` and `platforms` are optional: a plugin that
+needs a newer app, or has no build for this system, is listed as not available (and refused when installed).
+The sidecar `command` must stay inside the plugin's folder.
 
 - **`sidecar`** — a program the app starts on a free `127.0.0.1` port with a random token, waits for
   (`health` answers 2xx), and stops when the app closes. `command` is relative to the plugin's
@@ -48,15 +54,65 @@ build script (`plugins/dbx/`).
 
 A plugin whose sidecar program is missing is listed as not available and ignored.
 
+## The Plugins panel
+
+A title-bar button (Ctrl+Shift+X, or the command *Show / hide Plugins*) opens the manager:
+
+- **Installed**: every plugin found, with its status (running, starting, stopped, failed, off, not
+  available), **Open**, **Start / Stop / Restart**, **Turn off / on**, **Logs** (the last 1000 lines the
+  sidecar printed), **Details** (license, homepage, MCP server, port, *Start with the app*) and
+  **Remove** (only for plugins you installed; shipped ones can only be turned off, and removing asks
+  whether to delete the plugin's data folder too). A plugin that does not replace a built-in panel opens
+  its page inside the manager.
+- **Browse**: the plugins of a registry, with Install and Update (when the registry has a newer version).
+- **Install bar**: a folder, a `.zip` / `.tar.gz` file, or an https link to one (with an optional SHA-256
+  the download is checked against). The archive may have `plugin.json` at its top or one folder down.
+
+Installing copies the plugin into `<userData>/plugins/<id>/`, replacing (and first stopping) an earlier
+install. It always asks first: a plugin is a program that runs with your permissions. A download without a
+checksum is allowed but flagged as unverified.
+
+Settings (turned off, autostart, the registry address) are in `<userData>/plugin-settings.json`.
+
+### The registry
+
+An `index.json` served over https. The default is `plugins/index.json` of this repository (raw GitHub);
+*change* in Browse points the app at another one.
+
+```json
+{
+  "plugins": [
+    {
+      "id": "example",
+      "name": "Example",
+      "version": "1.2.0",
+      "description": "…",
+      "license": "MIT",
+      "homepage": "https://…",
+      "url": "https://…/example-1.2.0-linux.tar.gz",
+      "sha256": "…hex…",
+      "minAppVersion": "0.2.0",
+      "platforms": ["linux"]
+    }
+  ]
+}
+```
+
+Archives are per system: list one entry per platform build (same `id`, different `platforms` and `url`);
+the manager only offers an entry that fits this system.
+
 ## Code
 
-- `src-tauri/src/plugins.rs`: discovery, the sidecar supervisor, `plugin_list` and `plugin_start`.
+- `src-tauri/src/plugins.rs`: discovery, the sidecar supervisor (status, logs), install / uninstall,
+  the registry, and the commands `plugin_list`, `plugin_start`, `plugin_stop`, `plugin_restart`,
+  `plugin_set`, `plugin_logs`, `plugin_install`, `plugin_uninstall`, `plugin_registry`.
 - `src-tauri/src/mcp.rs`: adds each plugin's MCP server to a chat's config.
-- `src/renderer/src/components/PluginPane.tsx`: the frame; `DbPanel` in `Editor.tsx` picks the plugin
-  that replaces `db`.
+- `src/renderer/src/components/PluginManager.tsx`: the Plugins panel.
+- `src/renderer/src/components/PluginPane.tsx`: the frame; `DbPanel` in `Editor.tsx` picks the enabled
+  plugin that replaces `db`.
 
 ## Not yet
 
-A panel of its own (a new title-bar button) for a plugin that replaces nothing, a plugin manager UI
-(install, remove, update), and plugins that run code in the renderer. The manifest is the contract
-those will extend; nothing in it needs to change for them.
+A title-bar button of its own for a plugin that replaces nothing (it opens inside the manager for now),
+signed registries (only an optional SHA-256 today), automatic update checks, and plugins that run code in
+the renderer. The manifest is the contract those will extend; nothing in it needs to change for them.

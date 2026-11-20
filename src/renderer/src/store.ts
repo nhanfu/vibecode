@@ -112,11 +112,11 @@ export interface ChatBrowser {
  * double-click pins it into the horizontal stack, where it stays. Dragging the buttons reorders the
  * stack. Agent starts pinned, so the chat is on screen.
  */
-export type StaticPanelId = 'project' | 'code' | 'web' | 'db' | 'agents'
+export type StaticPanelId = 'project' | 'code' | 'web' | 'db' | 'plugins' | 'agents'
 /** A web tab torn off the Web drop-down: its own button and panel, for as long as the tab lives. */
 export type PagePanelId = `page:${string}`
 export type PanelId = StaticPanelId | PagePanelId
-export const PANEL_IDS: StaticPanelId[] = ['project', 'code', 'web', 'db', 'agents']
+export const PANEL_IDS: StaticPanelId[] = ['project', 'code', 'web', 'db', 'plugins', 'agents']
 export const isPage = (id: PanelId): id is PagePanelId => id.startsWith('page:')
 export const pageTabId = (id: PagePanelId): string => id.slice(5)
 /** The torn-off tab behind a page panel, with the browser key (chat) it belongs to. */

@@ -43,7 +43,7 @@ export function DbPanel(): React.JSX.Element {
     if (shown) setSeen(true)
   }, [shown])
   // a plugin can take the Database panel over (DBX); the built-in SQL Server panel stays one click away
-  const plugin = useStore((s) => s.plugins.find((p) => p.available && p.panel?.replaces === 'db'))
+  const plugin = useStore((s) => s.plugins.find((p) => p.available && p.enabled && p.panel?.replaces === 'db'))
   const [pick, setPick] = useState<'plugin' | 'builtin' | null>(() => {
     try {
       const v = localStorage.getItem('vibe.db.engine')

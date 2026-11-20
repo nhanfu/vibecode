@@ -32,7 +32,8 @@ import type {
   WebSuggestion,
   WindowMode,
   WindowState,
-  PluginInfo
+  PluginInfo,
+  PluginOffer
 } from '../../shared/types'
 
 type Off = () => void
@@ -99,7 +100,18 @@ export const api = {
   plugins: {
     list: (): Promise<PluginInfo[]> => invoke('plugin_list'),
     /** starts the plugin's sidecar if needed; the address of its page */
-    start: (id: string): Promise<{ url: string }> => invoke('plugin_start', { id })
+    start: (id: string): Promise<{ url: string }> => invoke('plugin_start', { id }),
+    stop: (id: string): Promise<void> => invoke('plugin_stop', { id }),
+    restart: (id: string): Promise<void> => invoke('plugin_restart', { id }),
+    /** turn on / off, or choose whether it starts with the app */
+    set: (id: string, patch: { enabled?: boolean; autostart?: boolean }): Promise<void> => invoke('plugin_set', { id, ...patch }),
+    logs: (id: string): Promise<string[]> => invoke('plugin_logs', { id }),
+    /** from a folder, a .zip / .tar.gz, or an https link to one; the plugin's id */
+    install: (source: string, sha256?: string | null): Promise<string> => invoke('plugin_install', { source, sha256: sha256 ?? null }),
+    uninstall: (id: string, purge: boolean): Promise<void> => invoke('plugin_uninstall', { id, purge }),
+    registry: (): Promise<{ url: string; entries: PluginOffer[] }> => invoke('plugin_registry'),
+    /** the registry address in use (`set` changes it; empty: back to the default) */
+    registryUrl: (set?: string): Promise<string> => invoke('plugin_registry_url', { set })
   },
   claude: {
     detect: (): Promise<ClaudeInfo> => invoke('claude_detect'),

@@ -52,7 +52,7 @@ const showCode = (codeSide: 'files' | 'changes'): void => {
   showPanel('code')
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', agents: 'Agent (chat)' }
+const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', plugins: 'Plugins', agents: 'Agent (chat)' }
 
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },
@@ -105,6 +105,7 @@ export const COMMANDS: Command[] = [
     run: () => (panelShown(st(), 'web') ? togglePanel('web') : openBrowser())
   },
   { id: 'viewDb', label: 'Show / hide Database', run: () => togglePanel('db') },
+  { id: 'viewPlugins', label: 'Show / hide Plugins', run: () => togglePanel('plugins') },
   // the chat: showing it puts the cursor in it, so you can type straight away
   { id: 'viewAgents', label: 'Show / hide Agent (the chat)', run: () => toggleChatPanel() },
   ...PANEL_IDS.map((id) => ({ id: `pin.${id}`, label: `Pin / unpin ${PANEL_LABELS[id]} in the stack`, run: () => togglePin(id) })),
@@ -198,6 +199,7 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+shift+w', command: 'viewWeb' },
   { key: 'ctrl+shift+d', command: 'viewDb' },
   { key: 'ctrl+shift+a', command: 'viewAgents' },
+  { key: 'ctrl+shift+x', command: 'viewPlugins' },
   { key: 'ctrl+1', command: 'viewCode' },
   { key: 'ctrl+2', command: 'viewWeb' },
   { key: 'ctrl+3', command: 'viewDb' },
@@ -237,9 +239,9 @@ const CONTEXT_HELP = [
   'inputFocus         editorFocus || textInputFocus',
   'hasFolder          a project folder is open',
   'fileDirty          the open file has unsaved changes',
-  "floating           the drop-down floating now: 'project' | 'code' | 'web' | 'db' | 'agents', '' if none",
-  'projectShown codeShown webShown dbShown agentsShown        that drop-down is on screen (pinned or floating)',
-  'projectPinned codePinned webPinned dbPinned agentsPinned   … pinned in the stack'
+  "floating           the drop-down floating now: 'project' | 'code' | 'web' | 'db' | 'plugins' | 'agents', '' if none",
+  'projectShown codeShown webShown dbShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
+  'projectPinned codePinned webPinned dbPinned pluginsPinned agentsPinned   … pinned in the stack'
 ]
 
 let bindings: Binding[] = []
