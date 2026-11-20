@@ -131,7 +131,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
             </button>
           </div>
         ))}
-        <button className="icon-btn tab-strip-btn" title="New tab" onClick={() => newBrowserTab(chatKey)}>
+        <button className="icon-btn tab-strip-btn" title="New tab" onClick={() => newBrowserTab(chatKey, undefined, false)}>
           <Plus size={15} />
         </button>
         <div className="tab-strip-fill" />

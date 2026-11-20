@@ -35,7 +35,7 @@ palette → *Open keyboard shortcuts*.
 | Ctrl+Shift+N | New chat |
 | Alt+1…9 · Ctrl+Alt+← / → | Switch chat · previous / next chat |
 | Ctrl+Shift+L | Put the cursor in the open chat |
-| Ctrl+B · Ctrl+E · Ctrl+Shift+W · Ctrl+Shift+D · Ctrl+Shift+A (Ctrl+1…4) | Show / hide Project · Source code · Web · Database · Agents |
+| Ctrl+B · Ctrl+E · Ctrl+Shift+W · Ctrl+Shift+D · Ctrl+Shift+A (Ctrl+1…4) | Show / hide Project · Source code · Web · Database · Agent (the chat) |
 | Ctrl+Shift+E / G / C | Explorer / Changes / Chats |
 | Ctrl+` · Ctrl+J · Ctrl+Shift+` | Toggle terminal · toggle panel · new terminal |
 | Ctrl+S · Ctrl+W (Ctrl+F4) · Ctrl+Shift+T | Save · close editor tab · reopen closed tab |
@@ -51,19 +51,17 @@ F5 / Ctrl+R never reload the app window (that would blank every chat).
 
 Click **Guake** in the title bar (or use the tray icon menu). VIBE CODE then lives at the top edge of the screen under the mouse: the global hotkey slides it down over whatever app you're in and back up again. The tray menu sets height, opacity and "hide when focus is lost". Dragging the bottom edge changes the height. The hotkey is `hotkey` in `%APPDATA%\TINJS Studio\settings.json` (F12 can't be used: Windows reserves it for debuggers).
 
-## The stack: Project, Source code, Web, Database, Agents
+## The stack: Project, Source code, Web, Database, Agent
 
-The chat fills the window. **Project** (chats and folders), **Source code**, **Web**, **Database** and
-**Agents** are drop-downs in the title bar. Each one floats over the chat: hovering its button shows
-it, a click (or its key) keeps it open, a second click or a click elsewhere closes it.
+**Project** (chats and folders), **Source code**, **Web**, **Database** and **Agent** (the chat with
+the agent you are talking to, named after it: "Claude Code", "Codex"…) are drop-downs in the title
+bar. Each one floats: hovering its button shows it, a click (or its key) keeps it open, a second click
+or a click elsewhere closes it.
 
 **Double-click** a button (or the pin in the drop-down's header) to pin it: pinned drop-downs sit side
-by side beside the chat, in a horizontal stack, and stay there. Double-click again to float it again.
-**Drag the buttons** left and right to reorder the stack; the order and the pins are remembered.
-Drag a drop-down's right edge to resize it.
-
-**Agents** lists every coding agent the app can run (installed or not, with its install command),
-which one a plain New chat uses (the star), and the chats running now, to switch to, restart or close.
+by side in a horizontal stack and stay there; the last one (the chat, when pinned) takes the room
+left. Double-click again to float it again. Agent starts pinned. **Drag the buttons** left and right
+to reorder the stack; the order and the pins are remembered. Drag a drop-down's right edge to resize it.
 
 ## Claude history
 

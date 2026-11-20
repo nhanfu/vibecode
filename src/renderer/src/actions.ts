@@ -537,7 +537,7 @@ export function newChat(opts: NewChatOpts = {}): void {
   if (opts.draft) pendingDraft.set(chat.id, opts.draft)
   if (blank) blankChats.add(chat.id)
   createTerm({ id: chat.id, cwd: chat.cwd, kind: 'claude', claudeArgs: args })
-  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id) }))
+  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id), ...openPatch('agents') }))
 }
 
 /**
@@ -565,7 +565,7 @@ function newAgentChat(cwd: string, agentId: AgentId, opts: NewChatOpts, blank: b
   }
   if (blank) blankChats.add(chat.id)
   createTerm({ id: chat.id, cwd, kind: 'claude', agent: agentId, claudeArgs: args })
-  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id) }))
+  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id), ...openPatch('agents') }))
 }
 
 const agentFlags = (agentId: AgentId | undefined, permissionMode?: string): string[] =>
@@ -644,7 +644,8 @@ export function setChatPermission(id: string, mode: string): void {
 
 export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
-  useStore.setState({ activeChatId: id })
+  // the chat comes on screen: the Agent drop-down floats open unless it is pinned
+  useStore.setState({ activeChatId: id, ...openPatch('agents') })
   if (chat?.attention) st().patchChat(id, { attention: false })
   // Explorer / Changes follow the chat you're looking at.
   if (chat) {
@@ -786,12 +787,15 @@ export function openBrowser(url?: string): void {
   showPanel('web')
 }
 
-/** A new tab in a chat's browser (reuses the open tab when it's still blank), and show it. */
-export function newBrowserTab(key: string, url?: string): void {
+/**
+ * A new tab in a chat's browser, and show it. Opening a URL (the app, Claude) reuses the open tab
+ * while it is still blank; the "+" button (`reuseBlank` false) always adds one, like a browser.
+ */
+export function newBrowserTab(key: string, url?: string, reuseBlank = true): void {
   useStore.setState((s) => {
     const b = s.browsers[key]
     const cur = b?.tabs.find((t) => t.id === b.active)
-    if (b && cur && cur.url === HOME_URL) {
+    if (reuseBlank && b && cur && cur.url === HOME_URL) {
       if (!url) return openPatch('web')
       return { ...openPatch('web'), browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t === cur ? { ...t, url } : t)) } } }
     }

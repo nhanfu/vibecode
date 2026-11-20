@@ -52,7 +52,7 @@ const showCode = (codeSide: 'files' | 'changes'): void => {
   showPanel('code')
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<PanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', agents: 'Agents' }
+const PANEL_LABELS: Record<PanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', agents: 'Agent (chat)' }
 
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },
@@ -104,7 +104,8 @@ export const COMMANDS: Command[] = [
     run: () => (panelShown(st(), 'web') ? togglePanel('web') : openBrowser())
   },
   { id: 'viewDb', label: 'Show / hide Database', run: () => togglePanel('db') },
-  { id: 'viewAgents', label: 'Show / hide Agents', run: () => togglePanel('agents') },
+  // the chat: showing it puts the cursor in it, so you can type straight away
+  { id: 'viewAgents', label: 'Show / hide Agent (the chat)', run: () => toggleChatPanel() },
   ...PANEL_IDS.map((id) => ({ id: `pin.${id}`, label: `Pin / unpin ${PANEL_LABELS[id]} in the stack`, run: () => togglePin(id) })),
   { id: 'closeFloat', label: 'Close the floating drop-down', run: () => closeFloat() },
 
@@ -121,9 +122,19 @@ export const COMMANDS: Command[] = [
 
 const byId = new Map(COMMANDS.map((c) => [c.id, c]))
 
+/** The cursor into the open chat, bringing the Agent drop-down up when it floats. */
 function focusActiveChat(): void {
   const id = st().activeChatId
-  if (id) focusTerm(id)
+  if (!id) return
+  showPanel('agents')
+  focusTerm(id)
+}
+
+/** Agent's key: pinned or opening, the cursor goes into the chat; floating open, it closes. */
+function toggleChatPanel(): void {
+  const s = st()
+  if (!s.pinned.includes('agents') && floating(s) === 'agents') return closeFloat()
+  focusActiveChat()
 }
 
 function saveActive(): void {

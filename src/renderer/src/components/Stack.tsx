@@ -17,7 +17,7 @@ import { openFolder } from '../actions'
 import { COMMANDS } from '../shortcuts'
 import { Sidebar } from './Sidebar'
 import { CodePanel, DbPanel, WebPanel } from './Editor'
-import { AgentsPanel } from './Agents'
+import { agentDef } from '../../../shared/agents'
 
 /*
  * The title-bar drop-downs as a horizontal stack (store.ts PanelId). A drop-down floats under its
@@ -47,7 +47,7 @@ const PANELS: Record<PanelId, PanelMeta> = {
   code: { label: 'Source code', icon: Code2, command: 'viewCode', size: { key: 'vibe.centerWidth', initial: () => Math.round(window.innerWidth * 0.55), min: 360 } },
   web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
   db: { label: 'Database', icon: Database, command: 'viewDb', size: { key: 'vibe.dbWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 360 } },
-  agents: { label: 'Agents', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentsWidth', initial: () => 320, min: 240 } }
+  agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
 }
 
 const keysOf = (id: PanelId): string | undefined => COMMANDS.find((c) => c.id === PANELS[id].command)?.keys
@@ -116,6 +116,8 @@ function StackButton(props: {
   const shown = useStore((s) => floating(s) === id)
   const files = useStore((s) => (id === 'code' ? s.tabs.length : 0))
   const running = useStore((s) => (id === 'agents' ? s.chats.filter((c) => c.status === 'working').length : 0))
+  // Agent: named after the agent of the chat you are in ("Claude Code", "Codex"…)
+  const agent = useStore((s) => (id === 'agents' ? agentDef(s.chats.find((c) => c.id === s.activeChatId)?.agent).label : ''))
   const [menu, setMenu] = useState(false)
   const clickTimer = useRef<number | undefined>(undefined)
   // a drag ends with a click on the button: that one is not a click
@@ -177,7 +179,7 @@ function StackButton(props: {
   }
 
   const Icon = meta.icon
-  const label = id === 'project' && root ? basename(root) : meta.label
+  const label = id === 'project' && root ? basename(root) : id === 'agents' && agent ? agent : meta.label
   const keys = keysOf(id)
   const what = id === 'project' ? 'click for folders' : 'click to open'
   return (
@@ -286,27 +288,34 @@ function useFloatTracking(): void {
 }
 
 /**
- * The workbench: pinned drop-downs side by side in the title bar's order, then the chat (`children`)
- * taking the rest; floating ones over it, under their button. Every drop-down is mounted once, in a
- * fixed place, whatever it does: pinning, floating or reordering only changes its CSS, so editors,
- * pages and scroll positions survive.
+ * The workbench: pinned drop-downs side by side in the title bar's order, the last one (the chat,
+ * when it is pinned) stretched over the rest; floating ones over them, under their button. Every
+ * drop-down is mounted once, in a fixed place, whatever it does: pinning, floating or reordering
+ * only changes its CSS, so the chat's terminals, editors, pages and scroll positions survive.
+ * `children` is the chat, shown in the Agent drop-down.
  */
 export function StackLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   useFloatTracking()
   const shown = useStore((s) => floating(s) !== null)
+  const pinned = useStore((s) => s.pinned)
+  const order = useStore((s) => s.panelOrder)
+  // the one that takes the room left: the chat if pinned, else the last pinned one
+  const fill = pinned.includes('agents') ? 'agents' : [...order].reverse().find((p) => pinned.includes(p))
   return (
     <div className="workbench stack">
       {PANEL_IDS.map((id) => (
-        <StackPanel key={id} id={id} />
+        <StackPanel key={id} id={id} fill={id === fill}>
+          {id === 'agents' ? children : <PanelBody id={id} />}
+        </StackPanel>
       ))}
-      <div className="stack-main">{children}</div>
-      {/* dims the chat behind a floating drop-down; a click on it closes it (useFloatTracking) */}
+      {!fill && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
+      {/* dims what is behind a floating drop-down; a click on it closes it (useFloatTracking) */}
       <div className={`stack-backdrop${shown ? ' shown' : ''}`} />
     </div>
   )
 }
 
-function StackPanel({ id }: { id: PanelId }): React.JSX.Element {
+function StackPanel({ id, fill, children }: { id: PanelId; fill: boolean; children: React.ReactNode }): React.JSX.Element {
   const meta = PANELS[id]
   const pinned = useStore((s) => s.pinned.includes(id))
   const shown = useStore((s) => floating(s) === id)
@@ -335,7 +344,7 @@ function StackPanel({ id }: { id: PanelId }): React.JSX.Element {
   return (
     <div
       ref={ref}
-      className={`stack-panel ${pinned ? 'pinned' : 'floating'}${shown ? ' shown' : ''}`}
+      className={`stack-panel ${pinned ? 'pinned' : 'floating'}${shown ? ' shown' : ''}${pinned && fill ? ' fill' : ''}`}
       data-panel={id}
       style={pinned ? { order, flexBasis: width, minWidth: meta.size.min } : { width, left }}
       onMouseEnter={() => !pinned && shown && peekPanel(id)}
@@ -354,15 +363,14 @@ function StackPanel({ id }: { id: PanelId }): React.JSX.Element {
           </button>
         )}
       </div>
-      <div className="stack-body">
-        <PanelBody id={id} />
-      </div>
-      <div className="sidebar-resize" title="Drag to resize · double-click to reset" onPointerDown={startResize} onDoubleClick={resetWidth} />
+      <div className="stack-body">{children}</div>
+      {/* the stretched one has no width of its own to drag */}
+      {!(pinned && fill) && <div className="sidebar-resize" title="Drag to resize · double-click to reset" onPointerDown={startResize} onDoubleClick={resetWidth} />}
     </div>
   )
 }
 
-function PanelBody({ id }: { id: PanelId }): React.JSX.Element {
+function PanelBody({ id }: { id: Exclude<PanelId, 'agents'> }): React.JSX.Element {
   switch (id) {
     case 'project':
       return <Sidebar />
@@ -372,8 +380,6 @@ function PanelBody({ id }: { id: PanelId }): React.JSX.Element {
       return <WebPanel />
     case 'db':
       return <DbPanel />
-    case 'agents':
-      return <AgentsPanel />
   }
 }
 

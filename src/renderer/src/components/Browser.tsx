@@ -273,6 +273,9 @@ export function BrowserTab({ chatKey, tabId, active, onScreen }: { chatKey: stri
     setSugg([])
     setHome(to === HOME_URL)
     shown.current = to
+    // the tab is no longer blank as of now, not only once the page reports in (a "+" meanwhile
+    // reused this tab instead of opening a second one)
+    setBrowserUrl(chatKey, to, tabId)
     void window.api.browser.navigate(label, to).catch(() => {})
   }
 

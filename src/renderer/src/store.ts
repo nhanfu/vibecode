@@ -103,15 +103,17 @@ export interface ChatBrowser {
 }
 
 /**
- * The title-bar drop-downs: Project (chats), Source code, Web, Database, Agents. Each one floats
- * over the chat while hovered or opened (a click, its key); a double-click pins it into the
- * horizontal stack beside the chat, where it stays. Dragging the buttons reorders the stack.
+ * The title-bar drop-downs: Project (chats), Source code, Web, Database and Agent (the chat with the
+ * agent you are talking to). Each one floats while hovered or opened (a click, its key); a
+ * double-click pins it into the horizontal stack, where it stays. Dragging the buttons reorders the
+ * stack. Agent starts pinned, so the chat is on screen.
  */
 export type PanelId = 'project' | 'code' | 'web' | 'db' | 'agents'
 export const PANEL_IDS: PanelId[] = ['project', 'code', 'web', 'db', 'agents']
 
 const ORDER_KEY = 'vibe.panelOrder'
-const PINNED_KEY = 'vibe.pinnedPanels'
+// (a new key: pins saved before Agent became the chat would leave the chat floating)
+const PINNED_KEY = 'vibe.stackPins'
 
 function loadIds(key: string, fallback: PanelId[]): PanelId[] {
   try {
@@ -245,7 +247,7 @@ export const useStore = create<State>((set) => ({
 
   sidebarView: 'chats',
   panelOrder: loadOrder(),
-  pinned: loadIds(PINNED_KEY, []),
+  pinned: loadIds(PINNED_KEY, ['agents']),
   floatOpen: null,
   peek: null,
   bottomOpen: false,
