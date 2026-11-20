@@ -92,6 +92,16 @@ function loadExpanded(): Set<string> {
   }
 }
 
+// Projects removed from this list. Only the sidebar entry goes; Claude Code's history stays on disk.
+const HIDDEN_KEY = 'tinjs.hiddenProjects'
+function loadHidden(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]'))
+  } catch {
+    return new Set()
+  }
+}
+
 const PAGE = 8
 
 const RECENT_MAX = 5
@@ -156,6 +166,7 @@ function ProjectsTree(): React.JSX.Element {
   const activeChatId = useStore((s) => s.activeChatId)
   const [expanded, setExpanded] = useState<Set<string>>(loadExpanded)
   const [more, setMore] = useState<Set<string>>(new Set())
+  const [hidden, setHidden] = useState<Set<string>>(loadHidden)
   const [q, setQ] = useState('')
 
   // the project you're in starts open
@@ -164,6 +175,14 @@ function ProjectsTree(): React.JSX.Element {
     const key = normKey(root)
     setExpanded((e) => (e.has(key) ? e : new Set(e).add(key)))
   }, [root])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]))
+    } catch {
+      /* storage unavailable */
+    }
+  }, [hidden])
 
   useEffect(() => {
     try {
@@ -187,20 +206,21 @@ function ProjectsTree(): React.JSX.Element {
     if (allProjects.some((g) => slashKey(g.key) === slashKey(c.cwd))) continue
     allProjects.unshift({ key: normKey(c.cwd), cwd: c.cwd, name: basename(c.cwd), updated: c.createdAt, sessions: [] })
   }
+  const shownProjects = allProjects.filter((g) => !hidden.has(g.key))
   const needle = q.trim().toLowerCase()
-  const recent = useMemo(() => recentItems(projects, chats), [projects, chats])
+  const recent = useMemo(() => recentItems(projects.filter((g) => !hidden.has(g.key)), chats), [projects, chats, hidden])
   const agentRows = (g: ProjectGroup): typeof agentChats =>
     agentChats.filter(
       (c) => slashKey(c.cwd) === slashKey(g.key) && (!needle || g.name.toLowerCase().includes(needle) || c.title.toLowerCase().includes(needle))
     )
   const visible = needle
-    ? allProjects
+    ? shownProjects
         .map((g) => ({
           ...g,
           sessions: g.name.toLowerCase().includes(needle) ? g.sessions : g.sessions.filter((s) => s.title.toLowerCase().includes(needle))
         }))
         .filter((g) => g.sessions.length > 0 || agentRows(g).length > 0)
-    : allProjects
+    : shownProjects
 
   const flip = (set: (f: (s: Set<string>) => Set<string>) => void, key: string): void =>
     set((e) => {
@@ -266,6 +286,16 @@ function ProjectsTree(): React.JSX.Element {
               <ChevronRight size={13} className={`proj-chev${open ? ' open' : ''}`} />
               {liveCount > 0 && <span className="proj-live" title={`${liveCount} open`} />}
               <span className="proj-spacer" />
+              <button
+                className="icon-btn tiny proj-add"
+                title="Remove from this list (Claude Code's history is kept)"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setHidden((h) => new Set(h).add(g.key))
+                }}
+              >
+                <X size={13} />
+              </button>
               <NewChatMenu
                 className="icon-btn tiny proj-add"
                 size={14}
@@ -299,6 +329,12 @@ function ProjectsTree(): React.JSX.Element {
           </div>
         )
       })}
+
+      {hidden.size > 0 && !needle && (
+        <button className="sess-more" onClick={() => setHidden(new Set())}>
+          Show {hidden.size} removed project{hidden.size > 1 ? 's' : ''}
+        </button>
+      )}
     </div>
   )
 }
