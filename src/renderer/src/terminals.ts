@@ -502,6 +502,22 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
       if (!composing) ta.value = ''
     }, 0)
   }
+  /*
+   * Text the browser puts into the textarea with no event saying what it was: under WebKitGTK the
+   * space (or "." …) that ends a Unikey word arrives on the same keydown 229 as the commit, and only
+   * shows up in the textarea. After the keystroke settles, whatever is past `base` is that text.
+   */
+  const sweep = (base: string): void => {
+    const key = thisKey
+    setTimeout(() => {
+      if (composing || key !== thisKey) return
+      const v = ta.value
+      const extra = v.startsWith(base) ? v.slice(base.length) : ''
+      log('sweep', JSON.stringify(base), JSON.stringify(v))
+      if (extra) once(extra)
+      ta.value = ''
+    }, 0)
+  }
   const stop = (e: Event): void => e.stopImmediatePropagation()
 
   ta.addEventListener(
@@ -511,7 +527,10 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
       thisKey = []
       imeKey = composing || e.isComposing || e.keyCode === 229
       // keys the IME takes: xterm must not read the textarea for them
-      if (imeKey) stop(e)
+      if (imeKey) {
+        stop(e)
+        if (!composing && !e.isComposing) sweep(ta.value)
+      }
     },
     true
   )
@@ -560,7 +579,9 @@ function handleIme(ta: HTMLTextAreaElement, send: (data: string) => void): void 
       if (e.data) thisKey.push(e.data)
       composing = false
       sent = ''
-      clear()
+      // the textarea may already hold the key that ended the word: base stops after the word itself
+      const at = e.data ? ta.value.lastIndexOf(e.data) : -1
+      sweep(at < 0 ? ta.value : ta.value.slice(0, at + e.data.length))
     },
     true
   )
