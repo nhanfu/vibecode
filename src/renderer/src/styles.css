@@ -463,6 +463,32 @@ kbd {
   flex-direction: column;
   min-width: 0;
 }
+/* the sidebar floats over the workbench: Ctrl+B pins it, hovering the project button shows it */
+.workbench {
+  position: relative;
+}
+.sidebar-float {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(300px, 42%);
+  z-index: 40;
+  border-right: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateX(-10px);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.sidebar-float.shown {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s;
+}
 .section-header {
   height: 38px;
   flex: none;

@@ -259,7 +259,7 @@ interface Opt {
   hint?: string
 }
 
-const MODELS: Opt[] = [
+export const MODELS: Opt[] = [
   { value: '', label: 'Default', hint: "Claude Code's choice" },
   { value: 'claude-opus-5-5', label: 'Opus 5.5', hint: 'Most capable' },
   { value: 'claude-sonnet-5-5', label: 'Sonnet 5.5', hint: 'Fast, strong' },
@@ -424,7 +424,7 @@ function ContextBar({ chat }: { chat: Chat }): React.JSX.Element {
   )
 }
 
-function Picker(props: { title: string; options: Opt[]; value: string; warn?: boolean; onPick: (v: string) => void }): React.JSX.Element {
+export function Picker(props: { title: string; options: Opt[]; value: string; warn?: boolean; onPick: (v: string) => void }): React.JSX.Element {
   const { title, options, value, warn, onPick } = props
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)

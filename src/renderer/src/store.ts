@@ -56,7 +56,10 @@ interface State {
   themeResolved: 'light' | 'dark' | 'blue'
 
   sidebarView: SidebarView
+  /** the floating sidebar is pinned open (Ctrl+B) */
   sidebarOpen: boolean
+  /** the floating sidebar is shown while the pointer is on the project button or the sidebar (not saved) */
+  sidebarHover: boolean
   bottomOpen: boolean
   quickOpen: boolean
   /** what the palette starts with: '' files, '>' commands (Ctrl+Shift+P) */
@@ -97,6 +100,14 @@ export interface ChatBrowser {
   active: string
 }
 
+let peekTimer: number | undefined
+/** Show the floating sidebar while hovering the project button or the sidebar; hiding waits a moment so the pointer can cross the gap. */
+export function peekSidebar(on: boolean): void {
+  window.clearTimeout(peekTimer)
+  if (on) return useStore.setState({ sidebarHover: true })
+  peekTimer = window.setTimeout(() => useStore.setState({ sidebarHover: false }), 200)
+}
+
 export const useStore = create<State>((set) => ({
   root: null,
   recent: [],
@@ -117,7 +128,8 @@ export const useStore = create<State>((set) => ({
   themeResolved: 'dark',
 
   sidebarView: 'chats',
-  sidebarOpen: true,
+  sidebarOpen: false,
+  sidebarHover: false,
   bottomOpen: false,
   quickOpen: false,
   quickOpenQuery: '',

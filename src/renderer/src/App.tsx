@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
-import { useStore } from './store'
+import { peekSidebar, useStore } from './store'
 import { applyTheme, detectClaude, loadSessions, openFolder, refreshGit, showChatBrowser } from './actions'
 import { onGlobalKey } from './shortcuts'
 import { focusTerm } from './terminals'
@@ -64,12 +64,27 @@ export default function App(): React.JSX.Element {
   useBoot()
   useGlobalKeys()
   const root = useStore((s) => s.root)
-  const sidebarOpen = useStore((s) => s.sidebarOpen)
+  const sidebarShown = useStore((s) => s.sidebarOpen || s.sidebarHover)
   const bottomOpen = useStore((s) => s.bottomOpen)
+  // a click or focus outside the floating sidebar hides it (its own menus and the title-bar toggle don't count)
+  useEffect(() => {
+    if (!sidebarShown) return
+    const outside = (e: Event): void => {
+      const t = e.target as Element | null
+      if (t instanceof Element && t.closest('.sidebar-float, .menu, .ctx-menu, .sidebar-toggle')) return
+      useStore.setState({ sidebarOpen: false, sidebarHover: false })
+    }
+    window.addEventListener('mousedown', outside, true)
+    window.addEventListener('focusin', outside, true)
+    return () => {
+      window.removeEventListener('mousedown', outside, true)
+      window.removeEventListener('focusin', outside, true)
+    }
+  }, [sidebarShown])
   const quickOpen = useStore((s) => s.quickOpen)
   const dropdown = useStore((s) => s.win?.mode === 'dropdown')
-  // layouts are remembered per set of visible panels (sidebar / bottom panel can be toggled)
-  const layoutH = useDefaultLayout({ id: 'layout-h', panelIds: sidebarOpen ? ['sidebar', 'center', 'claude'] : ['center', 'claude'], storage: localStorage })
+  // layouts are remembered per set of visible panels (the bottom panel can be toggled; the sidebar floats over)
+  const layoutH = useDefaultLayout({ id: 'layout-h', panelIds: ['center', 'claude'], storage: localStorage })
   const layoutV = useDefaultLayout({ id: 'layout-v', panelIds: bottomOpen ? ['editor', 'bottom'] : ['editor'], storage: localStorage })
 
   return (
@@ -80,14 +95,6 @@ export default function App(): React.JSX.Element {
       ) : (
         <div className="workbench">
           <Group orientation="horizontal" className="panels" defaultLayout={layoutH.defaultLayout} onLayoutChanged={layoutH.onLayoutChanged}>
-            {sidebarOpen && (
-              <>
-                <Panel id="sidebar" defaultSize="19%" minSize="13%" maxSize="35%">
-                  <Sidebar />
-                </Panel>
-                <Handle dir="h" />
-              </>
-            )}
             <Panel id="center" defaultSize="45%" minSize="20%">
               <Group orientation="vertical" defaultLayout={layoutV.defaultLayout} onLayoutChanged={layoutV.onLayoutChanged}>
                 <Panel id="editor" defaultSize="68%" minSize="20%">
@@ -108,6 +115,13 @@ export default function App(): React.JSX.Element {
               <ClaudePanel />
             </Panel>
           </Group>
+          <div
+            className={`sidebar-float${sidebarShown ? ' shown' : ''}`}
+            onMouseEnter={() => peekSidebar(true)}
+            onMouseLeave={() => peekSidebar(false)}
+          >
+            <Sidebar />
+          </div>
         </div>
       )}
       <StatusBar />

@@ -42,7 +42,7 @@ impl Default for AppSettings {
             drop_opacity: 0.97,
             hide_on_blur: false,
             theme: "system".into(),
-            model: String::new(),
+            model: "claude-opus-5-5".into(),
             effort: String::new(),
             permission_mode: String::new(),
             see_through: false,

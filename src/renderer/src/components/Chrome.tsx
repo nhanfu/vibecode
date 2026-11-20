@@ -28,7 +28,7 @@ import {
   Moon,
   Sun
 } from 'lucide-react'
-import { basename, useStore, type SidebarView } from '../store'
+import { basename, peekSidebar, useStore, type SidebarView } from '../store'
 import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, toggleBottom, toggleTheme } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { languageOf } from '../fileModelsLite'
@@ -36,6 +36,7 @@ import { FileIcon, Logo } from './icons'
 import type { UsageLimit } from '../../../shared/types'
 import { revealIn } from '../scroll'
 import { COMMANDS, type Command } from '../shortcuts'
+import { MODELS, Picker } from './Claude'
 
 /* ================================ Title bar ================================ */
 
@@ -70,7 +71,7 @@ export function TitleBar(): React.JSX.Element {
         <Logo size={18} />
         <span className="app-name">VIBE <b>CODE</b></span>
         {root && (
-          <div className="folder-switch" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="folder-switch" onMouseDown={(e) => e.stopPropagation()} onMouseEnter={() => peekSidebar(true)} onMouseLeave={() => peekSidebar(false)}>
             <button className="folder-btn" onClick={() => setMenu(!menu)}>
               <FolderOpen size={13} />
               {basename(root)}
@@ -117,7 +118,7 @@ export function TitleBar(): React.JSX.Element {
         </button>
       )}
       <div className="titlebar-right">
-        <button className="icon-btn" title="Toggle sidebar (Ctrl+B)" onClick={() => useStore.setState((s) => ({ sidebarOpen: !s.sidebarOpen }))}>
+        <button className="icon-btn sidebar-toggle" title="Toggle sidebar (Ctrl+B)" onClick={() => useStore.setState((s) => ({ sidebarOpen: !s.sidebarOpen }))}>
           <PanelLeft size={15} />
         </button>
         <button className="icon-btn" title="Toggle terminal (Ctrl+`)" onClick={() => toggleBottom()}>
@@ -399,10 +400,28 @@ export function StatusBar(): React.JSX.Element {
       <div className="statusbar-right">
         {tab && <span className="sb-item">{languageOf(tab.path)}</span>}
         {tab && <span className="sb-item">UTF-8</span>}
+        <NewChatModelPicker />
         {claude && <AgentPicker />}
       </div>
     </div>
   )
+}
+
+/** Status-bar picker for the model every new Claude chat starts with (shown while Claude is the AI in use). */
+function NewChatModelPicker(): React.JSX.Element | null {
+  const saved = useStore((s) => s.settings?.model)
+  useStore((s) => s.preferredAgent)
+  useStore((s) => s.agents)
+  if (defaultAgent() !== 'claude') return null
+  const value = saved ?? 'claude-opus-5-5'
+  const onPick = (model: string): void => {
+    useStore.setState((s) => (s.settings ? { settings: { ...s.settings, model } } : s))
+    window.api.app
+      .setSettings({ model })
+      .then((settings) => useStore.setState({ settings }))
+      .catch(() => {})
+  }
+  return <Picker title="Model for new chats" options={MODELS} value={value} onPick={onPick} />
 }
 
 /** Status-bar "AI in use" picker — a plain New chat starts with the agent chosen here. */

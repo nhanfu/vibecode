@@ -499,8 +499,8 @@ export function newChat(opts: NewChatOpts = {}): void {
     sessionId = crypto.randomUUID()
     args = [...args, '--session-id', sessionId]
   }
-  // New chats start with the model last picked in this project (else in any chat), and the effort and
-  // permission mode last picked in any chat.
+  // New chats start with the model last picked in this project (else the default chosen in the status
+  // bar), and the effort and permission mode last picked in any chat.
   const model = rememberedModel(cwd)
   const effort = remembered(EFFORT_KEY, NEW_CHAT_DEFAULTS.effort)
   const permissionMode = remembered(PERMISSION_KEY, NEW_CHAT_DEFAULTS.permissionMode)
@@ -563,9 +563,13 @@ const NEW_CHAT_DEFAULTS = { model: 'claude-opus-5-5', effort: 'medium', permissi
 
 const MODEL_KEY = 'vibe.newChatModel'
 const projectModelKey = (cwd: string): string => `${MODEL_KEY}:${folderKey(cwd)}`
-/** The model last picked in this project, else the one last picked anywhere, else Opus 5.5. */
-const rememberedModel = (cwd: string): string | undefined =>
-  remembered(projectModelKey(cwd), remembered(MODEL_KEY, NEW_CHAT_DEFAULTS.model) ?? '')
+/** The default model for new chats, chosen in the status bar ('' = Claude Code's default). */
+function defaultModel(): string | undefined {
+  const m = st().settings?.model
+  return m === undefined ? NEW_CHAT_DEFAULTS.model : m || undefined
+}
+/** The model last picked in this project, else the status bar's default. */
+const rememberedModel = (cwd: string): string | undefined => remembered(projectModelKey(cwd), defaultModel() ?? '')
 const EFFORT_KEY = 'vibe.newChatEffort'
 const PERMISSION_KEY = 'vibe.newChatPermission'
 /** The value last picked in a chat's menu ('' = Claude Code's default), else the fallback. */
@@ -601,9 +605,9 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
 export function setChatModel(id: string, model: string): void {
   writeToTerm(id, `/model ${model || 'default'}\r`)
   st().patchChat(id, { model: model || undefined })
+  // new chats in this project start with it too (elsewhere: the status bar's default)
   const c = st().chats.find((x) => x.id === id)
   if (c) remember(projectModelKey(c.cwd), model)
-  remember(MODEL_KEY, model)
   focusTerm(id)
 }
 
