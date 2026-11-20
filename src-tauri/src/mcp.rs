@@ -66,7 +66,14 @@ pub async fn start() -> anyhow::Result<()> {
 pub fn config_for(chat: &str) -> Option<String> {
     let chat_enc = urlencode(chat);
     let server = |port: u16, kind: &str| json!({ "type": "http", "url": format!("http://127.0.0.1:{port}/{kind}/{chat_enc}"), "headers": { "Authorization": format!("Bearer {}", token()) } });
-    write_for(chat, "json", |port| json!({ "mcpServers": { BROWSER: server(port, "mcp"), DB: server(port, "db") } }))
+    write_for(chat, "json", |port| {
+        let mut servers = json!({ BROWSER: server(port, "mcp"), DB: server(port, "db") });
+        // what plugins bring (see plugins.rs): their sidecars' MCP endpoints, when they are up
+        for (name, cfg) in crate::plugins::mcp_servers() {
+            servers[name] = cfg;
+        }
+        json!({ "mcpServers": servers })
+    })
 }
 
 /// `--settings` file for one chat: a hook that reports, with each prompt, the session it goes into.

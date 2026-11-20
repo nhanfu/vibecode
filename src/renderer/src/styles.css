@@ -5231,3 +5231,53 @@ button.plan-chevron:hover {
   pointer-events: none;
   white-space: nowrap;
 }
+
+/* Database panel: a plugin's page in a frame (or the built-in panel), with a slim engine switch on top */
+.center-pane.db-engine-host {
+  flex-direction: column;
+}
+.db-engine-bar {
+  display: flex;
+  gap: 2px;
+  padding: 3px 6px;
+  flex: none;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--w-07);
+}
+.db-engine-bar button {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.db-engine-bar button.on {
+  color: var(--text);
+  background: var(--w-07);
+}
+.db-engine-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.plugin-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+.plugin-status {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-faint);
+}
+.plugin-actions {
+  display: flex;
+  gap: 8px;
+}

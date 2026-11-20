@@ -19,7 +19,7 @@ import {
   type PanelId,
   type StaticPanelId
 } from '../store'
-import { attachBrowserTab, closeBrowserTab, openFolder } from '../actions'
+import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, openFolder } from '../actions'
 import { SiteIcon } from './SiteIcon'
 import { Adopt, TabHosts } from './webHosts'
 import { COMMANDS } from '../shortcuts'
@@ -234,6 +234,7 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   const open = useStore((s) => floating(s) === id)
   const order = useStore((s) => s.panelOrder)
   const key = useStore((s) => (isPage(id) ? pageKey(s, id) : undefined))
+  const chatKey = useStore((s) => browserKey(s.activeChatId))
   const at = order.indexOf(id)
   const keys = keysOf(id)
 
@@ -290,6 +291,12 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
           'sep' as const,
           { icon: <Globe size={14} />, label: 'Back to the Web tabs', act: () => attachBrowserTab(key, id.slice(5)) },
           { icon: <X size={14} />, label: 'Close this page', act: () => closeBrowserTab(key, id.slice(5)) }
+        ]
+      : []),
+    ...(id === 'web' || isPage(id)
+      ? [
+          'sep' as const,
+          { icon: <X size={14} />, label: 'Close all tabs', act: () => closeAllBrowserTabs(key ?? chatKey) }
         ]
       : [])
   ]

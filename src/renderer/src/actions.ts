@@ -409,6 +409,10 @@ export function newChatWith(agent: AgentId): void {
   newChat({ agent })
 }
 
+export async function loadPlugins(): Promise<void> {
+  useStore.setState({ plugins: await window.api.plugins.list().catch(() => []) })
+}
+
 export async function detectClaude(): Promise<void> {
   const [claude, agents] = await Promise.all([window.api.claude.detect(), window.api.claude.agents().catch(() => [])])
   useStore.setState({ claude, agents })

@@ -32,6 +32,7 @@ import type {
   WebSuggestion,
   WindowMode,
   WindowState,
+  PluginInfo
 } from '../../shared/types'
 
 type Off = () => void
@@ -94,6 +95,11 @@ export const api = {
     visible: (id: string, visible: boolean): void => void invoke('pty_visible', { id, visible }),
     onData: (cb: (id: string, data: string) => void): Off => sub(ptyData, cb),
     onExit: (cb: (id: string, code: number) => void): Off => sub(ptyExit, cb)
+  },
+  plugins: {
+    list: (): Promise<PluginInfo[]> => invoke('plugin_list'),
+    /** starts the plugin's sidecar if needed; the address of its page */
+    start: (id: string): Promise<{ url: string }> => invoke('plugin_start', { id })
   },
   claude: {
     detect: (): Promise<ClaudeInfo> => invoke('claude_detect'),

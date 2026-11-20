@@ -9,6 +9,7 @@ mod browser;
 mod fsx;
 mod git;
 mod keybindings;
+mod plugins;
 mod mcp;
 mod mssql;
 mod pty;
@@ -66,6 +67,8 @@ pub fn run() {
             sessions::sessions_context,
             sessions::sessions_tasks,
             sessions::sessions_subagents,
+            plugins::plugin_list,
+            plugins::plugin_start,
             // SQL Server
             mssql::db_list,
             mssql::db_get,
@@ -123,6 +126,7 @@ pub fn run() {
             core::init(app.handle());
             // before any chat starts: chats get the MCP server's address at launch
             tauri::async_runtime::block_on(mcp::start())?;
+            plugins::warm_up();
             windowing::init(app)?;
             Ok(())
         })
@@ -137,6 +141,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 pty::kill_all();
                 mssql::cancel_all();
+                plugins::stop_all();
                 let _ = app.get_webview_window(core::MAIN);
             }
         });

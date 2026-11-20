@@ -12,6 +12,7 @@ import { EditorFontButton } from './EditorFont'
 // heavy parts load on first use: Monaco (~4 MB) only when a file or diff opens
 const FileEditor = lazy(() => import('./MonacoViews').then((m) => ({ default: m.FileEditor })))
 const DiffView = lazy(() => import('./MonacoViews').then((m) => ({ default: m.DiffView })))
+const PluginPane = lazy(() => import('./PluginPane').then((m) => ({ default: m.PluginPane })))
 const DatabasePane = lazy(() => import('./Database').then((m) => ({ default: m.DatabasePane })))
 import { revealIn } from '../scroll'
 
@@ -41,13 +42,48 @@ export function DbPanel(): React.JSX.Element {
   useEffect(() => {
     if (shown) setSeen(true)
   }, [shown])
+  // a plugin can take the Database panel over (DBX); the built-in SQL Server panel stays one click away
+  const plugin = useStore((s) => s.plugins.find((p) => p.available && p.panel?.replaces === 'db'))
+  const [pick, setPick] = useState<'plugin' | 'builtin' | null>(() => {
+    try {
+      const v = localStorage.getItem('vibe.db.engine')
+      return v === 'plugin' || v === 'builtin' ? v : null
+    } catch {
+      return null
+    }
+  })
+  const engine = plugin && pick !== 'builtin' ? 'plugin' : 'builtin'
+  const choose = (e: 'plugin' | 'builtin'): void => {
+    setPick(e)
+    try {
+      localStorage.setItem('vibe.db.engine', e)
+    } catch {
+      /* private mode */
+    }
+  }
   return (
     <div className="center-area">
       {seen && (
-        <div className="center-pane db-host on">
-          <Suspense fallback={null}>
-            <DatabasePane />
-          </Suspense>
+        <div className="center-pane db-host on db-engine-host">
+          {plugin && (
+            <div className="db-engine-bar">
+              <button className={engine === 'plugin' ? 'on' : ''} onClick={() => choose('plugin')}>
+                {plugin.name}
+              </button>
+              <button className={engine === 'builtin' ? 'on' : ''} onClick={() => choose('builtin')}>
+                Classic SQL Server
+              </button>
+            </div>
+          )}
+          <div className="db-engine-body">
+            <Suspense fallback={null}>
+              {engine === 'plugin' && plugin ? (
+                <PluginPane id={plugin.id} name={plugin.name} onFallback={() => choose('builtin')} fallbackLabel="Use the classic SQL Server panel" />
+              ) : (
+                <DatabasePane />
+              )}
+            </Suspense>
+          </div>
         </div>
       )}
     </div>

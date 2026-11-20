@@ -1,0 +1,25 @@
+{
+  "id": "dbx",
+  "name": "DBX",
+  "version": "0.6.72",
+  "description": "Database client (DBX, Apache-2.0): browse schemas, run queries, ER diagrams, many drivers",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/t8y2/dbx",
+  "panel": { "title": "Database", "icon": "database", "replaces": "db" },
+  "sidecar": {
+    "command": "bin/dbx-web",
+    "env": {
+      "DBX_PORT": "{port}",
+      "DBX_BIND_ADDR": "127.0.0.1",
+      "DBX_DATA_DIR": "{data}",
+      "DBX_STATIC_DIR": "{dir}/dist",
+      "DBX_DISABLE_PASSWORD": "1",
+      "DBX_WEB_MCP_TOKEN": "{token}",
+      "DBX_WEB_MCP_ALLOWED_HOSTS": "127.0.0.1:{port},localhost:{port}"
+    },
+    "health": "/api/connection/list",
+    "url": "/",
+    "autostart": true
+  },
+  "mcp": { "name": "vibe-dbx", "path": "/mcp", "bearer": true }
+}

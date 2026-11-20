@@ -250,3 +250,19 @@ export interface SubAgent {
   startedAt: number
   endedAt?: number
 }
+
+/** A plugin found on this machine (plugins/<id>/plugin.json, see docs/plugins.md). */
+export interface PluginInfo {
+  id: string
+  name: string
+  version: string
+  description: string
+  license: string
+  homepage: string
+  /** a panel the plugin brings; `replaces` names a built-in one it takes over ('db') */
+  panel: { title: string; icon: string; replaces?: string } | null
+  /** ready to run (its program is built / installed) */
+  available: boolean
+  /** brings an MCP server to every chat */
+  mcp: boolean
+}

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import { useStore } from './store'
-import { applyTheme, detectClaude, followChatSession, loadSessions, openFolder, refreshGit, showChatBrowser } from './actions'
+import { applyTheme, detectClaude, followChatSession, loadPlugins, loadSessions, openFolder, refreshGit, showChatBrowser } from './actions'
 import { onGlobalKey } from './shortcuts'
 import { focusTerm } from './terminals'
 import { reloadIfClean } from './fileModelsLite'
@@ -20,7 +20,7 @@ function useGlobalKeys(): void {
 function useBoot(): void {
   useEffect(() => {
     ;(async () => {
-      const [settings] = await Promise.all([window.api.app.settings(), detectClaude()])
+      const [settings] = await Promise.all([window.api.app.settings(), detectClaude(), loadPlugins()])
       useStore.setState({ recent: settings.recentFolders, settings })
       applyTheme()
       if (settings.lastFolder) openFolder(settings.lastFolder).catch(() => {})

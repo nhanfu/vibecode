@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { AgentId } from '../../shared/agents'
-import type { AgentInfo, AppSettings, ClaudeInfo, GitState, ProjectGroup, WindowState } from '../../shared/types'
+import type { AgentInfo, AppSettings, ClaudeInfo, GitState, PluginInfo, ProjectGroup, WindowState } from '../../shared/types'
 
 export type ChatStatus = 'starting' | 'working' | 'idle' | 'exited'
 
@@ -44,6 +44,8 @@ interface State {
   claude: ClaudeInfo | null
   /** which coding agents (Claude, Codex, Grok…) are installed */
   agents: AgentInfo[]
+  /** plugins found on this machine (plugins/<id>/plugin.json) */
+  plugins: PluginInfo[]
   /** AI picked as "in use" — a plain New chat starts with it */
   preferredAgent: AgentId | null
   git: GitState
@@ -254,6 +256,7 @@ export const useStore = create<State>((set) => ({
   recent: [],
   claude: null,
   agents: [],
+  plugins: [],
   preferredAgent: (() => {
     try {
       return (localStorage.getItem('vibe.newChatAgent') as AgentId | null) ?? null
