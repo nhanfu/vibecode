@@ -1047,7 +1047,7 @@ kbd {
   min-width: 0;
 }
 .tab-strip {
-  height: 38px;
+  height: 40px; /* as tall as the chat's title row (.chat-titlebar), so side-by-side panels line up */
   flex: none;
   display: flex;
   background: var(--bg-1);

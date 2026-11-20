@@ -396,10 +396,28 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   const order = useStore((s) => s.panelOrder)
   // the one that takes the room left: the chat if pinned, else the last pinned one
   const fill = pinned.includes('agents') ? 'agents' : [...order].reverse().find((p) => pinned.includes(p))
+  /*
+   * Who resizes whom. The stretched one has no width to drag. A drop-down left of it is dragged by
+   * its own right edge; one right of it is dragged by its left edge, which is the right edge of the
+   * pinned one before it (the window's edge, where the last one ends, can't be dragged, and a
+   * native page laid over its panel would swallow the press).
+   */
+  const line = order.filter((p) => pinned.includes(p))
+  const fillAt = fill ? line.indexOf(fill) : -1
+  const controls = (id: PanelId): PanelId | null => {
+    const next = line[line.indexOf(id) + 1]
+    return next && line.indexOf(next) > fillAt ? next : null
+  }
   return (
     <div className="workbench stack">
       {PANEL_IDS.map((id) => (
-        <StackPanel key={id} id={id} fill={id === fill}>
+        <StackPanel
+          key={id}
+          id={id}
+          fill={id === fill}
+          afterFill={pinned.includes(id) && fillAt >= 0 && line.indexOf(id) > fillAt}
+          controls={pinned.includes(id) ? controls(id) : null}
+        >
           {id === 'agents' ? <AgentSplit>{children}</AgentSplit> : <PanelBody id={id} />}
         </StackPanel>
       ))}
@@ -410,7 +428,16 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   )
 }
 
-function StackPanel({ id, fill, children }: { id: PanelId; fill: boolean; children: React.ReactNode }): React.JSX.Element {
+function StackPanel(props: {
+  id: PanelId
+  fill: boolean
+  /** pinned, right of the stretched one: dragged by its left edge, from the panel before it */
+  afterFill: boolean
+  /** the pinned drop-down whose left edge is this one's right edge */
+  controls: PanelId | null
+  children: React.ReactNode
+}): React.JSX.Element {
+  const { id, fill, afterFill, controls, children } = props
   const meta = PANELS[id]
   const pinned = useStore((s) => s.pinned.includes(id))
   const shown = useStore((s) => floating(s) === id)
@@ -434,6 +461,16 @@ function StackPanel({ id, fill, children }: { id: PanelId; fill: boolean; childr
     return () => window.removeEventListener('resize', place)
   }, [pinned, shown, width, id])
 
+  // the panel before this one drags this one's left edge: it hands the press over
+  useEffect(() => {
+    const begin = (e: Event): void => {
+      const d = (e as CustomEvent<{ id: PanelId; event: React.PointerEvent<HTMLDivElement> }>).detail
+      if (d.id === id && ref.current) startResize(d.event, ref.current)
+    }
+    window.addEventListener('stack-resize-start', begin)
+    return () => window.removeEventListener('stack-resize-start', begin)
+  })
+
   // "Reset width" in the button's right-click menu
   useEffect(() => {
     const reset = (e: Event): void => {
@@ -452,8 +489,18 @@ function StackPanel({ id, fill, children }: { id: PanelId; fill: boolean; childr
       onMouseEnter={() => !pinned && shown && peekPanel(id)}
     >
       <div className="stack-body">{children}</div>
-      {/* the stretched one has no width of its own to drag */}
-      {!(pinned && fill) && <div className="sidebar-resize" title="Drag to resize · double-click to reset" onPointerDown={startResize} onDoubleClick={resetWidth} />}
+      {/* the stretched one has no width of its own to drag; one right of it is dragged from the panel before it */}
+      {!(pinned && (fill || afterFill)) && (
+        <div className="sidebar-resize" title="Drag to resize · double-click to reset" onPointerDown={(e) => startResize(e)} onDoubleClick={resetWidth} />
+      )}
+      {controls && (
+        <div
+          className="sidebar-resize"
+          title="Drag to resize · double-click to reset"
+          onPointerDown={(e) => window.dispatchEvent(new CustomEvent('stack-resize-start', { detail: { id: controls, event: e } }))}
+          onDoubleClick={() => window.dispatchEvent(new CustomEvent('stack-reset-width', { detail: controls }))}
+        />
+      )}
     </div>
   )
 }
@@ -472,7 +519,7 @@ function PanelBody({ id }: { id: Exclude<PanelId, 'agents'> }): React.JSX.Elemen
 }
 
 /** A drop-down's width: dragged on its right edge, remembered; double-click on the edge resets it. */
-function useWidth(size: FloatSize): [number, (e: React.PointerEvent<HTMLDivElement>) => void, () => void] {
+function useWidth(size: FloatSize): [number, (e: React.PointerEvent<HTMLDivElement>, leftOf?: HTMLElement) => void, () => void] {
   const [width, setWidth] = useState(() => {
     try {
       return Number(localStorage.getItem(size.key)) || size.initial()
@@ -488,16 +535,17 @@ function useWidth(size: FloatSize): [number, (e: React.PointerEvent<HTMLDivEleme
       /* it resets next time */
     }
   }
-  const start = (e: React.PointerEvent<HTMLDivElement>): void => {
+  /** `leftOf`: the drop-down is dragged by its left edge (the handle belongs to the one before it) */
+  const start = (e: React.PointerEvent<HTMLDivElement>, leftOf?: HTMLElement): void => {
     e.preventDefault()
     const handle = e.currentTarget
     handle.setPointerCapture(e.pointerId)
     handle.classList.add('dragging')
-    const left = handle.parentElement!.getBoundingClientRect().left
+    const box = (leftOf ?? handle.parentElement!).getBoundingClientRect()
     let w = width
     const move = (ev: PointerEvent): void => {
       const max = Math.max(size.min + 20, window.innerWidth * 0.96)
-      w = Math.round(Math.min(max, Math.max(size.min, ev.clientX - left)))
+      w = Math.round(Math.min(max, Math.max(size.min, leftOf ? box.right - ev.clientX : ev.clientX - box.left)))
       setWidth(w)
     }
     const up = (): void => {
