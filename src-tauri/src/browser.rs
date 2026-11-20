@@ -122,6 +122,8 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     let _ = wv.hide();
     #[cfg(windows)]
     win::hook(&wv, label.clone());
+    #[cfg(target_os = "linux")]
+    gtk_layer::adopt(&wv);
     TABS.lock().insert(label, Tab { chat: chat_id, webview: wv, visible: false, hidden_since: Some(Instant::now()), suspended: false, logging: false });
     start_sweeper();
     Ok(())
@@ -133,8 +135,13 @@ pub fn web_place(label: String, x: f64, y: f64, w: f64, h: f64, zoom: f64, visib
     let mut tabs = TABS.lock();
     let Some(t) = tabs.get_mut(&label) else { return };
     if visible {
-        let _ = t.webview.set_position(LogicalPosition::new(x, y));
-        let _ = t.webview.set_size(LogicalSize::new(w.max(1.0), h.max(1.0)));
+        #[cfg(target_os = "linux")]
+        gtk_layer::place(&t.webview, x, y, w, h);
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = t.webview.set_position(LogicalPosition::new(x, y));
+            let _ = t.webview.set_size(LogicalSize::new(w.max(1.0), h.max(1.0)));
+        }
         let _ = t.webview.set_zoom(zoom);
     }
     if visible == t.visible {
@@ -447,6 +454,78 @@ fn key_info(key: &str) -> (String, String, u32, Option<String>) {
 }
 
 /* ---------------- WebView2 ---------------- */
+
+/// Linux (WebKitGTK): Tauri packs a child webview into the window's GtkBox next to the app's page,
+/// so a Web tab took half the window and pushed the app aside, and set_position / set_size did
+/// nothing (wry only places webviews that sit in a GtkFixed). Each tab is moved instead into one
+/// GtkFixed laid over the page in a GtkOverlay, and placed there by hand.
+#[cfg(target_os = "linux")]
+mod gtk_layer {
+    use std::cell::RefCell;
+
+    use gtk::prelude::*;
+    use tauri::Webview;
+
+    thread_local! {
+        /// Over the app's page; GTK objects live on the main thread, where with_webview runs.
+        static FIXED: RefCell<Option<gtk::Fixed>> = const { RefCell::new(None) };
+    }
+
+    /// The first time: the window's box gets an overlay holding the app's page, with the fixed
+    /// layer on top. Pass-through: clicks on empty parts of the layer reach the page, while the tabs
+    /// (windowed widgets) still get their own.
+    fn layer(vbox: &gtk::Box) -> gtk::Fixed {
+        FIXED.with(|slot| {
+            if let Some(fixed) = slot.borrow().as_ref() {
+                return fixed.clone();
+            }
+            let overlay = gtk::Overlay::new();
+            if let Some(page) = vbox.children().into_iter().next() {
+                // moving it drops its keyboard focus: give it back, or typing stops until a click
+                let focused = page.is_focus() || page.has_focus();
+                vbox.remove(&page);
+                overlay.add(&page);
+                if focused {
+                    page.grab_focus();
+                }
+            }
+            let fixed = gtk::Fixed::new();
+            overlay.add_overlay(&fixed);
+            overlay.set_overlay_pass_through(&fixed, true);
+            vbox.pack_start(&overlay, true, true, 0);
+            overlay.show_all();
+            *slot.borrow_mut() = Some(fixed.clone());
+            fixed
+        })
+    }
+
+    /// Take a new tab out of the window's box and park it, off-screen, in the layer.
+    pub fn adopt(w: &Webview) {
+        let _ = w.with_webview(|pw| {
+            let view: gtk::Widget = pw.inner().upcast();
+            let Some(vbox) = view.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) else { return };
+            vbox.remove(&view);
+            let fixed = layer(&vbox);
+            view.set_size_request(800, 600);
+            fixed.put(&view, -10_000, -10_000);
+        });
+    }
+
+    /// Where the tab goes, in CSS px of the window (GTK's logical pixels too).
+    pub fn place(w: &Webview, x: f64, y: f64, width: f64, height: f64) {
+        let _ = w.with_webview(move |pw| {
+            let view: gtk::Widget = pw.inner().upcast();
+            view.set_size_request(width.max(1.0).round() as i32, height.max(1.0).round() as i32);
+            FIXED.with(|slot| {
+                if let Some(fixed) = slot.borrow().as_ref()
+                    && view.parent().is_some_and(|p| &p == fixed.upcast_ref::<gtk::Widget>())
+                {
+                    fixed.move_(&view, x.round() as i32, y.round() as i32);
+                }
+            });
+        });
+    }
+}
 
 #[cfg(windows)]
 mod win {
