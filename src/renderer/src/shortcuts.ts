@@ -59,6 +59,7 @@ export const COMMANDS: Command[] = [
   { id: 'quickOpen', label: 'Go to file…', run: () => st().root && palette('') },
   { id: 'symbol', label: 'Go to symbol in file…', run: () => window.dispatchEvent(new Event('go-to-symbol')) },
   { id: 'line', label: 'Go to line…', run: () => window.dispatchEvent(new Event('go-to-line')) },
+  { id: 'reloadApp', label: 'Reload app', run: () => window.location.reload() },
   { id: 'openFolder', label: 'Open folder…', run: () => void openFolder(null, { autoChat: false }) },
 
   { id: 'newChat', label: 'New chat', run: () => void (defaultAgent() && newChat()) },
