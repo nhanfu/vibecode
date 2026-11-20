@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, ClipboardList, Circle, ListPlus, Play, Plus, Trash2 } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ChevronDown, ChevronRight, ClipboardList, Circle, ListPlus, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import { useStore } from '../store'
 import { defaultAgent, newChat } from '../actions'
 import { agentDef } from '../../../shared/agents'
@@ -92,8 +93,27 @@ export function PlansGroup(): React.JSX.Element {
   useStore((s) => s.preferredAgent)
   const agent = defaultAgent()
   const treeRef = useRef<HTMLDivElement>(null)
-  const titleRef = useRef<HTMLInputElement>(null)
-  const [focusTitle, setFocusTitle] = useState(false)
+  /** the panel at the right of the sidebar: previews the row the pointer is on, or edits one */
+  const [pop, setPop] = useState<{ id: string; top: number; edit: boolean } | null>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const keepPop = (): void => {
+    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+    leaveTimer.current = null
+  }
+  const leavePop = (): void => {
+    keepPop()
+    leaveTimer.current = setTimeout(() => setPop((p) => (p && !p.edit ? null : p)), 220)
+  }
+  const rowTop = (id: string): number | null => {
+    const el = treeRef.current?.querySelector<HTMLElement>(`.plan-row[data-id="${id}"]`)
+    return el ? el.getBoundingClientRect().top : null
+  }
+  /** Open the panel in edit mode on a row (after the row is on screen). */
+  const openEdit = (id: string): void => {
+    keepPop()
+    requestAnimationFrame(() => setPop({ id, top: rowTop(id) ?? 80, edit: true }))
+  }
 
   const commit = (next: PlanItem[]): void => {
     setItems(next)
@@ -125,12 +145,20 @@ export function PlansGroup(): React.JSX.Element {
 
   const selected = byId(sel)
 
+  // a click outside the panel ends editing; a row that is gone closes the panel
   useEffect(() => {
-    if (!focusTitle) return
-    setFocusTitle(false)
-    titleRef.current?.focus()
-    titleRef.current?.select()
-  }, [focusTitle, sel])
+    if (!pop?.edit) return
+    const down = (e: PointerEvent): void => {
+      const t = e.target as Element
+      if (popRef.current?.contains(t) || t.closest('.plan-row')) return
+      setPop(null)
+    }
+    window.addEventListener('pointerdown', down)
+    return () => window.removeEventListener('pointerdown', down)
+  }, [pop?.edit])
+  useEffect(() => {
+    if (pop && !items.some((i) => i.id === pop.id)) setPop(null)
+  }, [items, pop])
 
   /** Add under `parent` (a plan; none: top level). Plans can nest, tasks cannot hold anything. */
   const add = (kind: PlanItem['kind'], parent?: PlanItem): void => {
@@ -139,7 +167,7 @@ export function PlansGroup(): React.JSX.Element {
     commit([...items, item])
     if (p) setExpanded(p.id, true)
     setSel(item.id)
-    setFocusTitle(true)
+    openEdit(item.id)
   }
   /** Add next to the selected row: inside it when it is a plan, beside it when it is a task. */
   const addNear = (kind: PlanItem['kind']): void => {
@@ -224,6 +252,7 @@ export function PlansGroup(): React.JSX.Element {
         if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return
         started = true
         setDrag(item.id)
+        setPop(null)
         document.body.style.cursor = 'grabbing'
       }
       hit(ev)
@@ -282,7 +311,7 @@ export function PlansGroup(): React.JSX.Element {
     } else if (key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       if (cur?.kind === 'task') run(cur)
     } else if (key === 'Enter' || key === 'F2') {
-      if (cur) setFocusTitle(true)
+      if (cur) openEdit(cur.id)
     } else if (key === 'Delete' || key === 'Backspace') {
       if (cur) remove(cur.id)
     } else if (key === 'n' || key === 'N') {
@@ -310,7 +339,13 @@ export function PlansGroup(): React.JSX.Element {
         aria-expanded={isPlan ? expanded : undefined}
         className={`plan-row ${item.kind}${sel === item.id ? ' selected' : ''}${drag === item.id ? ' dragging' : ''}${hint}`}
         style={{ paddingLeft: 6 + depth * 14 }}
-        title={item.description ? `${item.title}\n\n${item.description}` : item.title}
+        onPointerEnter={(e) => {
+          if (drag) return
+          keepPop()
+          const top = e.currentTarget.getBoundingClientRect().top
+          setPop((p) => (p?.edit ? p : { id: item.id, top, edit: false }))
+        }}
+        onPointerLeave={leavePop}
         onDoubleClick={() => isPlan && setExpanded(item.id, !expanded)}
         onPointerDown={(e) => startDrag(e, item)}
       >
@@ -376,6 +411,17 @@ export function PlansGroup(): React.JSX.Element {
           <button
             className="icon-btn tiny"
             tabIndex={-1}
+            title="Edit"
+            onClick={(e) => {
+              e.stopPropagation()
+              openEdit(item.id)
+            }}
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            className="icon-btn tiny"
+            tabIndex={-1}
             title="Remove"
             onClick={(e) => {
               e.stopPropagation()
@@ -388,6 +434,75 @@ export function PlansGroup(): React.JSX.Element {
       </div>
     )
   }
+
+  const popItem = pop ? byId(pop.id) : undefined
+  const popPlans = popItem ? ancestors(items, popItem).map((p) => p.title).join(' › ') : ''
+  const sideRight = treeRef.current?.closest('.agent-side')?.getBoundingClientRect().right ?? 240
+  const popover = popItem && pop && (
+    <div
+      ref={popRef}
+      className={`plan-pop${pop.edit ? ' editing' : ''}`}
+      style={{ left: sideRight + 6, top: Math.max(8, Math.min(pop.top, window.innerHeight - (pop.edit ? 330 : 220))) }}
+      onPointerEnter={keepPop}
+      onPointerLeave={leavePop}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          setPop(null)
+          treeRef.current?.focus()
+        } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && popItem.kind === 'task') run(popItem)
+      }}
+    >
+      <div className="plan-pop-head">
+        {popItem.kind === 'plan' ? <ClipboardList size={12} /> : <Circle size={9} />}
+        <span className="plan-pop-kind">
+          {popItem.kind === 'plan' ? 'Plan' : 'Task'}
+          {popPlans && <> · {popPlans}</>}
+        </span>
+        <span className="agent-head-spacer" />
+        {pop.edit ? (
+          <button className="icon-btn tiny" title="Done (Esc)" onClick={() => setPop({ ...pop, edit: false })}>
+            <X size={12} />
+          </button>
+        ) : (
+          <button className="plan-pop-edit" onClick={() => setPop({ ...pop, edit: true })}>
+            <Pencil size={11} /> Edit
+          </button>
+        )}
+      </div>
+      {pop.edit ? (
+        <>
+          <input
+            autoFocus
+            onFocus={(e) => e.currentTarget.select()}
+            value={popItem.title}
+            placeholder={popItem.kind === 'plan' ? 'Plan name' : 'Task name'}
+            onChange={(e) => patch(popItem.id, { title: e.target.value })}
+          />
+          <textarea
+            rows={8}
+            value={popItem.description}
+            placeholder={popItem.kind === 'plan' ? 'What this plan is for, and how its tasks fit' : 'What to do, and how to know it is done'}
+            onChange={(e) => patch(popItem.id, { description: e.target.value })}
+          />
+        </>
+      ) : (
+        <>
+          <div className="plan-pop-title">{popItem.title}</div>
+          {popItem.description.trim() ? (
+            <div className="plan-pop-desc">{popItem.description}</div>
+          ) : (
+            <div className="plan-pop-desc empty">No description. Edit to add one.</div>
+          )}
+          {popItem.kind === 'plan' && <div className="plan-pop-meta">{kids(popItem.id).length} inside</div>}
+        </>
+      )}
+      {popItem.kind === 'task' && (
+        <button className="plan-add plan-run-btn" disabled={!!runBlocked} title={runBlocked} onClick={() => run(popItem)}>
+          <Play size={11} fill="currentColor" /> Run{agent ? ` with ${agentDef(agent).label}` : ''}
+        </button>
+      )}
+    </div>
+  )
 
   return (
     <div className="side-group">
@@ -408,44 +523,12 @@ export function PlansGroup(): React.JSX.Element {
           className="plan-tree"
           role="tree"
           tabIndex={0}
-          title={'↑ ↓ walk · → ← open/close · Enter edit · Ctrl+Enter run · N task · Shift+N plan · Del remove'}
           onKeyDown={onKey}
         >
           {rows.map(row)}
         </div>
       )}
-      {selected && (
-        <div className="plan-detail">
-          <div className="plan-detail-kind">
-            {selected.kind === 'plan' ? 'Plan' : 'Task'}
-            {selected.parentId && byId(selected.parentId) && <> in {byId(selected.parentId)!.title}</>}
-          </div>
-          <input
-            ref={titleRef}
-            value={selected.title}
-            placeholder={selected.kind === 'plan' ? 'Plan name' : 'Task name'}
-            onChange={(e) => patch(selected.id, { title: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === 'Escape') treeRef.current?.focus()
-            }}
-          />
-          <textarea
-            rows={4}
-            value={selected.description}
-            placeholder={selected.kind === 'plan' ? 'What this plan is for, and how its tasks fit' : 'What to do, and how to know it is done'}
-            onChange={(e) => patch(selected.id, { description: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') treeRef.current?.focus()
-              else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && selected.kind === 'task') run(selected)
-            }}
-          />
-          {selected.kind === 'task' && (
-            <button className="plan-add plan-run-btn" disabled={!!runBlocked} title={runBlocked} onClick={() => run(selected)}>
-              <Play size={11} fill="currentColor" /> Run{agent ? ` with ${agentDef(agent).label}` : ''}
-            </button>
-          )}
-        </div>
-      )}
+      {popItem && createPortal(popover, document.body)}
     </div>
   )
 }

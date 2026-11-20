@@ -2513,31 +2513,84 @@ button.plan-chevron:hover {
 .plan-run:disabled {
   opacity: 0.4;
 }
-.plan-detail {
+.plan-pop {
+  position: fixed;
+  z-index: 60;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 6px 8px 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  gap: 8px;
+  width: 300px;
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
 }
-.plan-detail-kind {
+.plan-pop.editing {
+  border-color: #0a84ff80;
+}
+.plan-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-dim);
+}
+.plan-pop-kind {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 10px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-dim);
 }
-.plan-detail input,
-.plan-detail textarea {
+.plan-pop-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.plan-pop-edit:hover {
+  background: var(--bg-active);
+}
+.plan-pop-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.plan-pop-desc {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.plan-pop-desc.empty,
+.plan-pop-meta {
+  color: var(--text-faint);
+}
+.plan-pop input,
+.plan-pop textarea {
   min-width: 0;
   padding: 4px 8px;
   font-size: 12px;
   font-family: inherit;
 }
-.plan-detail input {
+.plan-pop input {
   height: 26px;
 }
-.plan-detail textarea {
+.plan-pop textarea {
   resize: vertical;
   line-height: 1.4;
 }
