@@ -3007,9 +3007,6 @@ button.plan-chevron:hover {
   border-radius: 4px;
   object-fit: contain;
 }
-img.site-icon {
-  background: #fff;
-}
 .web-tab-strip .tab {
   max-width: 200px;
   margin: 5px 2px;
@@ -5209,4 +5206,28 @@ img.site-icon {
 }
 .agent-head-spacer {
   flex: 1;
+}
+
+/* a web tab torn off into its own title-bar button */
+.page-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.web-tab-strip .tab.tearing {
+  opacity: 0.5;
+}
+.tab-tear-hint {
+  position: fixed;
+  z-index: 200;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--accent);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  white-space: nowrap;
 }

@@ -66,7 +66,21 @@ const overlaps = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && b.left
 
 let labelSeq = 0
 
-export function BrowserTab({ chatKey, tabId, active, onScreen }: { chatKey: string; tabId: string; active: boolean; onScreen: boolean }): React.JSX.Element {
+export function BrowserTab({
+  chatKey,
+  tabId,
+  active,
+  detached = false,
+  onScreen
+}: {
+  chatKey: string
+  tabId: string
+  /** the open tab of its chat's Web strip (what Claude's browser tools drive) */
+  active: boolean
+  /** torn off into a panel of its own: live whenever that panel is on screen */
+  detached?: boolean
+  onScreen: boolean
+}): React.JSX.Element {
   const viewRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const url = useStore((s) => s.browsers[chatKey]?.tabs.find((t) => t.id === tabId)?.url ?? HOME_URL)
@@ -169,7 +183,7 @@ export function BrowserTab({ chatKey, tabId, active, onScreen }: { chatKey: stri
    */
   const zoom = box?.zoom ?? 1
   // the open tab of the chat on screen, with the Web view in front: only that page is tracked live
-  const live = active && onScreen
+  const live = (active || detached) && onScreen
   useEffect(() => {
     const el = viewRef.current
     if (!el) return

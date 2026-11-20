@@ -5,17 +5,23 @@ import {
   basename,
   closeFloat,
   floating,
+  isPage,
   leavePanel,
   movePanel,
   PANEL_IDS,
+  pageKey,
+  pageTab,
   peekPanel,
   showPanel,
   togglePanel,
   togglePin,
   useStore,
-  type PanelId
+  type PanelId,
+  type StaticPanelId
 } from '../store'
-import { openFolder } from '../actions'
+import { attachBrowserTab, closeBrowserTab, openFolder } from '../actions'
+import { SiteIcon } from './SiteIcon'
+import { Adopt, TabHosts } from './webHosts'
 import { COMMANDS } from '../shortcuts'
 import { Sidebar } from './Sidebar'
 import { CodePanel, DbPanel, WebPanel } from './Editor'
@@ -46,7 +52,7 @@ interface FloatSize {
   min: number
 }
 
-const PANELS: Record<PanelId, PanelMeta> = {
+const PANELS: Record<StaticPanelId, PanelMeta> = {
   project: { label: 'Project', icon: FolderOpen, command: 'sidebar', size: { key: 'vibe.sidebarWidth', initial: () => 300, min: 220 } },
   code: { label: 'Source code', icon: Code2, command: 'viewCode', size: { key: 'vibe.centerWidth', initial: () => Math.round(window.innerWidth * 0.55), min: 360 } },
   web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
@@ -54,7 +60,11 @@ const PANELS: Record<PanelId, PanelMeta> = {
   agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
 }
 
-const keysOf = (id: PanelId): string | undefined => COMMANDS.find((c) => c.id === PANELS[id].command)?.keys
+/** A torn-off web tab: titled after its page, its own width. */
+const PAGE_META: PanelMeta = { label: 'Page', icon: Globe, command: '', size: { key: 'vibe.pageWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
+const metaOf = (id: PanelId): PanelMeta => (isPage(id) ? PAGE_META : PANELS[id])
+
+const keysOf = (id: PanelId): string | undefined => (isPage(id) ? undefined : COMMANDS.find((c) => c.id === PANELS[id].command)?.keys)
 
 /* ---------------- title bar ---------------- */
 
@@ -114,8 +124,9 @@ function StackButton(props: {
   onDrop: (x: number | null) => void
 }): React.JSX.Element {
   const { id, dragging, mark, onDrag, onDrop } = props
-  const meta = PANELS[id]
+  const meta = metaOf(id)
   const root = useStore((s) => s.root)
+  const page = useStore((s) => (isPage(id) ? pageTab(s, id) : undefined))
   const pinned = useStore((s) => s.pinned.includes(id))
   const shown = useStore((s) => floating(s) === id)
   const files = useStore((s) => (id === 'code' ? s.tabs.length : 0))
@@ -184,7 +195,7 @@ function StackButton(props: {
   }
 
   const Icon = meta.icon
-  const label = id === 'project' && root ? basename(root) : id === 'agents' && agent ? agent : meta.label
+  const label = id === 'project' && root ? basename(root) : id === 'agents' && agent ? agent : page ? page.title || page.url.replace(/^https?:\/\//, '') || meta.label : meta.label
   const keys = keysOf(id)
   const what = id === 'project' ? 'click for folders' : 'click to open'
   const openMenu = (e: React.MouseEvent): void => {
@@ -205,7 +216,7 @@ function StackButton(props: {
         onClick={click}
         onContextMenu={openMenu}
       >
-        <Icon size={13} />
+        {page ? <SiteIcon url={page.url} size={14} /> : <Icon size={13} />}
         {files > 0 && <span className="center-count">{files}</span>}
         {running > 0 && <span className="center-count">{running}</span>}
       </button>
@@ -222,6 +233,7 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   const pinned = useStore((s) => s.pinned.includes(id))
   const open = useStore((s) => floating(s) === id)
   const order = useStore((s) => s.panelOrder)
+  const key = useStore((s) => (isPage(id) ? pageKey(s, id) : undefined))
   const at = order.indexOf(id)
   const keys = keysOf(id)
 
@@ -272,7 +284,14 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
     { icon: <ArrowLeft size={14} />, label: 'Move left', act: () => movePanel(id, at - 1), off: at <= 0 },
     { icon: <ArrowRight size={14} />, label: 'Move right', act: () => movePanel(id, at + 1), off: at >= order.length - 1 },
     'sep',
-    { icon: <MoveHorizontal size={14} />, label: 'Reset width', act: () => window.dispatchEvent(new CustomEvent('stack-reset-width', { detail: id })) }
+    { icon: <MoveHorizontal size={14} />, label: 'Reset width', act: () => window.dispatchEvent(new CustomEvent('stack-reset-width', { detail: id })) },
+    ...(isPage(id) && key
+      ? [
+          'sep' as const,
+          { icon: <Globe size={14} />, label: 'Back to the Web tabs', act: () => attachBrowserTab(key, id.slice(5)) },
+          { icon: <X size={14} />, label: 'Close this page', act: () => closeBrowserTab(key, id.slice(5)) }
+        ]
+      : [])
   ]
 
   // portal to <body>: inside the title bar a transformed / blurred ancestor breaks position:fixed
@@ -394,6 +413,9 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   const shown = useStore((s) => floating(s) !== null)
   const pinned = useStore((s) => s.pinned)
   const order = useStore((s) => s.panelOrder)
+  const browsers = useStore((s) => s.browsers)
+  // the torn-off tabs that still exist
+  const pageExists = new Set<string>(Object.values(browsers).flatMap((b) => b.tabs.filter((t) => t.detached).map((t) => `page:${t.id}`)))
   // the one that takes the room left: the chat if pinned, else the last pinned one
   const fill = pinned.includes('agents') ? 'agents' : [...order].reverse().find((p) => pinned.includes(p))
   /*
@@ -410,7 +432,8 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   }
   return (
     <div className="workbench stack">
-      {PANEL_IDS.map((id) => (
+      <TabHosts />
+      {[...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id))].map((id) => (
         <StackPanel
           key={id}
           id={id}
@@ -418,7 +441,7 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
           afterFill={pinned.includes(id) && fillAt >= 0 && line.indexOf(id) > fillAt}
           controls={pinned.includes(id) ? controls(id) : null}
         >
-          {id === 'agents' ? <AgentSplit>{children}</AgentSplit> : <PanelBody id={id} />}
+          {id === 'agents' ? <AgentSplit>{children}</AgentSplit> : isPage(id) ? <Adopt tabId={id.slice(5)} className="page-pane" /> : <PanelBody id={id} />}
         </StackPanel>
       ))}
       {!fill && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
@@ -438,7 +461,7 @@ function StackPanel(props: {
   children: React.ReactNode
 }): React.JSX.Element {
   const { id, fill, afterFill, controls, children } = props
-  const meta = PANELS[id]
+  const meta = metaOf(id)
   const pinned = useStore((s) => s.pinned.includes(id))
   const shown = useStore((s) => floating(s) === id)
   const order = useStore((s) => s.panelOrder.indexOf(id))
@@ -505,7 +528,7 @@ function StackPanel(props: {
   )
 }
 
-function PanelBody({ id }: { id: Exclude<PanelId, 'agents'> }): React.JSX.Element {
+function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.Element {
   switch (id) {
     case 'project':
       return <Sidebar />

@@ -10,7 +10,7 @@
  * cursor. Ctrl+B toggles the sidebar everywhere; `{ "key": "ctrl+b", "command": "passToTerminal",
  * "when": "chatFocus" }` in keybindings.json gives it back to Claude Code (run in background).
  */
-import { closeFloat, floating, PANEL_IDS, panelShown, showPanel, togglePanel, togglePin, useStore, type PanelId } from './store'
+import { closeFloat, floating, PANEL_IDS, panelShown, showPanel, togglePanel, togglePin, useStore, type StaticPanelId } from './store'
 import {
   closeChat,
   closeTab,
@@ -52,7 +52,7 @@ const showCode = (codeSide: 'files' | 'changes'): void => {
   showPanel('code')
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<PanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', agents: 'Agent (chat)' }
+const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', agents: 'Agent (chat)' }
 
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },

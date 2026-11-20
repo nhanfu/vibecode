@@ -1,9 +1,10 @@
+import { createPortal } from 'react-dom'
 import { Suspense, lazy, memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SiteIcon } from './SiteIcon'
 import { Columns2, Database, FileDiff, FileText, Rows2, X, Command, GitCompare, Globe, MessageSquarePlus, Plus, Search } from 'lucide-react'
 import { fileUri, panelShown, useStore, type EditorTab } from '../store'
-import { HOME_URL, browserKey, closeBrowserTab, closeTab, ensureBrowser, newBrowserTab, openBrowser, openFile, selectBrowserTab } from '../actions'
-import { BrowserTab } from './Browser'
+import { HOME_URL, browserKey, closeBrowserTab, closeTab, detachBrowserTab, ensureBrowser, newBrowserTab, openBrowser, openFile, selectBrowserTab } from '../actions'
+import { Adopt } from './webHosts'
 import { SlidePill } from './motion'
 import { ChangesView, ExplorerView } from './Sidebar'
 import { FileIcon, Logo } from './icons'
@@ -77,8 +78,8 @@ export function WebPanel(): React.JSX.Element {
 /** A chat's browser: its tab strip and one page per tab. */
 function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
   const b = useStore((s) => s.browsers[chatKey])
-  // on screen: the Web panel is showing, for this chat (a hidden panel parks the native pages)
-  const shown = useStore((s) => panelShown(s, 'web') && browserKey(s.activeChatId) === chatKey)
+  // a tab being dragged: `out` once the pointer is above the strip (letting go there tears it off)
+  const [tear, setTear] = useState<{ id: string; out: boolean; x: number; y: number } | null>(null)
   const stripRef = useRef<HTMLDivElement>(null)
   // tabs on their way out: they shrink away first, then really close
   const [closing, setClosing] = useState<Set<string>>(new Set())
@@ -99,16 +100,52 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
     revealIn(stripRef.current, stripRef.current?.querySelector('.tab.active'), { inline: 'nearest', smooth: true })
   }, [b?.active, b?.tabs.length])
 
+  /**
+   * Drag a tab up out of the strip and let go: it becomes a title-bar button of its own. Pointer
+   * events (the webview's file-drop handling swallows HTML5 drags).
+   */
+  const startTear = (e: React.PointerEvent<HTMLDivElement>, id: string): void => {
+    if (e.button !== 0 || (e.target as Element).closest('button')) return
+    const x0 = e.clientX
+    const y0 = e.clientY
+    let started = false
+    const above = (y: number): boolean => y < (stripRef.current?.getBoundingClientRect().top ?? 0) - 6
+    const move = (ev: PointerEvent): void => {
+      if (!started) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return
+        started = true
+        document.body.style.cursor = 'grabbing'
+      }
+      setTear({ id, out: above(ev.clientY), x: ev.clientX, y: ev.clientY })
+    }
+    const end = (ev: PointerEvent): void => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+      document.body.style.cursor = ''
+      setTear(null)
+      if (!started) return
+      // the click after a drag must not select the tab
+      window.addEventListener('click', (c) => c.stopPropagation(), { capture: true, once: true })
+      if (ev.type === 'pointerup' && above(ev.clientY)) detachBrowserTab(chatKey, id)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+  }
+
   if (!b) return null
-  const activeIdx = b.tabs.findIndex((t) => t.id === b.active)
+  const strip = b.tabs.filter((t) => !t.detached)
+  const activeIdx = strip.findIndex((t) => t.id === b.active)
   return (
     <>
       <div className="tab-strip web-tab-strip" ref={stripRef} onWheel={(e) => (e.currentTarget.scrollLeft += e.deltaY)}>
         <SlidePill className="tab-pill" />
-        {b.tabs.map((t) => (
+        {strip.map((t) => (
           <div
             key={t.id}
-            className={`tab${t.id === b.active ? ' active' : ''}${closing.has(t.id) ? ' closing' : ''}`}
+            className={`tab${t.id === b.active ? ' active' : ''}${closing.has(t.id) ? ' closing' : ''}${tear?.id === t.id ? ' tearing' : ''}`}
+            onPointerDown={(e) => startTear(e, t.id)}
             onClick={() => selectBrowserTab(chatKey, t.id)}
             onMouseDown={(e) => {
               if (e.button === 1) {
@@ -116,7 +153,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
                 close(t.id)
               }
             }}
-            title={t.url === HOME_URL ? 'New tab' : t.url}
+            title={t.url === HOME_URL ? 'New tab' : `${t.url}\nDrag it up to the title bar to open it as its own tab`}
           >
             <SiteIcon url={t.url} />
             <span className="tab-title">{t.title || (t.url === HOME_URL ? 'New tab' : t.url.replace(/^https?:\/\//, ''))}</span>
@@ -139,12 +176,17 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
       </div>
       {/* every page stays laid out (no display:none → no re-layout flash); the open one slides in */}
       <div className="browser-deck">
-        {b.tabs.map((t, i) => (
-          <div key={t.id} className={`browser-tab-pane ${i === activeIdx ? 'on' : i < activeIdx ? 'left' : 'right'}`}>
-            <BrowserTab chatKey={chatKey} tabId={t.id} active={t.id === b.active} onScreen={shown} />
-          </div>
+        {strip.map((t, i) => (
+          <Adopt key={t.id} tabId={t.id} className={`browser-tab-pane ${i === activeIdx ? 'on' : i < activeIdx ? 'left' : 'right'}`} />
         ))}
       </div>
+      {tear?.out &&
+        createPortal(
+          <div className="tab-tear-hint" style={{ left: tear.x + 14, top: tear.y + 14 }}>
+            Let go to open it as its own tab
+          </div>,
+          document.body
+        )}
     </>
   )
 }

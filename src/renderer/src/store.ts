@@ -96,6 +96,8 @@ export interface WebTab {
   id: string
   url: string
   title: string
+  /** torn off into its own title-bar button (panel `page:<id>`); not in the Web tab strip */
+  detached?: boolean
 }
 export interface ChatBrowser {
   tabs: WebTab[]
@@ -108,8 +110,26 @@ export interface ChatBrowser {
  * double-click pins it into the horizontal stack, where it stays. Dragging the buttons reorders the
  * stack. Agent starts pinned, so the chat is on screen.
  */
-export type PanelId = 'project' | 'code' | 'web' | 'db' | 'agents'
-export const PANEL_IDS: PanelId[] = ['project', 'code', 'web', 'db', 'agents']
+export type StaticPanelId = 'project' | 'code' | 'web' | 'db' | 'agents'
+/** A web tab torn off the Web drop-down: its own button and panel, for as long as the tab lives. */
+export type PagePanelId = `page:${string}`
+export type PanelId = StaticPanelId | PagePanelId
+export const PANEL_IDS: StaticPanelId[] = ['project', 'code', 'web', 'db', 'agents']
+export const isPage = (id: PanelId): id is PagePanelId => id.startsWith('page:')
+export const pageTabId = (id: PagePanelId): string => id.slice(5)
+/** The torn-off tab behind a page panel, with the browser key (chat) it belongs to. */
+export function pageTab(s: Pick<State, 'browsers'>, id: PagePanelId): WebTab | undefined {
+  const tid = pageTabId(id)
+  for (const b of Object.values(s.browsers)) {
+    const t = b.tabs.find((x) => x.id === tid)
+    if (t) return t
+  }
+  return undefined
+}
+export function pageKey(s: Pick<State, 'browsers'>, id: PagePanelId): string | undefined {
+  const tid = pageTabId(id)
+  return Object.keys(s.browsers).find((k) => s.browsers[k].tabs.some((t) => t.id === tid))
+}
 
 const ORDER_KEY = 'vibe.panelOrder'
 // (a new key: pins saved before Agent became the chat would leave the chat floating)

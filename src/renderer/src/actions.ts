@@ -1,5 +1,5 @@
 import { clearAttachments } from './attachments'
-import { basename, openPatch, panelShown, showPanel, uid, useStore, type Chat, type EditorTab, type WebTab } from './store'
+import { basename, openPatch, panelShown, showPanel, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -816,11 +816,68 @@ export function closeBrowserTab(key: string, id: string): void {
   useStore.setState((s) => {
     const b = s.browsers[key]
     if (!b) return s
-    const idx = b.tabs.findIndex((t) => t.id === id)
     let tabs = b.tabs.filter((t) => t.id !== id)
-    if (tabs.length === 0) tabs = [blankTab()]
-    const active = b.active === id ? tabs[Math.min(idx, tabs.length - 1)].id : b.active
-    return { browsers: { ...s.browsers, [key]: { tabs, active } } }
+    // the strip needs a tab of its own: torn-off ones don't count
+    if (!tabs.some((t) => !t.detached)) tabs = [...tabs, blankTab()]
+    const open = tabs.filter((t) => !t.detached)
+    const was = b.tabs.filter((t) => !t.detached).findIndex((t) => t.id === id)
+    const active = b.active === id ? open[Math.min(Math.max(was, 0), open.length - 1)].id : b.active
+    const page = `page:${id}` as PagePanelId
+    return {
+      browsers: { ...s.browsers, [key]: { tabs, active } },
+      panelOrder: s.panelOrder.filter((p) => p !== page),
+      pinned: s.pinned.filter((p) => p !== page)
+    }
+  })
+}
+
+/**
+ * Tear a tab off the Web drop-down into a title-bar button of its own (a panel next to the others:
+ * pin it, move it, resize it). The page keeps running, it is only shown somewhere else.
+ */
+export function detachBrowserTab(key: string, id: string): void {
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    const tab = b?.tabs.find((t) => t.id === id)
+    if (!b || !tab || tab.detached) return s
+    let tabs = b.tabs.map((t) => (t.id === id ? { ...t, detached: true } : t))
+    let active = b.active
+    if (!tabs.some((t) => !t.detached)) {
+      const blank = blankTab()
+      tabs = [...tabs, blank]
+      active = blank.id
+    } else if (active === id) {
+      const open = b.tabs.filter((t) => !t.detached)
+      const before = open.findIndex((t) => t.id === id)
+      const next = tabs.filter((t) => !t.detached)
+      active = next[Math.min(Math.max(before, 0), next.length - 1)].id
+    }
+    const page = `page:${id}` as PagePanelId
+    const at = s.panelOrder.indexOf('web')
+    const order = s.panelOrder.filter((p) => p !== page)
+    order.splice(at < 0 ? order.length : at + 1, 0, page)
+    return {
+      browsers: { ...s.browsers, [key]: { tabs, active } },
+      panelOrder: order,
+      pinned: s.pinned.includes(page) ? s.pinned : [...s.pinned, page],
+      floatOpen: null,
+      peek: null
+    }
+  })
+}
+
+/** Put a torn-off tab back among the Web tabs. */
+export function attachBrowserTab(key: string, id: string): void {
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    if (!b?.tabs.some((t) => t.id === id)) return s
+    const page = `page:${id}` as PagePanelId
+    return {
+      ...openPatch('web'),
+      browsers: { ...s.browsers, [key]: { tabs: b.tabs.map((t) => (t.id === id ? { ...t, detached: false } : t)), active: id } },
+      panelOrder: s.panelOrder.filter((p) => p !== page),
+      pinned: s.pinned.filter((p) => p !== page)
+    }
   })
 }
 
