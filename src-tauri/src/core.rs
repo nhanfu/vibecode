@@ -70,7 +70,7 @@ pub type Res<T> = Result<T, Error>;
 /* ---------------- folders ---------------- */
 
 /// The app's data folder. Kept at "%APPDATA%/TINJS Studio" (the Electron build's folder) so
-/// settings, recent folders, saved connections and the Zalo session carry over.
+/// settings, recent folders and saved connections carry over.
 /// `STUDIO_USER_DATA` gives a dev copy its own profile.
 pub fn user_data() -> PathBuf {
     static DIR: OnceLock<PathBuf> = OnceLock::new();

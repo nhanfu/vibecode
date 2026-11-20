@@ -463,52 +463,6 @@ kbd {
   flex-direction: column;
   min-width: 0;
 }
-/* the sidebar floats over the workbench: Ctrl+B pins it, hovering the project button shows it */
-.workbench {
-  position: relative;
-}
-.sidebar-float {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: min(300px, 42%);
-  z-index: 40;
-  border-right: 1px solid var(--border);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  opacity: 0;
-  transform: translateX(-10px);
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
-}
-.sidebar-float.shown {
-  opacity: 1;
-  transform: none;
-  visibility: visible;
-  pointer-events: auto;
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s;
-}
-.sidebar-float {
-  max-width: 80%;
-}
-.sidebar-float.shown {
-  box-shadow: 0 0 0 1px var(--w-0c), 8px 0 36px rgba(0, 0, 0, 0.42);
-}
-/* the workbench dims a little behind the open sidebar */
-.sidebar-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 39;
-  background: rgba(6, 8, 12, 0.32);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.16s ease;
-}
-.sidebar-backdrop.shown {
-  opacity: 1;
-  pointer-events: auto;
-}
 .sidebar-resize {
   position: absolute;
   top: 0;
@@ -2343,58 +2297,6 @@ button.sb-item:hover {
   padding: 3px 14px 5px 24px;
   color: var(--text-faint);
   font-size: 11.5px;
-}
-.zs-count {
-  min-width: 17px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 8px;
-  display: inline-grid;
-  place-items: center;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #fff;
-  background: #e5484d;
-}
-.zs-av {
-  position: relative;
-  flex: none;
-  display: inline-flex;
-}
-/* Avatar base lives here (not zalo.css): the sidebar renders avatars before the lazy Zalo pane loads its CSS */
-.zl-avatar {
-  flex: 0 0 auto;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  color: #fff;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  user-select: none;
-  text-shadow: 0 1px 1px #0002;
-}
-.zl-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.zs-dot {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid var(--bg-1, #232325);
-  background: #e5484d;
-}
-.zs-row.doing .zs-dot {
-  background: #e3a43a;
-}
-.zs-new {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
 }
 .agent-groups-sep {
   height: 1px;
@@ -4538,7 +4440,7 @@ button.sb-item:hover {
   }
 }
 
-/* Source code | Web | Database | Zalo: when they no longer fit, only the open tab keeps its label */
+/* Source code | Web | Database: when they no longer fit, only the open tab keeps its label */
 .center-switch {
   min-width: 0;
   container-type: inline-size;
@@ -4681,4 +4583,287 @@ button.sb-item:hover {
   .ctx-bar {
     display: none;
   }
+}
+
+/* no tab bar above the panes any more */
+.center-area {
+  grid-template-rows: minmax(0, 1fr);
+}
+.center-pane {
+  grid-area: 1 / 1;
+}
+
+/* ================= Title-bar drop-downs as a horizontal stack (Stack.tsx) ================= */
+
+.stack-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  flex: none;
+}
+.stack-btn-wrap {
+  position: relative;
+  display: flex;
+}
+.stack-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 7px 0 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.stack-btn:hover,
+.stack-btn.on {
+  background: var(--w-0f);
+  color: var(--text);
+}
+/* pinned into the stack: a line under it */
+.stack-btn.pinned {
+  background: var(--w-06);
+  border-color: var(--w-0a);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.stack-btn .stack-chev {
+  opacity: 0.5;
+}
+.stack-btn .stack-pin {
+  opacity: 0.7;
+  color: var(--accent);
+}
+.stack-btn .center-count {
+  flex: none;
+}
+/* dragging a button to reorder: it fades, a bar marks where it lands */
+.stack-bar.dragging .stack-btn {
+  cursor: grabbing;
+}
+.stack-btn.dragging {
+  opacity: 0.45;
+}
+.stack-btn-wrap.mark-before::before,
+.stack-btn-wrap.mark-after::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.stack-btn-wrap.mark-before::before {
+  left: -2px;
+}
+.stack-btn-wrap.mark-after::after {
+  right: -2px;
+}
+/* a narrow window: only the open / pinned ones keep their label */
+@media (max-width: 1100px) {
+  .stack-btn:not(.on):not(.pinned) .stack-label,
+  .stack-btn .stack-chev {
+    display: none;
+  }
+}
+
+/* the workbench: pinned drop-downs side by side (CSS order = title-bar order), then the chat */
+.workbench.stack {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+}
+.stack-main {
+  order: 1000;
+  flex: 1 1 0;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.stack-main > .panels {
+  flex: 1;
+  min-height: 0;
+}
+.stack-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-1);
+}
+.stack-panel.pinned {
+  position: relative;
+  flex: 0 1 auto;
+  border-right: 1px solid var(--border);
+}
+/* floating: hangs from the title bar under its button, over the chat */
+.stack-panel.floating {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  max-width: 96%;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 0 0 1px var(--w-0c), 0 18px 48px rgba(0, 0, 0, 0.42);
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.stack-panel.floating.shown {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+/* hidden for real, children too: some set their own visibility (the open web page, Monaco widgets) */
+.stack-panel.floating:not(.shown),
+.stack-panel.floating:not(.shown) * {
+  visibility: hidden !important;
+}
+.stack-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.stack-head-keys {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--w-06);
+  color: var(--text-dim);
+}
+.stack-head-spacer {
+  flex: 1;
+}
+.stack-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stack-body > * {
+  flex: 1;
+  min-height: 0;
+}
+.stack-panel,
+.stack-body,
+.stack-main {
+  overflow: clip !important;
+}
+/* the chat dims a little behind a floating drop-down; a click on it closes the drop-down */
+.stack-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+  background: rgba(6, 8, 12, 0.24);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+.stack-backdrop.shown {
+  opacity: 1;
+  pointer-events: auto;
+}
+.stack-menu {
+  top: calc(100% + 6px);
+}
+
+/* ---------- Agents drop-down (Agents.tsx) ---------- */
+.agents-panel {
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 8px;
+  padding: 5px 6px;
+  border-radius: 8px;
+}
+.agent-row:hover {
+  background: var(--bg-hover);
+}
+.agent-row.missing .agent-name {
+  color: var(--text-dim);
+}
+.agent-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.agent-name {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.agent-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.agent-install {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+}
+.agent-install code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-install:hover {
+  color: var(--text);
+}
+.agent-default {
+  opacity: 0.35;
+}
+.agent-default.on {
+  opacity: 1;
+  color: var(--accent);
+}
+.agent-default.on svg {
+  fill: currentColor;
+}
+.agent-chats-head {
+  margin: 6px 16px 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.agent-chat-act {
+  opacity: 0;
+}
+.sess-row:hover .agent-chat-act {
+  opacity: 1;
 }

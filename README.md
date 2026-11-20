@@ -21,9 +21,10 @@ Visual Studio C++ Build Tools. Running needs Git and the `claude` CLI on PATH
 ## Shortcuts
 
 All commands with their keys are listed in the command palette (**Ctrl+Shift+P** or **F1**).
-Bindings follow VS Code / Windows Terminal. Keys that mean something in a terminal (Ctrl+B, Ctrl+W,
-Ctrl+J, Ctrl+O, Ctrl+L, Ctrl+T…, used by readline and Claude Code) go to the terminal while it has
-the cursor.
+Bindings follow VS Code / Windows Terminal. Keys that mean something in a terminal (Ctrl+W, Ctrl+J,
+Ctrl+O, Ctrl+L, Ctrl+T…, used by readline and Claude Code) go to the terminal while it has the
+cursor. They can all be changed in `keybindings.json` (VS Code's format, with `when` clauses):
+palette → *Open keyboard shortcuts*.
 
 | Keys | Action |
 |---|---|
@@ -34,10 +35,9 @@ the cursor.
 | Ctrl+Shift+N | New chat |
 | Alt+1…9 · Ctrl+Alt+← / → | Switch chat · previous / next chat |
 | Ctrl+Shift+L | Put the cursor in the open chat |
-| Ctrl+1 / 2 / 3 / 4 | Source code / Web / Database / Zalo tab |
+| Ctrl+B · Ctrl+E · Ctrl+Shift+W · Ctrl+Shift+D · Ctrl+Shift+A (Ctrl+1…4) | Show / hide Project · Source code · Web · Database · Agents |
 | Ctrl+Shift+E / G / C | Explorer / Changes / Chats |
 | Ctrl+` · Ctrl+J · Ctrl+Shift+` | Toggle terminal · toggle panel · new terminal |
-| Ctrl+B | Toggle sidebar |
 | Ctrl+S · Ctrl+W (Ctrl+F4) · Ctrl+Shift+T | Save · close editor tab · reopen closed tab |
 | Ctrl+Tab / Ctrl+Shift+Tab (Ctrl+PgDn / PgUp) | Next / previous editor tab |
 | Ctrl+O | Open folder |
@@ -51,6 +51,20 @@ F5 / Ctrl+R never reload the app window (that would blank every chat).
 
 Click **Guake** in the title bar (or use the tray icon menu). VIBE CODE then lives at the top edge of the screen under the mouse: the global hotkey slides it down over whatever app you're in and back up again. The tray menu sets height, opacity and "hide when focus is lost". Dragging the bottom edge changes the height. The hotkey is `hotkey` in `%APPDATA%\TINJS Studio\settings.json` (F12 can't be used: Windows reserves it for debuggers).
 
+## The stack: Project, Source code, Web, Database, Agents
+
+The chat fills the window. **Project** (chats and folders), **Source code**, **Web**, **Database** and
+**Agents** are drop-downs in the title bar. Each one floats over the chat: hovering its button shows
+it, a click (or its key) keeps it open, a second click or a click elsewhere closes it.
+
+**Double-click** a button (or the pin in the drop-down's header) to pin it: pinned drop-downs sit side
+by side beside the chat, in a horizontal stack, and stay there. Double-click again to float it again.
+**Drag the buttons** left and right to reorder the stack; the order and the pins are remembered.
+Drag a drop-down's right edge to resize it.
+
+**Agents** lists every coding agent the app can run (installed or not, with its install command),
+which one a plain New chat uses (the star), and the chats running now, to switch to, restart or close.
+
 ## Claude history
 
 The Chats sidebar lists every project and conversation from `~/.claude/projects`, the store shared by the Claude desktop app, the CLI and the IDE extensions. It updates live. Clicking a conversation resumes it (`claude --resume <id>`) in its own folder. New chats are started with `--session-id`, so they show up in that same history.
@@ -58,10 +72,10 @@ The Chats sidebar lists every project and conversation from `~/.claude/projects`
 ## Layout
 
 - `src-tauri/src` – Rust backend: terminals (`pty.rs`), files + watcher, git, Claude's session
-  store, SQL Server (`mssql.rs`), Zalo (`zalo/`), the built-in browser (`browser.rs`, native
-  WebView2 tabs that sleep when hidden), the MCP server Claude's tools talk to (`mcp.rs`), window /
+  store, SQL Server (`mssql.rs`), the built-in browser (`browser.rs`, native
+  WebView2 / WebKitGTK tabs that sleep when hidden), the MCP server Claude's tools talk to (`mcp.rs`), window /
   tray / drop-down mode (`windowing.rs`)
 - `src/renderer/src/api.ts` – `window.api`: the page's bridge to the Rust commands and events
 - `src/renderer/src` – UI (`components/`), state (`store.ts`, `actions.ts`), terminals, Monaco setup
 
-`STUDIO_USER_DATA=<folder>` runs with a separate profile (settings, logins, Zalo session).
+`STUDIO_USER_DATA=<folder>` runs with a separate profile (settings, logins).

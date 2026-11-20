@@ -204,18 +204,6 @@ export interface DbQueryResult {
   ms: number
 }
 
-/* ---------------- Zalo (Zalo tab + Claude's zalo tools) ---------------- */
-
-export interface ZaloState {
-  status: 'off' | 'qr' | 'connecting' | 'online' | 'error'
-  /** QR code to scan (data: URL) while status is 'qr' */
-  qr?: string
-  /** name shown on the phone that scanned the QR, waiting for "Đăng nhập" there */
-  scanned?: string
-  error?: string
-  self?: { id: string; name: string; avatar: string }
-}
-
 /** Web tab bookmark: a link, or a folder of them */
 export interface WebBookmark {
   title: string
@@ -249,56 +237,4 @@ export interface ChatTask {
   outputFile?: string
   /** the end of its output */
   output?: string
-}
-
-/** One item of the Zalo "Việc của tôi" checklist, summarised by Claude from messages sent to me. */
-export interface ZaloTask {
-  id: string
-  title: string
-  detail?: string
-  threadId: string
-  threadName: string
-  group: boolean
-  /** the message that asked for it */
-  msgId?: string
-  from: string
-  /** Zalo user id of who asked */
-  fromId?: string
-  /** their avatar url (filled in when sent to the UI) */
-  avatar?: string
-  ts: number
-  /** todo: not answered · doing: answered, not finished · done: reported done / resolved */
-  status: 'todo' | 'doing' | 'done'
-  /** status set by hand — Claude won't move it back */
-  manual?: boolean
-  updatedAt: number
-}
-
-/** A message to me that just arrived and is being turned into a task. */
-export interface ZaloIncoming {
-  threadId: string
-  msgId: string
-  threadName: string
-  group: boolean
-  from: string
-  avatar?: string
-  text: string
-  ts: number
-}
-
-export interface ZaloTasksState {
-  tasks: ZaloTask[]
-  running: boolean
-  analyzedAt: number
-  error?: string
-  /** new messages to me waiting for / in the current analysis */
-  incoming?: ZaloIncoming[]
-  /** ids of tasks the last analysis created (highlighted in the list) */
-  fresh?: string[]
-  /** ids of tasks whose status the last analysis changed */
-  changed?: string[]
-  /** tasks created / changed by Claude that I haven't looked at yet → the badge on the Zalo tab */
-  unseen?: Record<string, 'new' | 'updated'>
-  /** a batch of incoming messages is waiting: goes to Claude at this time unless more arrive */
-  dueAt?: number
 }

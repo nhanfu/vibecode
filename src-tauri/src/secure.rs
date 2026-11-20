@@ -1,4 +1,4 @@
-//! Secrets at rest (saved SQL passwords, the Zalo session).
+//! Secrets at rest (saved SQL passwords).
 //!
 //! Same format Electron's `safeStorage` wrote, so everything the old build saved still opens:
 //! `"v10" + 12-byte nonce + AES-256-GCM(ciphertext + tag)`, with the AES key kept in

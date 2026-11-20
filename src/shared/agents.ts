@@ -1,6 +1,6 @@
 /**
  * Coding agents a chat can run. Claude Code is the full-featured one (session store, model/effort
- * pickers, browser/db/zalo tools); the others run as plain terminal chats in the same folder.
+ * pickers, browser/db tools); the others run as plain terminal chats in the same folder.
  */
 export type AgentId = 'claude' | 'codex' | 'grok' | 'gemini' | 'qwen' | 'copilot' | 'opencode'
 

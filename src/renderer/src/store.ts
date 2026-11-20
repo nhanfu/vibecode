@@ -56,10 +56,14 @@ interface State {
   themeResolved: 'light' | 'dark' | 'blue'
 
   sidebarView: SidebarView
-  /** the floating sidebar is pinned open (Ctrl+B) */
-  sidebarOpen: boolean
-  /** the floating sidebar is shown while the pointer is on the project button or the sidebar (not saved) */
-  sidebarHover: boolean
+  /** the title-bar drop-downs, left to right; pinned ones sit side by side in this order (saved) */
+  panelOrder: PanelId[]
+  /** drop-downs pinned into the horizontal stack, beside the chat (saved) */
+  pinned: PanelId[]
+  /** the drop-down floating open from a click or its key, until a click elsewhere (not pinned) */
+  floatOpen: PanelId | null
+  /** the drop-down floating while the pointer is on its button or on it (wins over floatOpen) */
+  peek: PanelId | null
   bottomOpen: boolean
   quickOpen: boolean
   /** what the palette starts with: '' files, '>' commands (Ctrl+Shift+P) */
@@ -77,8 +81,6 @@ interface State {
   activeTabId: string | null
   diffSideBySide: boolean
 
-  /** middle area: the code editor or the built-in browser */
-  centerView: 'code' | 'web' | 'db' | 'zalo'
   /** each chat has its own browser tabs: chat id ('_' with no chat open) → its tabs */
   browsers: Record<string, ChatBrowser>
   /** project folder (lower-cased, no trailing slash) → Claude runs it in bypass-permissions mode */
@@ -100,12 +102,126 @@ export interface ChatBrowser {
   active: string
 }
 
+/**
+ * The title-bar drop-downs: Project (chats), Source code, Web, Database, Agents. Each one floats
+ * over the chat while hovered or opened (a click, its key); a double-click pins it into the
+ * horizontal stack beside the chat, where it stays. Dragging the buttons reorders the stack.
+ */
+export type PanelId = 'project' | 'code' | 'web' | 'db' | 'agents'
+export const PANEL_IDS: PanelId[] = ['project', 'code', 'web', 'db', 'agents']
+
+const ORDER_KEY = 'vibe.panelOrder'
+const PINNED_KEY = 'vibe.pinnedPanels'
+
+function loadIds(key: string, fallback: PanelId[]): PanelId[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? 'null')
+    if (Array.isArray(v)) return [...new Set(v.filter((x): x is PanelId => (PANEL_IDS as string[]).includes(x)))]
+  } catch {
+    /* storage unavailable */
+  }
+  return fallback
+}
+function saveIds(key: string, ids: PanelId[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(ids))
+  } catch {
+    /* back to the default next time */
+  }
+}
+/** The saved order, with drop-downs added since appended. */
+function loadOrder(): PanelId[] {
+  const saved = loadIds(ORDER_KEY, PANEL_IDS)
+  return [...saved, ...PANEL_IDS.filter((p) => !saved.includes(p))]
+}
+
+type PanelState = Pick<State, 'pinned' | 'floatOpen' | 'peek'>
+/** The drop-down floating now, if any (hovered wins over opened). */
+export const floating = (s: PanelState): PanelId | null => {
+  const f = s.peek ?? s.floatOpen
+  return f && !s.pinned.includes(f) ? f : null
+}
+/** On screen: pinned in the stack, or floating. */
+export const panelShown = (s: PanelState, id: PanelId): boolean => s.pinned.includes(id) || floating(s) === id
+
+/** State that shows a drop-down: nothing to do when it is pinned, else it floats open. For set() patches. */
+export function openPatch(id: PanelId): Partial<State> {
+  const s = useStore.getState()
+  return s.pinned.includes(id) ? {} : { floatOpen: id, peek: null }
+}
+
 let peekTimer: number | undefined
-/** Show the floating sidebar while hovering the project button or the sidebar; hiding waits a moment so the pointer can cross the gap. */
-export function peekSidebar(on: boolean): void {
+const stopPeekTimer = (): void => {
   window.clearTimeout(peekTimer)
-  if (on) return useStore.setState({ sidebarHover: true })
-  peekTimer = window.setTimeout(() => useStore.setState({ sidebarHover: false }), 200)
+  peekTimer = undefined
+}
+
+/** Hovering a drop-down's button (or the drop-down) shows it, and keeps it shown. */
+export function peekPanel(id: PanelId): void {
+  stopPeekTimer()
+  const s = useStore.getState()
+  if (s.pinned.includes(id)) return
+  if (s.peek !== id) useStore.setState({ peek: id })
+}
+
+/** The pointer is on the rest of the app: the hovered drop-down hides after a moment (so it can cross a gap). */
+export function leavePanel(): void {
+  if (peekTimer !== undefined || useStore.getState().peek === null) return
+  peekTimer = window.setTimeout(() => {
+    peekTimer = undefined
+    useStore.setState({ peek: null })
+  }, 200)
+}
+
+/** Show a drop-down: float it open, or (pinned) leave it where it is. */
+export function showPanel(id: PanelId): void {
+  stopPeekTimer()
+  useStore.setState(openPatch(id))
+}
+
+/** Hide whatever floats (pinned ones stay). */
+export function closeFloat(): void {
+  stopPeekTimer()
+  const s = useStore.getState()
+  if (s.floatOpen !== null || s.peek !== null) useStore.setState({ floatOpen: null, peek: null })
+}
+
+/**
+ * A drop-down's key or click: float it open, or close it when it is the one open. A pinned one is
+ * already on screen; the cursor goes into it instead.
+ */
+export function togglePanel(id: PanelId): void {
+  const s = useStore.getState()
+  if (s.pinned.includes(id)) return focusPanel(id)
+  if (floating(s) === id) closeFloat()
+  else showPanel(id)
+}
+
+/** The cursor into a drop-down: its first text box, else anything that takes focus. */
+export function focusPanel(id: PanelId): void {
+  requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLElement>(`.stack-panel[data-panel="${id}"]`)
+    const target = el?.querySelector<HTMLElement>('input:not([type=hidden]), textarea, [tabindex="0"], button')
+    target?.focus()
+  })
+}
+
+/** Double-click on a drop-down's button: pin it into the stack, or back to floating. */
+export function togglePin(id: PanelId): void {
+  stopPeekTimer()
+  const s = useStore.getState()
+  const pinned = s.pinned.includes(id) ? s.pinned.filter((p) => p !== id) : [...s.pinned, id]
+  saveIds(PINNED_KEY, pinned)
+  useStore.setState({ pinned, floatOpen: null, peek: null })
+}
+
+/** Drag a drop-down's button to `index` (in the order before the move). */
+export function movePanel(id: PanelId, index: number): void {
+  const order = useStore.getState().panelOrder.filter((p) => p !== id)
+  const at = Math.max(0, Math.min(order.length, index))
+  order.splice(at, 0, id)
+  saveIds(ORDER_KEY, order)
+  useStore.setState({ panelOrder: order })
 }
 
 export const useStore = create<State>((set) => ({
@@ -128,8 +244,10 @@ export const useStore = create<State>((set) => ({
   themeResolved: 'dark',
 
   sidebarView: 'chats',
-  sidebarOpen: false,
-  sidebarHover: false,
+  panelOrder: loadOrder(),
+  pinned: loadIds(PINNED_KEY, []),
+  floatOpen: null,
+  peek: null,
   bottomOpen: false,
   quickOpen: false,
   quickOpenQuery: '',
@@ -145,7 +263,6 @@ export const useStore = create<State>((set) => ({
   activeTabId: null,
   diffSideBySide: true,
 
-  centerView: 'code',
   browsers: {},
   projectBypass: {},
 

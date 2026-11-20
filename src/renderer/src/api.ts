@@ -31,9 +31,6 @@ import type {
   WebSuggestion,
   WindowMode,
   WindowState,
-  ZaloState,
-  ZaloTask,
-  ZaloTasksState
 } from '../../shared/types'
 
 type Off = () => void
@@ -157,25 +154,6 @@ export const api = {
     columns: (id: string, database: string, schema: string, table: string): Promise<DbColumn[]> => invoke('db_columns', { id, database, schema, table }),
     scanProject: (folder: string): Promise<DbFound[]> => invoke('db_scan_project', { folder }),
     scanSsms: (): Promise<DbFound[]> => invoke('db_scan_ssms')
-  },
-  zalo: {
-    state: (): Promise<ZaloState> => invoke('zalo_state'),
-    login: (): Promise<void> => invoke('zalo_login'),
-    cancel: (): Promise<void> => invoke('zalo_cancel'),
-    reconnect: (): Promise<ZaloState> => invoke('zalo_reconnect'),
-    logout: (): Promise<void> => invoke('zalo_logout'),
-    syncAll: (): Promise<number> => invoke('zalo_sync_all'),
-    tasks: (): Promise<ZaloTasksState> => invoke('zalo_tasks'),
-    analyzeTasks: (): Promise<ZaloTasksState> => invoke('zalo_tasks_analyze'),
-    setTaskStatus: (id: string, status: ZaloTask['status']): Promise<ZaloTasksState> => invoke('zalo_task_status', { id, status }),
-    taskContext: (id: string): Promise<{ file: string; images: string[]; files: string[] }> => invoke('zalo_task_context', { id }),
-    removeTask: (id: string): Promise<ZaloTasksState> => invoke('zalo_task_remove', { id }),
-    onTasks: (cb: (s: ZaloTasksState) => void): Off => on('zalo:tasks', cb),
-    tasksViewing: (viewing: boolean): void => void invoke('zalo_tasks_viewing', { viewing }),
-    onShowTasks: (cb: () => void): Off => on('zalo:showTasks', cb),
-    onState: (cb: (s: ZaloState) => void): Off => on('zalo:state', cb),
-    /** names / avatars changed (the task list shows them) */
-    onChanged: (cb: (ids: string[]) => void): Off => on('zalo:changed', cb)
   },
   win: {
     state: (): Promise<WindowState> => invoke('win_state'),

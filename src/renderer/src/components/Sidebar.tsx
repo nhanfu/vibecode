@@ -22,14 +22,13 @@ import {
   Link2,
   Search
 } from 'lucide-react'
-import { basename, useStore, type Chat } from '../store'
+import { basename, closeFloat, useStore, type Chat } from '../store'
 import { closeChat, loadSessions, openFolder, newChat, newChatIn, openCommitDiff, openDiff, openFile, openSession, refreshGit, renameChat, selectChat } from '../actions'
 import { FileIcon, FolderIcon, StatusDot, statusLabel } from './icons'
 import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, GitFile, ProjectGroup, SessionInfo } from '../../../shared/types'
 import { agentDef } from '../../../shared/agents'
 import { NewChatMenu } from './AgentMenu'
 import { focusTerm } from '../terminals'
-import { ZaloSideGroup } from './zalo/ZaloSide'
 
 export function Sidebar(): React.JSX.Element {
   // files and git changes live in the Source code tab; the sidebar is just the chats
@@ -171,7 +170,8 @@ function ProjectsTree(): React.JSX.Element {
   const [q, setQ] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const pinned = useStore((s) => s.sidebarOpen)
+  /** opened by Ctrl+B or a click (not just hovered, not pinned in the stack) */
+  const opened = useStore((s) => s.floatOpen === 'project' && !s.pinned.includes('project'))
   /** the row the arrow keys are on (marked with data-kbd: React leaves that attribute alone) */
   const kbd = useRef<HTMLElement | null>(null)
 
@@ -200,15 +200,17 @@ function ProjectsTree(): React.JSX.Element {
   }
   const close = (): void => {
     mark(null)
-    useStore.setState({ sidebarOpen: false, sidebarHover: false })
+    // floating: it closes; pinned in the stack: it stays, the cursor goes back to the chat
+    closeFloat()
     backToChat()
   }
 
   // Opened (Ctrl+B, the title-bar button): the cursor goes to the filter, to type or arrow down.
   // Closed while the cursor was in here: it goes back to the chat, not into a hidden box.
-  // (Peeking with the pointer over the project button leaves the cursor where it was.)
+  // (Peeking with the pointer over the project button leaves the cursor where it was; pinned in the
+  // stack, Ctrl+B puts it in the filter too: store.ts focusPanel.)
   useEffect(() => {
-    if (pinned) {
+    if (opened) {
       const t = setTimeout(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
@@ -216,9 +218,10 @@ function ProjectsTree(): React.JSX.Element {
       return () => clearTimeout(t)
     }
     mark(null)
-    if (rootRef.current?.closest('.sidebar-float')?.contains(document.activeElement)) backToChat()
+    const hidden = rootRef.current?.closest('.stack-panel.floating:not(.shown)')
+    if (hidden?.contains(document.activeElement)) backToChat()
     return undefined
-  }, [pinned])
+  }, [opened])
 
   /**
    * ↑ ↓ move along the rows, Enter opens the row (a chat: and closes the sidebar), → ← open and
@@ -384,7 +387,6 @@ function ProjectsTree(): React.JSX.Element {
           ))}
         </div>
       )}
-      <ZaloSideGroup filter={q} />
       <div className="agent-groups-sep" />
 
       {visible.length === 0 && <div className="tree-empty">{projects.length ? 'No matching chats' : 'No Claude Code history found yet.'}</div>}

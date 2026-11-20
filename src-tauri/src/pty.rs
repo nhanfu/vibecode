@@ -156,7 +156,7 @@ pub async fn pty_spawn(opts: SpawnOptions, out: Channel<PtyMsg>) -> Res<()> {
         {
             parts.extend(["--settings".to_owned(), settings]);
         }
-        // the chat's own Web tab, database and Zalo as MCP tools (Claude only); last, because
+        // the chat's own Web tab and databases as MCP tools (Claude only); last, because
         // --mcp-config takes several values
         if cmd == "claude"
             && let Some(cfg) = crate::mcp::config_for(&opts.id)

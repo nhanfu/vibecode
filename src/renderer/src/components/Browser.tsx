@@ -56,10 +56,11 @@ function savedDevice(): string {
 }
 
 /**
- * Anything drawn over the page area (menus, dialogs, lightboxes, address suggestions). The page
- * itself is a native view stacked above the app's HTML, so it steps aside while one is open.
+ * Anything drawn over the page area (menus, dialogs, lightboxes, address suggestions, a title-bar
+ * drop-down floating over a pinned Web). The page itself is a native view stacked above the app's
+ * HTML, so it steps aside while one is open. The drop-down the page is in doesn't count.
  */
-const OVERLAYS = '.overlay, .menu, .ctx-menu, .image-lightbox, .term-image-hover, .bm-menu, .browser-sugg, .zl-ctx'
+const OVERLAYS = '.overlay, .menu, .ctx-menu, .stack-panel.floating.shown, .image-lightbox, .term-image-hover, .bm-menu, .browser-sugg'
 
 const overlaps = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 
@@ -180,7 +181,7 @@ export function BrowserTab({ chatKey, tabId, active, onScreen }: { chatKey: stri
       }
       const r = el.getBoundingClientRect()
       const fits = r.width > 4 && r.height > 4 && document.visibilityState === 'visible' && !el.closest('.browser-tab-pane:not(.on)')
-      const covered = fits && [...document.querySelectorAll(OVERLAYS)].some((o) => overlaps(o.getBoundingClientRect(), r))
+      const covered = fits && [...document.querySelectorAll(OVERLAYS)].some((o) => !o.contains(el) && overlaps(o.getBoundingClientRect(), r))
       const visible = fits && !covered && !home
       const key = visible ? `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)},${zoom}` : 'off'
       if (key === last) return

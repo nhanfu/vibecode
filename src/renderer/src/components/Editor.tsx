@@ -1,7 +1,7 @@
 import { Suspense, lazy, memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Code2, Columns2, Database, FileDiff, FileText, Rows2, X, Command, GitCompare, Globe, MessageCircle, MessageSquarePlus, Plus, Search } from 'lucide-react'
-import { fileUri, useStore, type EditorTab } from '../store'
-import { HOME_URL, browserKey, closeBrowserTab, closeTab, newBrowserTab, openBrowser, openFile, selectBrowserTab } from '../actions'
+import { Columns2, Database, FileDiff, FileText, Rows2, X, Command, GitCompare, Globe, MessageSquarePlus, Plus, Search } from 'lucide-react'
+import { fileUri, panelShown, useStore, type EditorTab } from '../store'
+import { HOME_URL, browserKey, closeBrowserTab, closeTab, ensureBrowser, newBrowserTab, openBrowser, openFile, selectBrowserTab } from '../actions'
 import { BrowserTab } from './Browser'
 import { SlidePill } from './motion'
 import { ChangesView, ExplorerView } from './Sidebar'
@@ -11,77 +11,61 @@ import { EditorFontButton } from './EditorFont'
 const FileEditor = lazy(() => import('./MonacoViews').then((m) => ({ default: m.FileEditor })))
 const DiffView = lazy(() => import('./MonacoViews').then((m) => ({ default: m.DiffView })))
 const DatabasePane = lazy(() => import('./Database').then((m) => ({ default: m.DatabasePane })))
-const ZaloPane = lazy(() => import('./Zalo').then((m) => ({ default: m.ZaloPane })))
-import type { ZaloTasksState } from '../../../shared/types'
 import { revealIn } from '../scroll'
 
-/** Middle area: two fixed tabs — Source code (files, diffs) and Web (built-in browser). */
-export function EditorArea(): React.JSX.Element {
-  const view = useStore((s) => s.centerView)
-  const fileCount = useStore((s) => s.tabs.length)
-  const key = useStore((s) => browserKey(s.activeChatId))
-  const browsers = useStore((s) => s.browsers)
-  // the Database tab mounts on first visit, then stays (keeps its SQL, results and open tree)
-  const [dbSeen, setDbSeen] = useState(view === 'db')
-  const [zaloSeen, setZaloSeen] = useState(view === 'zalo')
-  useEffect(() => {
-    if (view === 'db') setDbSeen(true)
-    if (view === 'zalo') setZaloSeen(true)
-  }, [view])
-  const zaloBadge = useZaloBadge(view === 'zalo')
-  // switching chats while on Web: give that chat its own browser (before paint: no empty frame)
-  useLayoutEffect(() => {
-    if (view === 'web' && !browsers[key]) openBrowser()
-  }, [view, key, browsers])
+/*
+ * Source code, Web and Database: three of the title-bar drop-downs (Stack.tsx), each floating over
+ * the chat or pinned beside it. A drop-down that isn't on screen stays mounted and laid out, only
+ * hidden: display:none would drop scroll positions, make Monaco re-measure on return and replay
+ * every animation inside.
+ */
+
+/** Source code: the whole project of the open chat — file tree on the left, files on the right. */
+export function CodePanel(): React.JSX.Element {
   return (
     <div className="center-area">
-      <div className="center-switch" role="tablist">
-        <SlidePill />
-        <button role="tab" aria-selected={view === 'code'} className={view === 'code' ? 'on' : ''} onClick={() => useStore.setState({ centerView: 'code' })}>
-          <Code2 size={14} /> <span className="center-label">Source code</span>
-          {fileCount > 0 && <span className="center-count">{fileCount}</span>}
-        </button>
-        <button role="tab" aria-selected={view === 'web'} className={view === 'web' ? 'on' : ''} onClick={() => openBrowser()}>
-          <Globe size={14} /> <span className="center-label">Web</span>
-        </button>
-        <button role="tab" aria-selected={view === 'db'} className={view === 'db' ? 'on' : ''} onClick={() => useStore.setState({ centerView: 'db' })}>
-          <Database size={14} /> <span className="center-label">Database</span>
-        </button>
-        <button role="tab" aria-selected={view === 'zalo'} className={view === 'zalo' ? 'on' : ''} onClick={() => useStore.setState({ centerView: 'zalo' })}>
-          <MessageCircle size={14} /> <span className="center-label">Zalo</span>
-          {zaloBadge > 0 && (
-            <span key={zaloBadge} className="center-count alert" title={`${zaloBadge} việc mới / vừa cập nhật`}>
-              {zaloBadge > 99 ? '99+' : zaloBadge}
-            </span>
-          )}
-        </button>
-      </div>
-      {/*
-        Panes stay mounted and laid out; only the open one (`on`) is visible. display:none would drop
-        their scroll positions, make Monaco re-measure on return and replay every animation inside.
-      */}
-      {/* Source code: the whole project of the open chat — file tree on the left, files on the right */}
-      <div className={`center-pane code-pane${view === 'code' ? ' on' : ''}`}>
+      <div className="center-pane code-pane on">
         <CodeSide />
         <CodeArea />
       </div>
-      {dbSeen && (
-        <div className={`center-pane db-host${view === 'db' ? ' on' : ''}`}>
+    </div>
+  )
+}
+
+/** Database: mounts the first time it is shown, then stays (keeps its SQL, results and open tree). */
+export function DbPanel(): React.JSX.Element {
+  const shown = useStore((s) => panelShown(s, 'db'))
+  const [seen, setSeen] = useState(shown)
+  useEffect(() => {
+    if (shown) setSeen(true)
+  }, [shown])
+  return (
+    <div className="center-area">
+      {seen && (
+        <div className="center-pane db-host on">
           <Suspense fallback={null}>
             <DatabasePane />
           </Suspense>
         </div>
       )}
-      {zaloSeen && (
-        <div className={`center-pane zalo-host${view === 'zalo' ? ' on' : ''}`}>
-          <Suspense fallback={null}>
-            <ZaloPane />
-          </Suspense>
-        </div>
-      )}
-      {/* one browser per chat, every tab kept alive so pages survive switching */}
+    </div>
+  )
+}
+
+/** Web: one browser per chat, every tab kept alive so pages survive switching chats. */
+export function WebPanel(): React.JSX.Element {
+  const shown = useStore((s) => panelShown(s, 'web'))
+  const key = useStore((s) => browserKey(s.activeChatId))
+  const browsers = useStore((s) => s.browsers)
+  // shown (or the chat switched while it is): that chat gets its own browser, before paint (no
+  // empty frame). Only created here: hovering the Web button must not open anything else.
+  useLayoutEffect(() => {
+    if (shown && !browsers[key]) ensureBrowser(key)
+  }, [shown, key, browsers])
+  return (
+    <div className="center-area">
       {Object.keys(browsers).map((k) => (
-        <div key={k} className={`center-pane browser-host${view === 'web' && k === key ? ' on' : ''}`}>
+        <div key={k} className={`center-pane browser-host${k === key ? ' on' : ''}`}>
           <WebTabs chatKey={k} />
         </div>
       ))}
@@ -89,62 +73,11 @@ export function EditorArea(): React.JSX.Element {
   )
 }
 
-/**
- * Zalo tab badge: tasks Claude created or changed that I haven't looked at.
- * Also tells main when the tab is on screen in a focused window (that clears the badge, and skips pop-ups).
- */
-function useZaloBadge(onTab: boolean): number {
-  const [n, setN] = useState(0)
-  useEffect(() => {
-    const count = (s: ZaloTasksState): void => {
-      setN(Object.keys(s.unseen ?? {}).length)
-      taskbarBadge(s.tasks.filter((t) => t.status !== 'done').length)
-    }
-    void window.api.zalo.tasks().then(count)
-    return window.api.zalo.onTasks(count)
-  }, [])
-  useEffect(() => {
-    const send = (): void => window.api.zalo.tasksViewing(onTab && document.hasFocus() && !document.hidden)
-    send()
-    window.addEventListener('focus', send)
-    window.addEventListener('blur', send)
-    document.addEventListener('visibilitychange', send)
-    return () => {
-      window.removeEventListener('focus', send)
-      window.removeEventListener('blur', send)
-      document.removeEventListener('visibilitychange', send)
-    }
-  }, [onTab])
-  return n
-}
-
-/** Red number over the app's taskbar icon: my unfinished Zalo tasks. */
-let lastBadge = -1
-function taskbarBadge(n: number): void {
-  if (n === lastBadge) return
-  lastBadge = n
-  if (n <= 0) return window.api.win.badge(null, '')
-  const c = document.createElement('canvas')
-  c.width = c.height = 32
-  const g = c.getContext('2d')
-  if (!g) return
-  g.fillStyle = '#e5484d'
-  g.beginPath()
-  g.arc(16, 16, 16, 0, Math.PI * 2)
-  g.fill()
-  const text = n > 99 ? '99+' : String(n)
-  g.fillStyle = '#fff'
-  g.font = `bold ${text.length > 2 ? 13 : text.length > 1 ? 18 : 22}px "Segoe UI", sans-serif`
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
-  g.fillText(text, 16, 17)
-  window.api.win.badge(c.toDataURL('image/png'), `${n} việc chưa xong`)
-}
-
 /** A chat's browser: its tab strip and one page per tab. */
 function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
   const b = useStore((s) => s.browsers[chatKey])
-  const shown = useStore((s) => s.centerView === 'web' && browserKey(s.activeChatId) === chatKey)
+  // on screen: the Web panel is showing, for this chat (a hidden panel parks the native pages)
+  const shown = useStore((s) => panelShown(s, 'web') && browserKey(s.activeChatId) === chatKey)
   const stripRef = useRef<HTMLDivElement>(null)
   // tabs on their way out: they shrink away first, then really close
   const [closing, setClosing] = useState<Set<string>>(new Set())

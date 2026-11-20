@@ -10,7 +10,7 @@
  * cursor. Ctrl+B toggles the sidebar everywhere; `{ "key": "ctrl+b", "command": "passToTerminal",
  * "when": "chatFocus" }` in keybindings.json gives it back to Claude Code (run in background).
  */
-import { useStore } from './store'
+import { closeFloat, floating, PANEL_IDS, panelShown, showPanel, togglePanel, togglePin, useStore, type PanelId } from './store'
 import {
   closeChat,
   closeTab,
@@ -47,8 +47,12 @@ const activeFile = (): { path: string; dirty: boolean } | null => {
   return t?.kind === 'file' ? { path: t.path, dirty: t.dirty } : null
 }
 
-const showCode = (codeSide: 'files' | 'changes'): void => useStore.setState({ centerView: 'code', codeSide })
+const showCode = (codeSide: 'files' | 'changes'): void => {
+  useStore.setState({ codeSide })
+  showPanel('code')
+}
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
+const PANEL_LABELS: Record<PanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', agents: 'Agents' }
 
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },
@@ -78,16 +82,31 @@ export const COMMANDS: Command[] = [
 
   { id: 'explorer', label: 'Show Explorer (files)', run: () => showCode('files') },
   { id: 'changes', label: 'Show Source Control (changes)', run: () => showCode('changes') },
-  { id: 'chats', label: 'Show chats sidebar', run: () => useStore.setState({ sidebarView: 'chats', sidebarOpen: true }) },
-  { id: 'sidebar', label: 'Toggle sidebar', run: () => useStore.setState({ sidebarOpen: !st().sidebarOpen }) },
+  {
+    id: 'chats',
+    label: 'Show chats (Project)',
+    run: () => {
+      useStore.setState({ sidebarView: 'chats' })
+      showPanel('project')
+    }
+  },
   { id: 'terminal', label: 'Toggle terminal', run: () => toggleBottom() },
   { id: 'panel', label: 'Toggle bottom panel', run: () => toggleBottom() },
   { id: 'newTerminal', label: 'New terminal', run: () => newShell() },
 
-  { id: 'viewCode', label: 'Show Source code tab', run: () => useStore.setState({ centerView: 'code' }) },
-  { id: 'viewWeb', label: 'Show Web tab', run: () => openBrowser() },
-  { id: 'viewDb', label: 'Show Database tab', run: () => useStore.setState({ centerView: 'db' }) },
-  { id: 'viewZalo', label: 'Show Zalo tab', run: () => useStore.setState({ centerView: 'zalo' }) },
+  // the title-bar drop-downs: float open / close; pinned ones get the cursor instead (store.ts togglePanel)
+  { id: 'sidebar', label: 'Show / hide Project (chats and folders)', run: () => togglePanel('project') },
+  { id: 'viewCode', label: 'Show / hide Source code', run: () => togglePanel('code') },
+  {
+    id: 'viewWeb',
+    label: 'Show / hide Web',
+    // openBrowser also gives the chat its first page
+    run: () => (panelShown(st(), 'web') ? togglePanel('web') : openBrowser())
+  },
+  { id: 'viewDb', label: 'Show / hide Database', run: () => togglePanel('db') },
+  { id: 'viewAgents', label: 'Show / hide Agents', run: () => togglePanel('agents') },
+  ...PANEL_IDS.map((id) => ({ id: `pin.${id}`, label: `Pin / unpin ${PANEL_LABELS[id]} in the stack`, run: () => togglePin(id) })),
+  { id: 'closeFloat', label: 'Close the floating drop-down', run: () => closeFloat() },
 
   { id: 'theme', label: 'Toggle light / dark theme', run: () => void toggleTheme() },
   { id: 'keybindings', label: 'Open keyboard shortcuts (keybindings.json)', run: () => void openKeybindings() },
@@ -114,7 +133,7 @@ function saveActive(): void {
 
 function closeActiveTab(): void {
   const id = st().activeTabId
-  if (id && st().centerView === 'code') closeTab(id)
+  if (id && panelShown(st(), 'code')) closeTab(id)
 }
 
 function switchChat(n: number): void {
@@ -145,8 +164,8 @@ export const DEFAULT_KEYS: KeyRule[] = [
 
   // nothing unsaved: the key is left alone
   { key: 'ctrl+s', command: 'save', when: '!terminalFocus && fileDirty' },
-  { key: 'ctrl+w', command: 'closeTab', when: "!terminalFocus && !textInputFocus && centerView == 'code'" },
-  { key: 'ctrl+f4', command: 'closeTab', when: "!terminalFocus && centerView == 'code'" },
+  { key: 'ctrl+w', command: 'closeTab', when: '!terminalFocus && !textInputFocus && codeShown' },
+  { key: 'ctrl+f4', command: 'closeTab', when: '!terminalFocus && codeShown' },
   { key: 'ctrl+shift+t', command: 'reopenTab' },
   { key: 'ctrl+tab', command: 'nextTab' },
   { key: 'ctrl+pagedown', command: 'nextTab' },
@@ -162,11 +181,15 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+j', command: 'panel', when: '!terminalFocus && !textInputFocus' },
   { key: 'ctrl+shift+`', command: 'newTerminal' },
 
-  // in a terminal too: shells don't use them
+  // the title-bar drop-downs (Ctrl+B: Project, above), from a terminal too
+  { key: 'ctrl+e', command: 'viewCode' },
+  { key: 'ctrl+shift+w', command: 'viewWeb' },
+  { key: 'ctrl+shift+d', command: 'viewDb' },
+  { key: 'ctrl+shift+a', command: 'viewAgents' },
   { key: 'ctrl+1', command: 'viewCode' },
   { key: 'ctrl+2', command: 'viewWeb' },
   { key: 'ctrl+3', command: 'viewDb' },
-  { key: 'ctrl+4', command: 'viewZalo' }
+  { key: 'ctrl+4', command: 'viewAgents' }
 ]
 
 /** The cursor is in a text field of the page (not Monaco or a terminal, which handle their own keys). */
@@ -187,10 +210,10 @@ function context(): Context {
     editorFocus: editor,
     textInputFocus: field,
     inputFocus: editor || field,
-    sidebarOpen: s.sidebarOpen,
     hasFolder: !!s.root,
     fileDirty: !!activeFile()?.dirty,
-    centerView: s.centerView
+    floating: floating(s) ?? '',
+    ...Object.fromEntries(PANEL_IDS.flatMap((id) => [[`${id}Shown`, panelShown(s, id)], [`${id}Pinned`, s.pinned.includes(id)]]))
   }
 }
 const CONTEXT_HELP = [
@@ -200,10 +223,11 @@ const CONTEXT_HELP = [
   'editorFocus        … in the code editor',
   'textInputFocus     … in a text box (address bar, search, filter…)',
   'inputFocus         editorFocus || textInputFocus',
-  'sidebarOpen        the sidebar is pinned open',
   'hasFolder          a project folder is open',
   'fileDirty          the open file has unsaved changes',
-  "centerView         'code' | 'web' | 'db' | 'zalo'   e.g. centerView == 'code'"
+  "floating           the drop-down floating now: 'project' | 'code' | 'web' | 'db' | 'agents', '' if none",
+  'projectShown codeShown webShown dbShown agentsShown        that drop-down is on screen (pinned or floating)',
+  'projectPinned codePinned webPinned dbPinned agentsPinned   … pinned in the stack'
 ]
 
 let bindings: Binding[] = []
@@ -261,7 +285,6 @@ async function openKeybindings(): Promise<void> {
   const path = await window.api.keybindings.path()
   const text = await window.api.keybindings.read().catch(() => null)
   if (text === null) await window.api.fs.writeFile(path, template())
-  useStore.setState({ centerView: 'code' })
   openFile(path)
 }
 

@@ -25,10 +25,13 @@ import {
   Check,
   Droplet,
   Globe,
+  Code2,
+  Database,
   Moon,
   Sun
 } from 'lucide-react'
-import { basename, peekSidebar, useStore, type SidebarView } from '../store'
+import { basename, panelShown, showPanel, togglePanel, useStore, type SidebarView } from '../store'
+import { StackBar } from './Stack'
 import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, toggleBottom, toggleTheme } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { languageOf } from '../fileModelsLite'
@@ -55,60 +58,13 @@ function dragWindow(e: React.MouseEvent): void {
 
 export function TitleBar(): React.JSX.Element {
   const root = useStore((s) => s.root)
-  const recent = useStore((s) => s.recent)
-  const [menu, setMenu] = useState(false)
-
-  useEffect(() => {
-    if (!menu) return
-    const close = (): void => setMenu(false)
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [menu])
 
   return (
     <div className={window.api.platform === 'darwin' ? 'titlebar mac' : 'titlebar'} onMouseDown={dragWindow}>
       <div className="titlebar-left">
         <Logo size={18} />
         <span className="app-name">VIBE <b>CODE</b></span>
-        {root && (
-          <div className="folder-switch" onMouseDown={(e) => e.stopPropagation()} onMouseEnter={() => peekSidebar(true)} onMouseLeave={() => peekSidebar(false)}>
-            <button className="folder-btn" onClick={() => setMenu(!menu)}>
-              <FolderOpen size={13} />
-              {basename(root)}
-              <ChevronDown size={12} />
-            </button>
-            {menu && (
-              <div className="menu">
-                <button
-                  className="menu-item"
-                  onClick={() => {
-                    setMenu(false)
-                    openFolder()
-                  }}
-                >
-                  <FolderOpen size={14} /> Open folder…
-                </button>
-                {recent.length > 1 && <div className="menu-sep">Recent</div>}
-                {recent
-                  .filter((r) => r !== root)
-                  .map((r) => (
-                    <button
-                      key={r}
-                      className="menu-item"
-                      onClick={() => {
-                        setMenu(false)
-                        openFolder(r)
-                      }}
-                    >
-                      <Clock size={14} />
-                      <span className="menu-item-main">{basename(r)}</span>
-                      <span className="menu-item-sub">{r}</span>
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
+        {root && <StackBar />}
       </div>
       {root && (
         <button className="search-box" onClick={() => useStore.setState({ quickOpen: true })}>
@@ -118,7 +74,7 @@ export function TitleBar(): React.JSX.Element {
         </button>
       )}
       <div className="titlebar-right">
-        <button className="icon-btn sidebar-toggle" title="Toggle sidebar (Ctrl+B)" onClick={() => useStore.setState((s) => ({ sidebarOpen: !s.sidebarOpen }))}>
+        <button className="icon-btn sidebar-toggle" title="Project: chats and folders (Ctrl+B)" onClick={() => togglePanel('project')}>
           <PanelLeft size={15} />
         </button>
         <button className="icon-btn" title="Toggle terminal (Ctrl+`)" onClick={() => toggleBottom()}>
@@ -266,7 +222,7 @@ function WindowControls(): React.JSX.Element | null {
 
 export function ActivityBar(): React.JSX.Element {
   const view = useStore((s) => s.sidebarView)
-  const open = useStore((s) => s.sidebarOpen)
+  const open = useStore((s) => panelShown(s, 'project'))
   const attention = useStore((s) => s.chats.filter((c) => c.attention).length)
   const working = useStore((s) => s.chats.some((c) => c.status === 'working'))
   const changes = useStore((s) => s.git.files.length)
@@ -275,7 +231,11 @@ export function ActivityBar(): React.JSX.Element {
     <button
       className={`activity-item${view === v && open ? ' active' : ''}`}
       title={title}
-      onClick={() => useStore.setState((s) => (s.sidebarView === v && s.sidebarOpen ? { sidebarOpen: false } : { sidebarView: v, sidebarOpen: true }))}
+      onClick={() => {
+        if (useStore.getState().sidebarView === v && open) return togglePanel('project')
+        useStore.setState({ sidebarView: v })
+        showPanel('project')
+      }}
     >
       {icon}
       {badge}
@@ -384,13 +344,19 @@ export function StatusBar(): React.JSX.Element {
     <div className="statusbar">
       <div className="statusbar-left">
         {git.isRepo && (
-          <button className="sb-item" onClick={() => useStore.setState({ centerView: 'code' })}>
+          <button className="sb-item" onClick={() => showPanel('code')}>
             <GitBranch size={12} /> {git.branch}
             {git.files.length > 0 && <span className="sb-muted">· {git.files.length} changed</span>}
           </button>
         )}
         {total > 0 && (
-          <button className="sb-item" onClick={() => useStore.setState({ sidebarView: 'chats', sidebarOpen: true })}>
+          <button
+            className="sb-item"
+            onClick={() => {
+              useStore.setState({ sidebarView: 'chats' })
+              showPanel('project')
+            }}
+          >
             {working > 0 ? <Loader2 size={12} className="spin" /> : <MessagesSquare size={12} />}
             {working > 0 ? `${working} working` : `${total} chat${total > 1 ? 's' : ''}`}
           </button>

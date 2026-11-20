@@ -1,5 +1,5 @@
 import { clearAttachments } from './attachments'
-import { basename, uid, useStore, type Chat, type EditorTab, type WebTab } from './store'
+import { basename, openPatch, panelShown, showPanel, uid, useStore, type Chat, type EditorTab, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -655,30 +655,6 @@ export function selectChat(id: string): void {
   setTimeout(() => focusTerm(id), 0)
 }
 
-/**
- * A new Claude chat in `projectCwd` that starts by reading a Zalo task: the conversation, its photos and
- * files are saved to disk first, and the chat's first message points Claude at them.
- */
-export async function newChatFromZaloTask(taskId: string, title: string, projectCwd?: string | null): Promise<void> {
-  const cwd = projectCwd ?? (await window.api.app.pickFolder())
-  if (!cwd) return
-  if (!st().claude?.found) {
-    window.alert('Chưa cài Claude Code trên máy này.')
-    return
-  }
-  const ctx = await window.api.zalo.taskContext(taskId)
-  if (!st().root || !samePath(st().root!, cwd)) await openFolder(cwd, { autoChat: false })
-  const extra = ctx.images.length || ctx.files.length ? ` (${ctx.images.length} images, ${ctx.files.length} files attached)` : ''
-  newChat({
-    cwd,
-    agent: 'claude',
-    title: title.slice(0, 60),
-    pinnedTitle: true,
-    // typed into the input box, not sent: you add your own notes and press Enter yourself
-    draft: `Read the Zalo task context file ${ctx.file}${extra} and follow the instructions at its top. `
-  })
-}
-
 export function closeChat(id: string): void {
   disposeTerm(id)
   clearAttachments(id)
@@ -767,8 +743,8 @@ export function toggleBottom(): void {
 
 function pushTab(tab: EditorTab): void {
   useStore.setState((s) => {
-    if (s.tabs.some((t) => t.id === tab.id)) return { activeTabId: tab.id, centerView: 'code' }
-    return { tabs: [...s.tabs, tab], activeTabId: tab.id, centerView: 'code' }
+    if (s.tabs.some((t) => t.id === tab.id)) return { activeTabId: tab.id, ...openPatch('code') }
+    return { tabs: [...s.tabs, tab], activeTabId: tab.id, ...openPatch('code') }
   })
 }
 
@@ -788,9 +764,18 @@ const blankTab = (url = HOME_URL): WebTab => ({ id: 'w-' + uid(), url, title: ''
  * Web pane never renders a frame with no page in it (that empty frame made the layout jump).
  */
 function browserForNewChat(s: ReturnType<typeof st>, chatId: string): Partial<ReturnType<typeof st>> {
-  if (s.centerView !== 'web' || s.browsers[chatId]) return {}
+  if (!panelShown(s, 'web') || s.browsers[chatId]) return {}
   const t = blankTab()
   return { browsers: { ...s.browsers, [chatId]: { tabs: [t], active: t.id } } }
+}
+
+/** Give a chat its first (blank) page, without showing or hiding anything. */
+export function ensureBrowser(key: string): void {
+  useStore.setState((s) => {
+    if (s.browsers[key]) return s
+    const t = blankTab()
+    return { browsers: { ...s.browsers, [key]: { tabs: [t], active: t.id } } }
+  })
 }
 
 /** Show the Web tab for the current chat (optionally at a URL, in the tab you're on). */
@@ -798,7 +783,7 @@ export function openBrowser(url?: string): void {
   const key = browserKey(st().activeChatId)
   if (!st().browsers[key]) newBrowserTab(key, url)
   else if (url) setBrowserUrl(key, url)
-  useStore.setState({ centerView: 'web' })
+  showPanel('web')
 }
 
 /** A new tab in a chat's browser (reuses the open tab when it's still blank), and show it. */
@@ -807,11 +792,11 @@ export function newBrowserTab(key: string, url?: string): void {
     const b = s.browsers[key]
     const cur = b?.tabs.find((t) => t.id === b.active)
     if (b && cur && cur.url === HOME_URL) {
-      if (!url) return { centerView: 'web' }
-      return { centerView: 'web', browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t === cur ? { ...t, url } : t)) } } }
+      if (!url) return openPatch('web')
+      return { ...openPatch('web'), browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t === cur ? { ...t, url } : t)) } } }
     }
     const tab = blankTab(url)
-    return { centerView: 'web', browsers: { ...s.browsers, [key]: { tabs: [...(b?.tabs ?? []), tab], active: tab.id } } }
+    return { ...openPatch('web'), browsers: { ...s.browsers, [key]: { tabs: [...(b?.tabs ?? []), tab], active: tab.id } } }
   })
 }
 
@@ -835,11 +820,12 @@ export function closeBrowserTab(key: string, id: string): void {
   })
 }
 
-/** A chat's Claude used its browser tools: give that chat a Web tab, and show it if it's the open chat. */
+/** A chat's Claude used its browser tools: give that chat a Web tab (the drop-down stays as it is: floating, it would cover the chat). */
 export function showChatBrowser(chatId: string): void {
   useStore.setState((s) => {
-    const browsers = s.browsers[chatId] ? s.browsers : { ...s.browsers, [chatId]: (() => { const t = blankTab(); return { tabs: [t], active: t.id } })() }
-    return { browsers, centerView: chatId === s.activeChatId ? 'web' : s.centerView }
+    if (s.browsers[chatId]) return s
+    const t = blankTab()
+    return { browsers: { ...s.browsers, [chatId]: { tabs: [t], active: t.id } } }
   })
 }
 
@@ -905,7 +891,8 @@ export function cycleTab(step: 1 | -1): void {
   if (!tabs.length) return
   const i = tabs.findIndex((t) => t.id === activeTabId)
   const next = tabs[(i + step + tabs.length) % tabs.length]
-  useStore.setState({ activeTabId: next.id, centerView: 'code' })
+  useStore.setState({ activeTabId: next.id })
+  showPanel('code')
 }
 
 /** Next / previous chat in the sidebar's order. */

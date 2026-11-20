@@ -293,7 +293,7 @@ type Line = ReturnType<typeof logicalLine>
  * Claude Code wraps long lines itself (a newline plus indentation, not a terminal soft wrap), which
  * cut paths in two. `b` goes on from `a` when `b` is indented text and either `a` runs to the right
  * edge ('char': cut mid-word) or `b`'s first word would not have fit after `a` ('word': wrapped at
- * a space, which Claude Code drops, e.g. "...\Roaming\TINJS" / "Studio\zalo\...").
+ * a space, which Claude Code drops, e.g. "...\Roaming\TINJS" / "Studio\cache\...").
  */
 function continues(term: Terminal, a: Line, b: Line): 'char' | 'word' | null {
   const end = a.pos[a.pos.length - 1]

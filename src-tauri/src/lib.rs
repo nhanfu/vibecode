@@ -1,4 +1,4 @@
-//! VIBE CODE — the native side: terminals, files, git, Claude's session store, SQL Server, Zalo,
+//! VIBE CODE — the native side: terminals, files, git, Claude's session store, SQL Server,
 //! the built-in browser and the MCP server that lets each chat's Claude drive them.
 
 pub mod core;
@@ -14,11 +14,8 @@ mod mssql;
 mod pty;
 mod sessions;
 mod settings;
-mod toast;
 mod webdata;
 mod windowing;
-mod zalo;
-mod zalo_tasks;
 
 use tauri::Manager;
 
@@ -84,21 +81,6 @@ pub fn run() {
             mssql::db_columns,
             mssql::db_scan_project,
             mssql::db_scan_ssms,
-            // Zalo
-            zalo::zalo_state,
-            zalo::zalo_login,
-            zalo::zalo_cancel,
-            zalo::zalo_reconnect,
-            zalo::zalo_logout,
-            zalo::zalo_sync_all,
-            zalo_tasks::zalo_tasks,
-            zalo_tasks::zalo_tasks_analyze,
-            zalo_tasks::zalo_task_status,
-            zalo_tasks::zalo_task_context,
-            zalo_tasks::zalo_task_remove,
-            zalo_tasks::zalo_tasks_viewing,
-            toast::toast_click,
-            toast::toast_close,
             // window
             windowing::win_state,
             windowing::win_minimize,
@@ -141,8 +123,6 @@ pub fn run() {
             // before any chat starts: chats get the MCP server's address at launch
             tauri::async_runtime::block_on(mcp::start())?;
             windowing::init(app)?;
-            zalo::init();
-            zalo_tasks::init();
             Ok(())
         })
         .on_window_event(|window, event| {

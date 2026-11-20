@@ -14,7 +14,7 @@ export interface KeyRule {
   when?: string
 }
 
-/** What `when` clauses can read: true/false flags and string values (`centerView == 'code'`). */
+/** What `when` clauses can read: true/false flags and string values (`floating == 'web'`). */
 export type Context = Record<string, string | boolean | undefined>
 
 /** A rule that is ready to match: its key in canonical form and its `when` compiled. */

@@ -1,9 +1,8 @@
 //! The app's tools for Claude, as MCP servers over HTTP on localhost (like Claude desktop's).
 //!
-//! Every `claude` chat is launched with `--mcp-config <file>` naming three servers:
+//! Every `claude` chat is launched with `--mcp-config <file>` naming two servers:
 //!   vibe-browser  http://127.0.0.1:<port>/mcp/<chatId>   — that chat's own Web tab
 //!   vibe-mssql    http://127.0.0.1:<port>/db/<chatId>    — SQL Server connections
-//!   vibe-zalo     http://127.0.0.1:<port>/zalo/<chatId>  — the personal Zalo account
 //! Streamable HTTP transport with plain JSON replies (no SSE), guarded by a per-launch token.
 //!
 //! The same server takes the chat's Claude Code hooks (`--settings <file>`, see settings_for):
@@ -41,7 +40,6 @@ use crate::{
 
 const BROWSER: &str = "vibe-browser";
 const DB: &str = "vibe-mssql";
-const ZALO: &str = "vibe-zalo";
 
 static PORT: AtomicU16 = AtomicU16::new(0);
 
@@ -68,7 +66,7 @@ pub async fn start() -> anyhow::Result<()> {
 pub fn config_for(chat: &str) -> Option<String> {
     let chat_enc = urlencode(chat);
     let server = |port: u16, kind: &str| json!({ "type": "http", "url": format!("http://127.0.0.1:{port}/{kind}/{chat_enc}"), "headers": { "Authorization": format!("Bearer {}", token()) } });
-    write_for(chat, "json", |port| json!({ "mcpServers": { BROWSER: server(port, "mcp"), DB: server(port, "db"), ZALO: server(port, "zalo") } }))
+    write_for(chat, "json", |port| json!({ "mcpServers": { BROWSER: server(port, "mcp"), DB: server(port, "db") } }))
 }
 
 /// `--settings` file for one chat: a hook that reports, with each prompt, the session it goes into.
@@ -112,7 +110,7 @@ async fn not_post() -> Response {
 }
 
 async fn on_post(Path((kind, chat)): Path<(String, String)>, headers: HeaderMap, body: Bytes) -> Response {
-    if !matches!(kind.as_str(), "mcp" | "db" | "zalo" | "hook") {
+    if !matches!(kind.as_str(), "mcp" | "db" | "hook") {
         return StatusCode::NOT_FOUND.into_response();
     }
     let auth = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
@@ -157,7 +155,6 @@ fn json_reply(v: Value) -> Response {
 async fn handle(kind: &str, chat: &str, method: &str, params: &Value) -> Result<Value, (i32, String)> {
     let (name, instructions, tools) = match kind {
         "db" => (DB, crate::mssql::INSTRUCTIONS, crate::mssql::tools()),
-        "zalo" => (ZALO, crate::zalo::INSTRUCTIONS, crate::zalo::tools()),
         _ => (BROWSER, BROWSER_INSTRUCTIONS, browser_tools()),
     };
     match method {
@@ -174,7 +171,6 @@ async fn handle(kind: &str, chat: &str, method: &str, params: &Value) -> Result<
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
             let result = match kind {
                 "db" => text_result(crate::mssql::call_tool(&tool, args)).await,
-                "zalo" => text_result(crate::zalo::call_tool(&tool, args)).await,
                 _ => call_browser(chat, &tool, &args).await,
             };
             Ok(match result {
