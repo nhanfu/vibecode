@@ -12,6 +12,8 @@
  */
 import { closeFloat, floating, PANEL_IDS, panelShown, showPanel, togglePanel, togglePin, useStore, type StaticPanelId } from './store'
 import {
+  browserKey,
+  closeBrowserTab,
   closeChat,
   closeTab,
   cycleChat,
@@ -19,10 +21,12 @@ import {
   defaultAgent,
   newChat,
   newShell,
+  newWebTab,
   openBrowser,
   openFolder,
   openFile,
   reopenClosedTab,
+  reopenClosedWebTab,
   selectChat,
   toggleBottom,
   toggleTheme
@@ -78,6 +82,17 @@ export const COMMANDS: Command[] = [
   { id: 'save', label: 'Save file', run: () => saveActive() },
   { id: 'closeTab', label: 'Close editor tab', run: () => closeActiveTab() },
   { id: 'reopenTab', label: 'Reopen closed editor tab', run: () => reopenClosedTab() },
+  { id: 'newWebTab', label: 'New web tab', run: () => newWebTab() },
+  {
+    id: 'closeWebTab',
+    label: 'Close web tab',
+    run: () => {
+      const key = browserKey(st().activeChatId)
+      const active = st().browsers[key]?.active
+      if (active) closeBrowserTab(key, active)
+    }
+  },
+  { id: 'reopenWebTab', label: 'Reopen closed web tab', run: () => reopenClosedWebTab() },
   { id: 'nextTab', label: 'Next editor tab', run: () => cycleTab(1) },
   { id: 'prevTab', label: 'Previous editor tab', run: () => cycleTab(-1) },
 
@@ -180,6 +195,10 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+w', command: 'closeTab', when: '!terminalFocus && !textInputFocus && codeShown' },
   { key: 'ctrl+f4', command: 'closeTab', when: '!terminalFocus && codeShown' },
   { key: 'ctrl+shift+t', command: 'reopenTab' },
+  // the keyboard in a Web tab: these keys belong to the tabs there (the later rule wins)
+  { key: 'ctrl+t', command: 'newWebTab', when: '!terminalFocus' },
+  { key: 'ctrl+w', command: 'closeWebTab', when: 'webFocus' },
+  { key: 'ctrl+shift+t', command: 'reopenWebTab', when: 'webFocus' },
   { key: 'ctrl+tab', command: 'nextTab' },
   { key: 'ctrl+pagedown', command: 'nextTab' },
   { key: 'ctrl+shift+tab', command: 'prevTab' },
@@ -218,6 +237,7 @@ function context(): Context {
   const field = inTextField(el)
   const s = st()
   return {
+    webFocus: webHasFocus || !!el?.closest?.('.browser-tab'),
     terminalFocus: !!term,
     chatFocus: !!term && term.dataset.kind === 'claude',
     shellFocus: !!term && term.dataset.kind === 'shell',
@@ -231,6 +251,7 @@ function context(): Context {
   }
 }
 const CONTEXT_HELP = [
+  'webFocus           the keyboard is in a Web tab (its address bar or its page)',
   'terminalFocus      the cursor is in a terminal (a chat or a shell)',
   'chatFocus          … in a chat (Claude Code or another coding agent)',
   'shellFocus         … in a shell terminal',
@@ -315,6 +336,18 @@ function isReload(e: KeyboardEvent): boolean {
 
 /** The first key of a chord ("ctrl+k" of "ctrl+k ctrl+t"), waiting for the second. */
 let pending: string | null = null
+
+/** The page (a native view, outside the document) has the keyboard: set when its keys arrive, cleared by a click elsewhere. */
+let webHasFocus = false
+document.addEventListener('pointerdown', (e) => {
+  webHasFocus = !!(e.target as HTMLElement | null)?.closest?.('.browser-tab')
+}, true)
+
+/** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed in a Web page: run them as if they came from the window. */
+export function webKeyFromNative(key: string, shift: boolean): void {
+  webHasFocus = true
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: shift ? key.toUpperCase() : key, ctrlKey: true, shiftKey: shift }))
+}
 
 export function onGlobalKey(e: KeyboardEvent): void {
   if (e.defaultPrevented) return

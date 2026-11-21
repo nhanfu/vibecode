@@ -123,7 +123,10 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     #[cfg(windows)]
     win::hook(&wv, label.clone());
     #[cfg(target_os = "linux")]
-    gtk_layer::adopt(&wv);
+    {
+        gtk_layer::adopt(&wv);
+        gtk_layer::keys(&wv, label.clone());
+    }
     TABS.lock().insert(label, Tab { chat: chat_id, webview: wv, visible: false, hidden_since: Some(Instant::now()), suspended: false, logging: false });
     start_sweeper();
     Ok(())
@@ -167,6 +170,17 @@ pub fn web_set_active(chat_id: String, label: String) {
     ACTIVE.lock().insert(chat_id.clone(), label.clone());
     for tx in WAITERS.lock().remove(&chat_id).unwrap_or_default() {
         let _ = tx.send(label.clone());
+    }
+}
+
+/// Puts the keyboard into the page (after the address bar's Enter).
+#[tauri::command]
+pub fn web_focus(label: String) {
+    if let Some(w) = webview(&label) {
+        #[cfg(target_os = "linux")]
+        gtk_layer::focus(&w);
+        #[cfg(not(target_os = "linux"))]
+        let _ = w.set_focus();
     }
 }
 
@@ -508,6 +522,33 @@ mod gtk_layer {
             let fixed = layer(&vbox);
             view.set_size_request(800, 600);
             fixed.put(&view, -10_000, -10_000);
+        });
+    }
+
+    /// The page takes the keyboard. Keys GTK sees before WebKit does: Ctrl+T, Ctrl+W and Ctrl+Shift+T
+    /// are the app's (new, close, reopen tab), so they go to the app and not into the page.
+    pub fn keys(w: &Webview, label: String) {
+        let _ = w.with_webview(move |pw| {
+            use gtk::{gdk::ModifierType, glib, prelude::*};
+            let view: gtk::Widget = pw.inner().upcast();
+            view.connect_key_press_event(move |_, ev| {
+                let state = ev.state();
+                let ctrl = state.contains(ModifierType::CONTROL_MASK);
+                let key = ev.keyval().to_unicode().map(|c| c.to_ascii_lowercase()).unwrap_or('\0');
+                if ctrl && matches!(key, 't' | 'w') {
+                    crate::core::emit("web:key", (label.clone(), key.to_string(), state.contains(ModifierType::SHIFT_MASK)));
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            });
+        });
+    }
+
+    pub fn focus(w: &Webview) {
+        let _ = w.with_webview(|pw| {
+            use gtk::prelude::*;
+            let view: gtk::Widget = pw.inner().upcast();
+            view.grab_focus();
         });
     }
 

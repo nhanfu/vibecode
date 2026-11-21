@@ -362,6 +362,13 @@ pub fn pty_kill(id: String) {
     }
 }
 
+/// The page asks for this on start: terminals left from a page that was reloaded are stopped
+/// first, so the chats restored now are the only ones running.
+#[tauri::command]
+pub fn pty_kill_all() {
+    kill_all();
+}
+
 pub fn kill_all() {
     let all: Vec<Session> = SESSIONS.lock().drain().map(|(_, s)| s).collect();
     for mut s in all {

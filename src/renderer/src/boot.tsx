@@ -11,9 +11,10 @@ import App from './App'
 import { useStore } from './store'
 import * as actions from './actions'
 import { readScreen } from './terminals'
+import { userStore } from './localPref'
 
 // Handy from DevTools (Ctrl+Shift+I) and for scripted UI checks.
-;(window as unknown as { __studio: unknown }).__studio = { useStore, actions, readScreen }
+;(window as unknown as { __studio: unknown }).__studio = { useStore, actions, readScreen, userStore }
 
 // xterm measures glyphs once at open — make sure the mono font is ready first.
 Promise.race([

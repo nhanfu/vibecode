@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, ExternalLink, Laptop, Maximize, Monitor, RotateCw, Eraser, Search, Shuffle, Smartphone, Star, Tablet, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, RotateCw, Search, Shuffle, Star, X } from 'lucide-react'
 import type { WebSuggestion } from '../../../shared/types'
 import { BookmarkBar } from './BrowserBookmarks'
 import { useStore } from '../store'
 import { HOME_URL, setBrowserUrl } from '../actions'
 import { SlidePill } from './motion'
-import { userStore } from '../localPref'
 
 /** transitions that never move anything (a slide or scale can move the page, so those still count) */
 const COLOR_ONLY = new Set(['background-color', 'color', 'opacity', 'box-shadow', 'border-color', 'outline-color', 'fill', 'stroke', 'text-decoration-color'])
@@ -21,40 +20,6 @@ function toUrl(input: string): string {
 
 /** The blank start page shows as an empty address bar. */
 const display = (url: string): string => (url === HOME_URL ? '' : url)
-
-/* ---------------- device emulation ---------------- */
-
-const MOBILE_UA =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
-const TABLET_UA =
-  'Mozilla/5.0 (iPad; CPU OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
-
-interface Device {
-  key: string
-  label: string
-  icon: React.JSX.Element
-  w?: number
-  h?: number
-  /** phones/tablets also get a mobile browser identity, so sites serve their mobile layout */
-  ua?: string
-}
-
-const DEVICES: Device[] = [
-  { key: 'fit', label: 'Fit', icon: <Maximize size={13} /> },
-  { key: 'fhd', label: 'Full HD 1920×1080', icon: <Monitor size={13} />, w: 1920, h: 1080 },
-  { key: 'laptop', label: 'Laptop 1366×768', icon: <Laptop size={13} />, w: 1366, h: 768 },
-  { key: 'ipad', label: 'iPad 820×1180', icon: <Tablet size={13} />, w: 820, h: 1180, ua: TABLET_UA },
-  { key: 'mobile', label: 'Mobile 390×844', icon: <Smartphone size={13} />, w: 390, h: 844, ua: MOBILE_UA }
-]
-
-const DEVICE_KEY = 'vibe.browserDevice'
-function savedDevice(): string {
-  try {
-    return userStore.getItem(DEVICE_KEY) ?? 'fit'
-  } catch {
-    return 'fit'
-  }
-}
 
 /**
  * Anything drawn over the page area (menus, dialogs, lightboxes, address suggestions, a title-bar
@@ -83,33 +48,16 @@ export function BrowserTab({
   onScreen: boolean
 }): React.JSX.Element {
   const viewRef = useRef<HTMLDivElement>(null)
-  const stageRef = useRef<HTMLDivElement>(null)
   const url = useStore((s) => s.browsers[chatKey]?.tabs.find((t) => t.id === tabId)?.url ?? HOME_URL)
   // the native page this tab owns (labels: letters, digits, - _ only)
   const [label] = useState(() => `web-${++labelSeq}-${tabId}`.replace(/[^\w-]/g, '_'))
   // first URL only: later navigation happens inside the page
   const [initial] = useState(url)
   const [address, setAddress] = useState(display(url))
-  const shown = useRef(url)
-  const [loading, setLoading] = useState(true)
-  const [nav, setNav] = useState({ back: false, fwd: false })
-  const [savedKey, setDeviceKey] = useState(savedDevice)
-  // not pinned (floating): no emulated screen, the page just follows the panel as it is resized;
-  // the device picker is hidden and comes back (with the chosen device) once it is pinned
-  const pinned = useStore((s) => s.pinned.includes(detached ? `page:${tabId}` : 'web'))
-  const deviceKey = pinned ? savedKey : 'fit'
-  const device = DEVICES.find((d) => d.key === deviceKey) ?? DEVICES[0]
-  const [initialUa] = useState(device.ua)
-  // pinning / unpinning can switch between a phone identity and the desktop one
-  const uaSeen = useRef(device.ua ?? '')
-  useEffect(() => {
-    const ua = device.ua ?? ''
-    if (ua === uaSeen.current) return
-    uaSeen.current = ua
-    void window.api.browser.setUserAgent(label, device.ua ?? null)
-  }, [device.ua, label])
-  const [box, setBox] = useState<{ w: number; h: number; zoom: number } | null>(null)
   const addressRef = useRef<HTMLInputElement>(null)
+  const shown = useRef(url)
+  const [loading, setLoading] = useState(false)
+  const [nav, setNav] = useState({ back: false, fwd: false })
   // blank tab: the native page is hidden and a start page with a random photo shows instead
   const [home, setHome] = useState(url === HOME_URL)
 
@@ -130,7 +78,7 @@ export function BrowserTab({
 
   // the native page lives as long as this tab
   useEffect(() => {
-    void window.api.browser.open(label, chatKey, initial, initialUa)
+    void window.api.browser.open(label, chatKey, initial).catch(() => {})
     return () => window.api.browser.close(label)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [label])
@@ -169,32 +117,11 @@ export function BrowserTab({
   }, [url, label])
 
   /*
-   * Emulated screen: the page lays out at the device's size (e.g. 1920×1080), then is zoomed out
-   * to fit this pane. Zoom (not a CSS transform) keeps clicks and scrolling exact.
-   */
-  useEffect(() => {
-    const stage = stageRef.current
-    if (!stage) return
-    const fit = (): void => {
-      const W = stage.clientWidth
-      const H = stage.clientHeight
-      if (W < 20 || H < 20) return // hidden tab
-      if (!device.w || !device.h) return setBox(null)
-      const zoom = Math.min(1, (W - 16) / device.w, (H - 16) / device.h)
-      setBox({ w: Math.floor(device.w * zoom), h: Math.floor(device.h * zoom), zoom })
-    }
-    fit()
-    const ro = new ResizeObserver(fit)
-    ro.observe(stage)
-    return () => ro.disconnect()
-  }, [device.w, device.h])
-
-  /*
    * Keep the native page glued to its placeholder. It is shown only while this is the open tab of
    * the chat on screen, the Web view is in front, nothing is drawn over it and the window is not
    * hidden; otherwise it is parked — and the engine throttles, then freezes it.
    */
-  const zoom = box?.zoom ?? 1
+  const zoom = 1
   // the open tab of the chat on screen, with the Web view in front: only that page is tracked live
   const live = (active || detached) && onScreen
   useEffect(() => {
@@ -271,28 +198,6 @@ export function BrowserTab({
     }
   }, [live, label, zoom, home])
 
-  const pickDevice = (key: string): void => {
-    const next = DEVICES.find((d) => d.key === key) ?? DEVICES[0]
-    try {
-      userStore.setItem(DEVICE_KEY, key)
-    } catch {
-      /* per-viewer convenience only */
-    }
-    // (the effect above switches the browser identity between phone/tablet and desktop)
-    setDeviceKey(key)
-  }
-
-  const [clearing, setClearing] = useState(false)
-  const clearCache = async (): Promise<void> => {
-    setClearing(true)
-    try {
-      await window.api.app.clearBrowserCache()
-      window.api.browser.reload(label, true)
-    } finally {
-      setClearing(false)
-    }
-  }
-
   const go = (to = toUrl(address)): void => {
     typed.current = '' // a suggestion request still on its way must not reopen the list over the page
     setAddress(to)
@@ -345,7 +250,11 @@ export function BrowserTab({
               setTimeout(() => setSugg([]), 120)
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') go(pick >= 0 && sugg[pick] ? sugg[pick].url : undefined)
+              if (e.key === 'Enter') {
+                go(pick >= 0 && sugg[pick] ? sugg[pick].url : undefined)
+                // like a browser: once the address is entered, the keyboard goes into the page
+                window.api.browser.focus(label)
+              }
               else if (e.key === 'Escape') {
                 typed.current = ''
                 setSugg([])
@@ -364,37 +273,20 @@ export function BrowserTab({
               {sugg.map((x, i) => (
                 <button key={x.url} className={i === pick ? 'on' : ''} onMouseDown={(e) => e.preventDefault()} onClick={() => go(x.url)}>
                   <span className="bs-title">
-                    {x.bookmark && <Star size={11} />}
+                    {x.search ? <Search size={11} /> : x.bookmark && <Star size={11} />}
                     {x.title || x.url}
                   </span>
-                  <span className="bs-url">{x.url}</span>
+                  <span className="bs-url">{x.search ? 'Google search' : x.url}</span>
                 </button>
               ))}
             </div>
           )}
         </div>
-        {pinned && (
-          <div className="device-seg" role="radiogroup" aria-label="Screen size">
-            <SlidePill />
-            {DEVICES.map((d) => (
-              <button key={d.key} role="radio" aria-checked={d.key === deviceKey} className={d.key === deviceKey ? 'on' : ''} title={d.label} onClick={() => pickDevice(d.key)}>
-                {d.icon}
-              </button>
-            ))}
-          </div>
-        )}
-        {box && <span className="device-zoom" title="Zoomed out to fit">{Math.round(box.zoom * 100)}%</span>}
-        <button className="icon-btn" title="Clear cache & reload (keeps logins)" disabled={clearing} onClick={clearCache}>
-          <Eraser size={14} />
-        </button>
-        <button className="icon-btn" title="Open in your browser" disabled={!address} onClick={() => window.api.app.openExternal(address)}>
-          <ExternalLink size={14} />
-        </button>
       </div>
       <BookmarkBar onOpen={(u) => go(u)} />
-      <div className={`browser-stage${box ? ' emulated' : ''}`} ref={stageRef}>
-        {/* placeholder: the native page is laid over exactly this box */}
-        <div ref={viewRef} className="browser-view" style={box ? { width: box.w, height: box.h, flex: 'none' } : undefined} />
+      <div className="browser-stage">
+        {/* placeholder: the native page is laid over this box */}
+        <div ref={viewRef} className="browser-view" />
         {home && <StartPage onGo={(text) => go(toUrl(text))} />}
       </div>
     </div>

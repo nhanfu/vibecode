@@ -270,6 +270,38 @@ pub async fn app_clipboard_files() -> Res<Vec<String>> {
     Ok(tokio::task::spawn_blocking(clipboard_files).await?)
 }
 
+/// A picture on the clipboard (a screenshot, a copied image) → a temp PNG. WebKitGTK does not hand
+/// clipboard pictures to the page, so the desktop's clipboard tool reads them.
+#[tauri::command]
+pub async fn app_clipboard_image() -> Res<Option<String>> {
+    Ok(tokio::task::spawn_blocking(clipboard_image).await?)
+}
+
+#[cfg(target_os = "linux")]
+fn clipboard_image() -> Option<String> {
+    use std::process::Command;
+    let bytes = if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        let types = Command::new("wl-paste").arg("--list-types").output().ok()?;
+        let ty = String::from_utf8_lossy(&types.stdout).lines().find(|l| l.starts_with("image/"))?.to_owned();
+        Command::new("wl-paste").args(["--no-newline", "--type", &ty]).output().ok()?.stdout
+    } else {
+        Command::new("xclip").args(["-selection", "clipboard", "-t", "image/png", "-o"]).output().ok()?.stdout
+    };
+    if bytes.is_empty() {
+        return None;
+    }
+    let dir = std::env::temp_dir().join("tinjs-paste");
+    std::fs::create_dir_all(&dir).ok()?;
+    let file = dir.join(format!("image-{}.png", now_ms()));
+    std::fs::write(&file, bytes).ok()?;
+    Some(file.to_string_lossy().into_owned())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn clipboard_image() -> Option<String> {
+    None
+}
+
 #[cfg(windows)]
 fn clipboard_files() -> Vec<String> {
     use windows::Win32::{

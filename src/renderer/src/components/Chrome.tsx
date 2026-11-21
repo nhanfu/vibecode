@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 import { basename, panelShown, showPanel, togglePanel, useStore, type SidebarView } from '../store'
 import { StackBar } from './Stack'
-import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, toggleBottom, toggleTheme } from '../actions'
+import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { languageOf } from '../fileModelsLite'
 import { FileIcon, Logo } from './icons'
@@ -92,11 +92,15 @@ export function TitleBar(): React.JSX.Element {
   )
 }
 
-/** Light ↔ dark. */
+/** Theme: a click goes light → dark → system → light, like DBX's own toolbar. */
+const THEME_ORDER: ThemeChoice[] = ['light', 'dark', 'system']
+const THEME_LABEL: Record<ThemeChoice, string> = { light: 'Light', dark: 'Dark', system: 'System (follows the OS)' }
 function ThemeToggle(): React.JSX.Element {
   const light = useStore((s) => s.themeResolved === 'light')
+  const choice = useStore((s) => (s.settings?.theme as ThemeChoice | undefined) ?? 'system')
+  const next = THEME_ORDER[(THEME_ORDER.indexOf(choice) + 1) % THEME_ORDER.length] ?? 'light'
   return (
-    <button className="icon-btn" title={light ? 'Switch to dark theme' : 'Switch to light theme'} onClick={() => toggleTheme()}>
+    <button className="icon-btn" title={`Theme: ${THEME_LABEL[choice]} · click for ${THEME_LABEL[next]}`} onClick={() => void setTheme(next)}>
       {light ? <Moon size={15} /> : <Sun size={15} />}
     </button>
   )

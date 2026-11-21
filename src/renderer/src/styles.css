@@ -4992,6 +4992,13 @@ button.plan-chevron:hover {
   flex: 0 1 auto;
   border-right: 1px solid var(--border);
 }
+/* the Web panel and the Agent panel are told apart by a line on their sides that face each other */
+.stack-panel.pinned[data-panel='web'] {
+  border-left: 1px solid var(--border-strong);
+}
+.stack-panel.pinned[data-panel='agents'] {
+  border-right: 1px solid var(--border-strong);
+}
 /* floating: hangs from the title bar under its button, over the chat */
 .stack-panel.floating {
   position: absolute;

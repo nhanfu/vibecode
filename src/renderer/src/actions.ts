@@ -229,18 +229,43 @@ setInterval(() => {
 /* ---------------- Theme ---------------- */
 
 /** Dark (slate-blue, the default) or light; pushes it to the page, terminals, editor and see-through. */
+/** The theme the app shows: 'light' and 'dark' as chosen; 'system' follows the OS. */
+export type ThemeChoice = 'light' | 'dark' | 'system'
+
+function osPrefersLight(): boolean {
+  try {
+    return window.matchMedia('(prefers-color-scheme: light)').matches
+  } catch {
+    return false
+  }
+}
+
 export function applyTheme(): void {
-  const light = st().settings?.theme === 'light'
+  const choice = (st().settings?.theme as ThemeChoice | undefined) ?? 'system'
+  const light = choice === 'light' || (choice === 'system' && osPrefersLight())
   document.documentElement.dataset.theme = light ? 'light' : 'dark'
   setTerminalTheme(light)
   if (st().themeResolved !== (light ? 'light' : 'dark')) useStore.setState({ themeResolved: light ? 'light' : 'dark' })
   applyGlass()
 }
 
-export async function toggleTheme(): Promise<void> {
-  const next = st().themeResolved === 'light' ? 'dark' : 'light'
-  const settings = await window.api.app.setSettings({ theme: next }).catch(() => null)
+// 'system': the OS switching light/dark switches the app too
+try {
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if ((st().settings?.theme ?? 'system') === 'system') applyTheme()
+  })
+} catch {
+  /* no media queries: the choice stays as it was */
+}
+
+export async function setTheme(theme: ThemeChoice): Promise<void> {
+  const settings = await window.api.app.setSettings({ theme }).catch(() => null)
   if (settings) useStore.setState({ settings })
+  applyTheme()
+}
+
+export async function toggleTheme(): Promise<void> {
+  await setTheme(st().themeResolved === 'light' ? 'dark' : 'light')
 }
 
 /* ---------------- See-through (Linux-style overlay) ---------------- */
@@ -818,6 +843,34 @@ export function newBrowserTab(key: string, url?: string, reuseBlank = true): voi
   })
 }
 
+/** Ctrl+Shift+T in the Web tabs: the last closed page again, in the chat you are in. */
+export function reopenClosedWebTab(): void {
+  const key = browserKey(st().activeChatId)
+  const last = closedWebTabs.pop()
+  if (last) newBrowserTab(key, last.url, false)
+}
+
+/** Ctrl+T: a new blank tab in the chat's Web panel, and the panel shows. */
+export function newWebTab(): void {
+  newBrowserTab(browserKey(st().activeChatId), undefined, false)
+}
+
+/** Move a Web tab to a position among the open tabs (drag along the strip). */
+export function moveBrowserTab(key: string, id: string, to: number): void {
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    const tab = b?.tabs.find((t) => t.id === id)
+    if (!b || !tab || tab.detached) return s
+    const others = b.tabs.filter((t) => t.id !== id)
+    const open = others.filter((t) => !t.detached)
+    const anchor = open[Math.min(Math.max(to, 0), open.length)]
+    const at = anchor ? others.indexOf(anchor) : open.length ? others.indexOf(open[open.length - 1]) + 1 : others.length
+    const tabs = [...others.slice(0, at), tab, ...others.slice(at)]
+    if (tabs.every((t, i) => t === b.tabs[i])) return s
+    return { browsers: { ...s.browsers, [key]: { ...b, tabs } } }
+  })
+}
+
 export function selectBrowserTab(key: string, id: string): void {
   useStore.setState((s) => {
     const b = s.browsers[key]
@@ -825,11 +878,19 @@ export function selectBrowserTab(key: string, id: string): void {
   })
 }
 
+/** Web tabs closed lately, newest last (Ctrl+Shift+T brings the last one back). */
+const closedWebTabs: { url: string; title: string }[] = []
+
 /** Close one tab; closing the last one leaves a blank tab. */
 export function closeBrowserTab(key: string, id: string): void {
   useStore.setState((s) => {
     const b = s.browsers[key]
     if (!b) return s
+    const gone = b.tabs.find((t) => t.id === id)
+    if (gone && !gone.detached && gone.url !== HOME_URL) {
+      closedWebTabs.push({ url: gone.url, title: gone.title })
+      if (closedWebTabs.length > 30) closedWebTabs.shift()
+    }
     let tabs = b.tabs.filter((t) => t.id !== id)
     // the strip needs a tab of its own: torn-off ones don't count
     if (key !== PAGES_KEY && !tabs.some((t) => !t.detached)) tabs = [...tabs, blankTab()]
@@ -952,7 +1013,8 @@ export function setBrowserUrl(key: string, url: string, tabId?: string, title?: 
     const id = tabId ?? b.active
     const cur = b.tabs.find((t) => t.id === id)
     if (!cur || (cur.url === url && (title === undefined || cur.title === title))) return s
-    const tabs = b.tabs.map((t) => (t === cur ? { ...t, url, title: title ?? t.title } : t))
+    // a new address has a title of its own: the old page's title must not stay on the tab
+    const tabs = b.tabs.map((t) => (t === cur ? { ...t, url, title: title ?? (url === cur.url ? t.title : '') } : t))
     return { browsers: { ...s.browsers, [key]: { ...b, tabs } } }
   })
 }
@@ -1066,11 +1128,14 @@ export async function restoreChats(): Promise<void> {
   const projects = (await window.api.sessions.list().catch(() => null)) ?? []
   const known = new Set(projects.flatMap((g) => g.sessions.map((x) => x.id)))
   let activeId: string | null = null
+  // one chat per session: a session already open (or listed twice) is not opened again
+  const opened = new Set(st().chats.map((c) => c.sessionId).filter(Boolean))
   for (const c of saved) {
     const agent = agentDef(c.agent)
     if (agent.id === 'claude') {
       // a chat nothing was ever said in left no session to resume
-      if (!c.sessionId || !known.has(c.sessionId)) continue
+      if (!c.sessionId || !known.has(c.sessionId) || opened.has(c.sessionId)) continue
+      opened.add(c.sessionId)
       newChat({ cwd: c.cwd, args: ['--resume', c.sessionId], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: c.model, effort: c.effort, permissionMode: c.permissionMode })
     } else {
       newChat({ cwd: c.cwd, agent: agent.id, args: [...agent.resume], title: c.title, pinnedTitle: c.pinnedTitle })

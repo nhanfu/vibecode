@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useStore } from '../store'
 
 /**
  * A plugin's panel: its sidecar's page (src-tauri/src/plugins.rs starts the sidecar on first use),
@@ -21,7 +22,16 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
     }
   }, [id, attempt])
 
-  if (url) return <iframe className="plugin-frame" src={url} title={name} />
+  // the plugin follows the app's theme: the resolved one travels in the address (see plugins/dbx/patch-theme.py)
+  const theme = useStore((s) => s.themeResolved)
+  const src = useMemo(() => {
+    if (!url) return null
+    const u = new URL(url)
+    u.searchParams.set('vibeTheme', theme)
+    return u.toString()
+  }, [url, theme])
+
+  if (src) return <iframe className="plugin-frame" src={src} title={name} />
   return (
     <div className="plugin-status">
       {error ? (

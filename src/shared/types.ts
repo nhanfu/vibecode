@@ -223,6 +223,8 @@ export interface WebSuggestion {
   url: string
   title: string
   bookmark?: boolean
+  /** a Google search suggestion (title = the query) */
+  search?: boolean
 }
 
 /** A background task Claude started in a chat */

@@ -3,7 +3,7 @@ import { Suspense, lazy, memo, useEffect, useLayoutEffect, useRef, useState } fr
 import { SiteIcon } from './SiteIcon'
 import { Columns2, Database, FileDiff, FileText, Rows2, X, Command, GitCompare, Globe, MessageSquarePlus, Plus, Search } from 'lucide-react'
 import { fileUri, panelShown, useStore, type EditorTab } from '../store'
-import { HOME_URL, browserKey, closeBrowserTab, closeTab, detachBrowserTab, ensureBrowser, newBrowserTab, openBrowser, openFile, selectBrowserTab } from '../actions'
+import { HOME_URL, browserKey, closeBrowserTab, closeTab, detachBrowserTab, ensureBrowser, moveBrowserTab, newBrowserTab, openBrowser, openFile, selectBrowserTab } from '../actions'
 import { Adopt } from './webHosts'
 import { SlidePill } from './motion'
 import { ChangesView, ExplorerView } from './Sidebar'
@@ -113,6 +113,15 @@ export function WebPanel(): React.JSX.Element {
 }
 
 /** A chat's browser: its tab strip and one page per tab. */
+/** A page's address without the scheme and "www.": the fallback name of a tab with no title yet. */
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '') || url
+  } catch {
+    return url
+  }
+}
+
 function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
   const b = useStore((s) => s.browsers[chatKey])
   // a tab being dragged: `out` once the pointer is above the strip (letting go there tears it off)
@@ -147,12 +156,24 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
     const y0 = e.clientY
     let started = false
     const above = (y: number): boolean => y < (stripRef.current?.getBoundingClientRect().top ?? 0) - 6
+    // along the strip the tab moves to the place under the pointer; above it, it is torn off
+    const reorder = (x: number): void => {
+      const els = Array.from(stripRef.current?.querySelectorAll<HTMLElement>('.tab[data-tab]') ?? [])
+      let to = 0
+      for (const el of els) {
+        if (el.dataset.tab === id) continue
+        const r = el.getBoundingClientRect()
+        if (x > r.left + r.width / 2) to++
+      }
+      moveBrowserTab(chatKey, id, to)
+    }
     const move = (ev: PointerEvent): void => {
       if (!started) {
         if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return
         started = true
         document.body.style.cursor = 'grabbing'
       }
+      if (!above(ev.clientY)) reorder(ev.clientX)
       setTear({ id, out: above(ev.clientY), x: ev.clientX, y: ev.clientY })
     }
     const end = (ev: PointerEvent): void => {
@@ -181,6 +202,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
         {strip.map((t) => (
           <div
             key={t.id}
+            data-tab={t.id}
             className={`tab${t.id === b.active ? ' active' : ''}${closing.has(t.id) ? ' closing' : ''}${tear?.id === t.id ? ' tearing' : ''}`}
             onPointerDown={(e) => startTear(e, t.id)}
             onClick={() => selectBrowserTab(chatKey, t.id)}
@@ -193,7 +215,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
             title={t.url === HOME_URL ? 'New tab' : `${t.url}\nDrag it up to the title bar to open it as its own tab`}
           >
             <SiteIcon url={t.url} />
-            <span className="tab-title">{t.title || (t.url === HOME_URL ? 'New tab' : t.url.replace(/^https?:\/\//, ''))}</span>
+            <span className="tab-title">{t.title || (t.url === HOME_URL ? 'New tab' : hostOf(t.url))}</span>
             <button
               className="tab-close"
               title="Close tab"

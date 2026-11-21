@@ -38,6 +38,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            pty::pty_kill_all,
             pty::pty_visible,
             pty::claude_detect,
             pty::agents_detect,
@@ -57,6 +58,7 @@ pub fn run() {
             browser::web_stop,
             browser::web_set_user_agent,
             browser::web_close,
+            browser::web_focus,
             webdata::web_data,
             webdata::web_import_chrome,
             webdata::web_suggest,
@@ -133,6 +135,7 @@ pub fn run() {
             appcmds::app_relaunch,
             appcmds::app_save_image,
             appcmds::app_clipboard_files,
+            appcmds::app_clipboard_image,
         ])
         .setup(|app| {
             core::init(app.handle());

@@ -551,6 +551,9 @@ function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: s
   on('input', (e) => {
     const ev = e as InputEvent
     log('input', ev.inputType, JSON.stringify(ev.data), ev.isComposing)
+    // a key xterm handles itself (a space, a letter typed without the IME) is left to xterm: sending
+    // it here too printed it twice
+    if (!imeKey && !composing && !ev.isComposing) return
     // xterm's own input handling would send the text a second time
     stop(e)
     if (composing || ev.isComposing) return
@@ -718,11 +721,23 @@ export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void 
   el.addEventListener(
     'paste',
     (ev) => {
-      const files = [...(ev.clipboardData?.files ?? [])]
-      if (!files.length) return
+      const data = ev.clipboardData
+      // a picture comes as a file (or as an item when the page gets no file for it)
+      let files = [...(data?.files ?? [])]
+      if (!files.length) files = [...(data?.items ?? [])].filter((i) => i.kind === 'file' && i.type.startsWith('image/')).flatMap((i) => i.getAsFile() ?? [])
+      if (files.length) {
+        ev.preventDefault()
+        ev.stopPropagation()
+        void takeFiles(spawn.id, spawn.kind, files)
+        return
+      }
+      // nothing text and no file in the paste: the desktop clipboard may still hold a picture
+      if (data?.getData('text/plain')) return
       ev.preventDefault()
       ev.stopPropagation()
-      void takeFiles(spawn.id, spawn.kind, files)
+      void window.api.app.clipboardImage().then((path) => {
+        if (path) takePaths(spawn.id, spawn.kind, [path])
+      })
     },
     true
   )

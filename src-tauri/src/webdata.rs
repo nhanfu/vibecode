@@ -49,6 +49,9 @@ pub struct WebSuggestion {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bookmark: Option<bool>,
+    /// a Google search suggestion: `title` is the query, `url` the search page
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -429,7 +432,7 @@ fn suggest(query: &str, limit: usize) -> Vec<WebSuggestion> {
     };
     let mut scored: Vec<(f64, Found)> = found.into_iter().map(|f| (score(&f), f)).collect();
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
-    scored.into_iter().take(limit).map(|(_, f)| WebSuggestion { url: f.url, title: f.title, bookmark: f.bookmark }).collect()
+    scored.into_iter().take(limit).map(|(_, f)| WebSuggestion { url: f.url, title: f.title, bookmark: f.bookmark, search: None }).collect()
 }
 
 /* ---------------- commands ---------------- */
@@ -446,7 +449,33 @@ pub async fn web_import_chrome() -> Res<WebData> {
 
 #[tauri::command]
 pub async fn web_suggest(query: String) -> Res<Vec<WebSuggestion>> {
-    Ok(suggest(&query, 8))
+    let q = query.trim().to_owned();
+    // the bookmarks and history first, then what Google suggests for the words typed so far
+    let mut list = suggest(&q, 8);
+    if !q.is_empty() && !q.starts_with("http") {
+        for text in google_suggest(&q).await.unwrap_or_default().into_iter().take(5) {
+            if list.iter().any(|x| x.title.eq_ignore_ascii_case(&text)) {
+                continue;
+            }
+            let url = reqwest::Url::parse_with_params("https://www.google.com/search", &[("q", text.as_str())]).map(String::from).unwrap_or_default();
+            list.push(WebSuggestion { url, title: text, bookmark: None, search: Some(true) });
+        }
+    }
+    Ok(list)
+}
+
+/// Google's completions for a query: only the typed text is sent, with no cookies or identifiers.
+async fn google_suggest(query: &str) -> anyhow::Result<Vec<String>> {
+    let client = reqwest::Client::builder().timeout(std::time::Duration::from_millis(1500)).build()?;
+    let url = reqwest::Url::parse_with_params("https://suggestqueries.google.com/complete/search", &[("client", "firefox"), ("q", query)])?;
+    let body: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(body.get(1).and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default())
 }
 
 #[tauri::command]

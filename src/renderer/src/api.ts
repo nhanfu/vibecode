@@ -136,7 +136,11 @@ export const api = {
     stop: (label: string): void => void invoke('web_stop', { label }),
     setUserAgent: (label: string, userAgent: string | null): Promise<void> => invoke('web_set_user_agent', { label, userAgent }),
     close: (label: string): void => void invoke('web_close', { label }),
+    /** the keyboard goes into the page */
+    focus: (label: string): void => void invoke('web_focus', { label }),
     onNav: (cb: (label: string, nav: WebNav) => void): Off => on('web:nav', cb),
+    /** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed while the page has the keyboard: key is 't' or 'w' */
+    onKey: (cb: (label: string, key: string, shift: boolean) => void): Off => on('web:key', cb),
     /** a chat's browser tools were used: make sure its Web tab exists (and show it) */
     onOpen: (cb: (chatId: string) => void): Off => on('browser:open', cb),
     data: (): Promise<WebData> => invoke('web_data'),
@@ -224,11 +228,12 @@ export const api = {
     pickFiles: (defaultPath?: string): Promise<string[]> => invoke('app_pick_files', { defaultPath }),
     fileInfo: (paths: string[]): Promise<{ path: string; size: number; dir: boolean; preview?: string }[]> => invoke('app_file_info', { paths }),
     openExternal: (url: string): Promise<void> => invoke('app_open_external', { url }),
-    clearBrowserCache: (): Promise<void> => invoke('app_clear_browser_cache'),
     relaunch: (): Promise<boolean> => invoke('app_relaunch'),
     saveImage: (data: Uint8Array, ext: string): Promise<string> => invoke('app_save_image', data, { headers: { 'x-ext': ext } }),
     /** paths of files copied in Explorer (Ctrl+C on a file), [] when the clipboard holds none */
     clipboardFiles: (): Promise<string[]> => invoke('app_clipboard_files'),
+    /** a picture on the clipboard, saved to a temp PNG (Linux), or null */
+    clipboardImage: (): Promise<string | null> => invoke('app_clipboard_image'),
     /**
      * A WebView never learns where a dropped file lives on disk; the window does. Files dragged in
      * from Explorer arrive here with their paths and the drop point, instead of as DOM drop events.
