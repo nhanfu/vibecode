@@ -28,6 +28,7 @@ import { CodePanel, DbPanel, WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
 import { PluginManager } from './PluginManager'
+import { userStore } from '../localPref'
 
 /*
  * The title-bar drop-downs as a horizontal stack (store.ts PanelId). A drop-down floats under its
@@ -46,7 +47,7 @@ interface PanelMeta {
 }
 
 interface FloatSize {
-  /** localStorage key */
+  /** key in the saved preferences */
   key: string
   /** width before it is ever dragged, and after a double-click on the edge */
   initial: () => number
@@ -556,15 +557,15 @@ function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.
 function useWidth(size: FloatSize): [number, (e: React.PointerEvent<HTMLDivElement>, leftOf?: HTMLElement) => void, () => void] {
   const [width, setWidth] = useState(() => {
     try {
-      return Number(localStorage.getItem(size.key)) || size.initial()
+      return Number(userStore.getItem(size.key)) || size.initial()
     } catch {
       return size.initial()
     }
   })
   const save = (w: number | null): void => {
     try {
-      if (w === null) localStorage.removeItem(size.key)
-      else localStorage.setItem(size.key, String(w))
+      if (w === null) userStore.removeItem(size.key)
+      else userStore.setItem(size.key, String(w))
     } catch {
       /* it resets next time */
     }

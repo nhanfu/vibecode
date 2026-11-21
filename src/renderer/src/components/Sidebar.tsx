@@ -29,6 +29,7 @@ import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, Gi
 import { agentDef } from '../../../shared/agents'
 import { NewChatMenu } from './AgentMenu'
 import { focusTerm } from '../terminals'
+import { userStore } from '../localPref'
 
 export function Sidebar(): React.JSX.Element {
   // files and git changes live in the Source code tab; the sidebar is just the chats
@@ -86,7 +87,7 @@ function ChatsView(): React.JSX.Element {
 const EXPANDED_KEY = 'tinjs.expandedProjects'
 function loadExpanded(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(EXPANDED_KEY) ?? '[]'))
+    return new Set(JSON.parse(userStore.getItem(EXPANDED_KEY) ?? '[]'))
   } catch {
     return new Set()
   }
@@ -96,7 +97,7 @@ function loadExpanded(): Set<string> {
 const HIDDEN_KEY = 'tinjs.hiddenProjects'
 function loadHidden(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]'))
+    return new Set(JSON.parse(userStore.getItem(HIDDEN_KEY) ?? '[]'))
   } catch {
     return new Set()
   }
@@ -289,7 +290,7 @@ function ProjectsTree(): React.JSX.Element {
 
   useEffect(() => {
     try {
-      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]))
+      userStore.setItem(HIDDEN_KEY, JSON.stringify([...hidden]))
     } catch {
       /* storage unavailable */
     }
@@ -297,7 +298,7 @@ function ProjectsTree(): React.JSX.Element {
 
   useEffect(() => {
     try {
-      localStorage.setItem(EXPANDED_KEY, JSON.stringify([...expanded]))
+      userStore.setItem(EXPANDED_KEY, JSON.stringify([...expanded]))
     } catch {
       /* storage unavailable */
     }

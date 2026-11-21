@@ -1,0 +1,4 @@
+# DuckDB: link the pre-built libduckdb (downloaded from DuckDB's GitHub release) instead of
+# compiling its C++ sources. Set DUCKDB_LIB_DIR to use a copy you already have.
+[env]
+DUCKDB_DOWNLOAD_LIB = "1"

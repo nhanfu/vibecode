@@ -1,13 +1,14 @@
 import { useEffect } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import { useStore } from './store'
-import { applyTheme, detectClaude, followChatSession, loadPlugins, loadSessions, openFolder, refreshGit, showChatBrowser } from './actions'
+import { applyTheme, detectClaude, followChatSession, loadPlugins, loadSessions, openFolder, refreshGit, restoreChats, showChatBrowser } from './actions'
 import { onGlobalKey } from './shortcuts'
 import { focusTerm } from './terminals'
 import { reloadIfClean } from './fileModelsLite'
 import { QuickOpen, StatusBar, TitleBar, Welcome } from './components/Chrome'
 import { StackLayout } from './components/Stack'
 import { BottomPanel, ClaudePanel } from './components/Claude'
+import { userStore } from './localPref'
 
 function useGlobalKeys(): void {
   useEffect(() => {
@@ -23,7 +24,10 @@ function useBoot(): void {
       const [settings] = await Promise.all([window.api.app.settings(), detectClaude(), loadPlugins()])
       useStore.setState({ recent: settings.recentFolders, settings })
       applyTheme()
-      if (settings.lastFolder) openFolder(settings.lastFolder).catch(() => {})
+      if (settings.lastFolder) await openFolder(settings.lastFolder, { autoChat: false }).catch(() => {})
+      await restoreChats().catch(() => {})
+      // nothing to bring back: start with a fresh chat, as before
+      if (settings.lastFolder && !useStore.getState().chats.length) openFolder(settings.lastFolder).catch(() => {})
     })()
 
     window.api.win.state().then((win) => useStore.setState({ win }))
@@ -67,7 +71,7 @@ export default function App(): React.JSX.Element {
   const dropdown = useStore((s) => s.win?.mode === 'dropdown')
   // remembered per set of visible panels: the bottom panel can be toggled (the title-bar drop-downs
   // float over the chat or sit beside it, see Stack.tsx)
-  const layout = useDefaultLayout({ id: 'layout-main', panelIds: bottomOpen ? ['claude', 'bottom'] : ['claude'], storage: localStorage })
+  const layout = useDefaultLayout({ id: 'layout-main', panelIds: bottomOpen ? ['claude', 'bottom'] : ['claude'], storage: userStore })
 
   return (
     <div className={`app${dropdown ? ' mode-dropdown' : ''}`}>

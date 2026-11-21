@@ -6,6 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import type { PtySpawnOptions } from '../../shared/types'
 import { attachBlob, attachPaths, attachmentsOf, takeAttachments } from './attachments'
+import { userStore } from './localPref'
 
 export const termTheme: ITheme = {
   // macOS dark: the system palette on a graphite background (same as --bg-term in styles.css)
@@ -183,7 +184,7 @@ const FONT_MIN = 9
 const FONT_MAX = 22
 let fontSize = ((): number => {
   try {
-    const n = Number(localStorage.getItem(FONT_KEY))
+    const n = Number(userStore.getItem(FONT_KEY))
     return n >= FONT_MIN && n <= FONT_MAX ? n : FONT_DEFAULT
   } catch {
     return FONT_DEFAULT
@@ -195,7 +196,7 @@ export function setTermFontSize(size: number): void {
   if (next === fontSize) return
   fontSize = next
   try {
-    localStorage.setItem(FONT_KEY, String(next))
+    userStore.setItem(FONT_KEY, String(next))
   } catch {
     /* storage unavailable */
   }
@@ -480,7 +481,7 @@ function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: s
   let timer: ReturnType<typeof setTimeout> | undefined
   const log = (...a: unknown[]): void => {
     try {
-      if (localStorage.getItem('vibe.imeDebug')) console.log('[ime]', ...a)
+      if (userStore.getItem('vibe.imeDebug')) console.log('[ime]', ...a)
     } catch {
       /* storage unavailable */
     }

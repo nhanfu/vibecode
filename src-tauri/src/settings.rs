@@ -1,4 +1,5 @@
-//! App settings: `<userData>/settings.json`, same file and keys as the Electron build.
+//! App settings, kept in the user database (the `settings` table, one row per setting). An existing
+//! `settings.json` of the Electron build is imported the first time.
 
 use std::sync::LazyLock;
 
@@ -6,7 +7,10 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::core::{user_data, write_atomic};
+use crate::{
+    core::{user_data, write_atomic},
+    userdb,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -55,8 +59,14 @@ impl Default for AppSettings {
 }
 
 static CACHE: LazyLock<RwLock<AppSettings>> = LazyLock::new(|| {
-    let file = user_data().join("settings.json");
-    let s = std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+    // the database first; the old settings.json is read once and moved in
+    let s = userdb::settings_all().and_then(|m| serde_json::from_value::<AppSettings>(Value::Object(m)).ok()).unwrap_or_else(|| {
+        let s: AppSettings = std::fs::read(user_data().join("settings.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        if let Ok(Value::Object(m)) = serde_json::to_value(&s) {
+            let _ = userdb::settings_write(&m);
+        }
+        s
+    });
     RwLock::new(s)
 });
 
@@ -74,8 +84,13 @@ pub async fn update(patch: Map<String, Value>) -> AppSettings {
         serde_json::from_value::<AppSettings>(cur).unwrap_or_else(|_| get())
     };
     *CACHE.write() = next.clone();
-    if let Ok(json) = serde_json::to_vec_pretty(&next) {
-        let _ = write_atomic(user_data().join("settings.json"), json).await;
+    if let Ok(Value::Object(m)) = serde_json::to_value(&next) {
+        if userdb::settings_write(&m).is_err() {
+            // no database: keep the old file working
+            if let Ok(json) = serde_json::to_vec_pretty(&next) {
+                let _ = write_atomic(user_data().join("settings.json"), json).await;
+            }
+        }
     }
     next
 }

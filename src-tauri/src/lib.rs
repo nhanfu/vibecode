@@ -15,6 +15,7 @@ mod mssql;
 mod pty;
 mod sessions;
 mod settings;
+mod userdb;
 mod webdata;
 mod windowing;
 
@@ -118,6 +119,9 @@ pub fn run() {
             git::git_branches,
             git::git_checkout,
             // app
+            userdb::userdb_snapshot,
+            userdb::userdb_prefs_write,
+            userdb::userdb_save,
             appcmds::app_settings,
             appcmds::app_remember_folder,
             appcmds::app_set_settings,
@@ -148,6 +152,7 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 pty::kill_all();
+                userdb::checkpoint();
                 mssql::cancel_all();
                 plugins::stop_all();
                 let _ = app.get_webview_window(core::MAIN);

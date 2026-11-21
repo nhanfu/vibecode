@@ -15,6 +15,7 @@ const DiffView = lazy(() => import('./MonacoViews').then((m) => ({ default: m.Di
 const PluginPane = lazy(() => import('./PluginPane').then((m) => ({ default: m.PluginPane })))
 const DatabasePane = lazy(() => import('./Database').then((m) => ({ default: m.DatabasePane })))
 import { revealIn } from '../scroll'
+import { userStore } from '../localPref'
 
 /*
  * Source code, Web and Database: three of the title-bar drop-downs (Stack.tsx), each floating over
@@ -46,7 +47,7 @@ export function DbPanel(): React.JSX.Element {
   const plugin = useStore((s) => s.plugins.find((p) => p.available && p.enabled && p.panel?.replaces === 'db'))
   const [pick, setPick] = useState<'plugin' | 'builtin' | null>(() => {
     try {
-      const v = localStorage.getItem('vibe.db.engine')
+      const v = userStore.getItem('vibe.db.engine')
       return v === 'plugin' || v === 'builtin' ? v : null
     } catch {
       return null
@@ -56,7 +57,7 @@ export function DbPanel(): React.JSX.Element {
   const choose = (e: 'plugin' | 'builtin'): void => {
     setPick(e)
     try {
-      localStorage.setItem('vibe.db.engine', e)
+      userStore.setItem('vibe.db.engine', e)
     } catch {
       /* private mode */
     }

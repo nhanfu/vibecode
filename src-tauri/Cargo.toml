@@ -44,6 +44,7 @@ sha2 = "0.11"
 flate2 = "1.1"
 tar = "0.4"
 zip = { version = "9", default-features = false, features = ["deflate"] }
+duckdb = "=1.10506.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Web tabs are re-laid out by hand on WebKitGTK (browser.rs, gtk_layer)

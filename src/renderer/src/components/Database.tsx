@@ -31,20 +31,21 @@ import type { DbColumn, DbConnection, DbFound, DbObject, DbQueryResult, DbResult
 import { useStore } from '../store'
 import { editorOptions, monaco } from '../monaco'
 import { useEditorFont } from './EditorFont'
+import { userStore } from '../localPref'
 
 /* ---------------- small helpers ---------------- */
 
 const LS = {
   get(key: string): string | null {
     try {
-      return localStorage.getItem(key)
+      return userStore.getItem(key)
     } catch {
       return null
     }
   },
   set(key: string, v: string): void {
     try {
-      localStorage.setItem(key, v)
+      userStore.setItem(key, v)
     } catch {
       /* storage unavailable */
     }
@@ -110,7 +111,7 @@ export function DatabasePane(): React.JSX.Element {
   const [editing, setEditing] = useState<DbConnection | 'new' | null>(null)
   const [importing, setImporting] = useState(false)
   // the SQL text lives in Monaco + this ref, not in state: a keystroke used to re-render the whole
-  // tab (tree, results grid) and rewrite localStorage
+  // tab (tree, results grid) and rewrite the saved layout
   const sqlRef = useRef(activeId ? (LS.get(`vibe.db.sql.${activeId}`) ?? '') : '')
   const [running, setRunning] = useState(false)
   const runningRef = useRef(false)
@@ -119,8 +120,8 @@ export function DatabasePane(): React.JSX.Element {
   // each result mounts a fresh Results (its tab / selected cell start over)
   const [resultKey, setResultKey] = useState(0)
   const [maxRows, setMaxRows] = useState(() => Number(LS.get('vibe.db.maxRows')) || 1000)
-  const sideLayout = useDefaultLayout({ id: 'vibe-db-side', storage: localStorage })
-  const splitLayout = useDefaultLayout({ id: 'vibe-db-split', storage: localStorage })
+  const sideLayout = useDefaultLayout({ id: 'vibe-db-side', storage: userStore })
+  const splitLayout = useDefaultLayout({ id: 'vibe-db-split', storage: userStore })
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null)
   const font = useEditorFont()
   const theme = useStore((s) => (s.themeResolved === 'light' ? 'studio-light' : 'studio-dark'))

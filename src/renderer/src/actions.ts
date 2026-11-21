@@ -1,9 +1,10 @@
 import { clearAttachments } from './attachments'
-import { basename, openPatch, panelShown, showPanel, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
+import { PAGES_KEY, basename, openPatch, panelShown, showPanel, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
+import { userStore } from './localPref'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -396,7 +397,7 @@ export function defaultAgent(): AgentId | undefined {
 /** Mark an agent as the one in use: plain "New chat" starts with it from now on. */
 export function setDefaultAgent(agent: AgentId): void {
   try {
-    localStorage.setItem(AGENT_KEY, agent)
+    userStore.setItem(AGENT_KEY, agent)
   } catch {
     /* storage unavailable */
   }
@@ -460,6 +461,10 @@ interface NewChatOpts {
   pinnedTitle?: boolean
   /** coding agent to run — default Claude Code */
   agent?: AgentId
+  /** carried over when a chat is restored from the previous run */
+  model?: string
+  effort?: string
+  permissionMode?: string
   /** first message, sent as soon as Claude starts (one line) */
   prompt?: string
   /** first message typed into the input box but not sent: you finish and send it yourself */
@@ -518,9 +523,9 @@ export function newChat(opts: NewChatOpts = {}): void {
   }
   // New chats start with the model last picked in this project (else the default chosen in the status
   // bar), and the effort and permission mode last picked in any chat.
-  const model = rememberedModel(cwd)
-  const effort = remembered(EFFORT_KEY, NEW_CHAT_DEFAULTS.effort)
-  const permissionMode = remembered(PERMISSION_KEY, NEW_CHAT_DEFAULTS.permissionMode)
+  const model = opts.model ?? rememberedModel(cwd)
+  const effort = opts.effort ?? remembered(EFFORT_KEY, NEW_CHAT_DEFAULTS.effort)
+  const permissionMode = opts.permissionMode ?? remembered(PERMISSION_KEY, NEW_CHAT_DEFAULTS.permissionMode)
   args = [...args, ...launchFlags({ model, effort, permissionMode })]
   if (opts.prompt) args = [...args, opts.prompt]
   const n = st().chats.length + 1
@@ -592,7 +597,7 @@ const PERMISSION_KEY = 'vibe.newChatPermission'
 /** The value last picked in a chat's menu ('' = Claude Code's default), else the fallback. */
 function remembered(key: string, fallback: string): string | undefined {
   try {
-    const m = localStorage.getItem(key)
+    const m = userStore.getItem(key)
     if (m !== null) return m || undefined
   } catch {
     /* storage unavailable */
@@ -603,7 +608,7 @@ function remembered(key: string, fallback: string): string | undefined {
 /** New chats start with what was just picked. */
 function remember(key: string, value: string): void {
   try {
-    localStorage.setItem(key, value)
+    userStore.setItem(key, value)
   } catch {
     /* they keep the default */
   }
@@ -676,9 +681,14 @@ export function closeChat(id: string): void {
     const chats = s.chats.filter((c) => c.id !== id)
     const activeChatId =
       s.activeChatId === id ? (chats[Math.min(idx, chats.length - 1)]?.id ?? null) : s.activeChatId
-    // the chat's browser page goes with it
+    // the chat's browser page goes with it; torn-off pages are user data and stay
     const browsers = { ...s.browsers }
+    const kept = (browsers[id]?.tabs ?? []).filter((t) => t.detached)
     delete browsers[id]
+    if (kept.length) {
+      const pool = browsers[PAGES_KEY]
+      browsers[PAGES_KEY] = { tabs: [...(pool?.tabs ?? []), ...kept], active: pool?.active ?? kept[0].id }
+    }
     return { chats, activeChatId, browsers }
   })
 }
@@ -822,8 +832,16 @@ export function closeBrowserTab(key: string, id: string): void {
     if (!b) return s
     let tabs = b.tabs.filter((t) => t.id !== id)
     // the strip needs a tab of its own: torn-off ones don't count
-    if (!tabs.some((t) => !t.detached)) tabs = [...tabs, blankTab()]
+    if (key !== PAGES_KEY && !tabs.some((t) => !t.detached)) tabs = [...tabs, blankTab()]
     const open = tabs.filter((t) => !t.detached)
+    if (!open.length) {
+      const page = `page:${id}` as PagePanelId
+      return {
+        browsers: { ...s.browsers, [key]: { tabs, active: tabs[0]?.id ?? '' } },
+        panelOrder: s.panelOrder.filter((p) => p !== page),
+        pinned: s.pinned.filter((p) => p !== page)
+      }
+    }
     const was = b.tabs.filter((t) => !t.detached).findIndex((t) => t.id === id)
     const active = b.active === id ? open[Math.min(Math.max(was, 0), open.length - 1)].id : b.active
     const page = `page:${id}` as PagePanelId
@@ -838,12 +856,15 @@ export function closeBrowserTab(key: string, id: string): void {
 /** Close every tab (torn-off pages included), leaving a single blank one. */
 export function closeAllBrowserTabs(key: string): void {
   useStore.setState((s) => {
+    const pool = key === PAGES_KEY ? undefined : s.browsers[PAGES_KEY]
     const b = s.browsers[key]
     if (!b) return s
-    const pages = new Set(b.tabs.map((t) => `page:${t.id}`))
+    const pages = new Set([...b.tabs, ...(pool?.tabs ?? [])].map((t) => `page:${t.id}`))
     const blank = blankTab()
+    const browsers = { ...s.browsers, [key]: { tabs: [blank], active: blank.id } }
+    if (pool) delete browsers[PAGES_KEY]
     return {
-      browsers: { ...s.browsers, [key]: { tabs: [blank], active: blank.id } },
+      browsers,
       panelOrder: s.panelOrder.filter((p) => !pages.has(p)),
       pinned: s.pinned.filter((p) => !pages.has(p))
     }
@@ -889,8 +910,19 @@ export function detachBrowserTab(key: string, id: string): void {
 export function attachBrowserTab(key: string, id: string): void {
   useStore.setState((s) => {
     const b = s.browsers[key]
-    if (!b?.tabs.some((t) => t.id === id)) return s
     const page = `page:${id}` as PagePanelId
+    const tab = b?.tabs.find((t) => t.id === id)
+    if (!b || !tab) return s
+    if (key === PAGES_KEY) {
+      // restored from an earlier run: it joins the Web tabs of the chat you are in
+      const to = browserKey(s.activeChatId)
+      const dest = s.browsers[to] ?? { tabs: [], active: '' }
+      const rest = b.tabs.filter((t) => t.id !== id)
+      const browsers = { ...s.browsers, [to]: { tabs: [...dest.tabs, { ...tab, detached: false }], active: id } }
+      if (rest.length) browsers[PAGES_KEY] = { tabs: rest, active: rest[0].id }
+      else delete browsers[PAGES_KEY]
+      return { ...openPatch('web'), browsers, panelOrder: s.panelOrder.filter((p) => p !== page), pinned: s.pinned.filter((p) => p !== page) }
+    }
     return {
       ...openPatch('web'),
       browsers: { ...s.browsers, [key]: { tabs: b.tabs.map((t) => (t.id === id ? { ...t, detached: false } : t)), active: id } },
@@ -981,4 +1013,74 @@ export function cycleChat(step: 1 | -1): void {
   if (!chats.length) return
   const i = chats.findIndex((c) => c.id === activeChatId)
   selectChat(chats[(i + step + chats.length) % chats.length].id)
+}
+
+
+/* ---------------- Open chats survive quitting the app ---------------- */
+
+const OPEN_CHATS_KEY = 'vibe.openChats'
+interface SavedChat {
+  cwd: string
+  title: string
+  pinnedTitle: boolean
+  agent?: AgentId
+  sessionId?: string
+  model?: string
+  effort?: string
+  permissionMode?: string
+  active?: boolean
+}
+let persistChats = false
+
+/** Remember the open chats (each one's Claude session lives in ~/.claude/projects) so the next start brings them back. */
+function saveOpenChats(): void {
+  if (!persistChats) return
+  const { chats, activeChatId } = st()
+  const list: SavedChat[] = chats.map((c) => ({
+    cwd: c.cwd,
+    title: c.title,
+    pinnedTitle: c.pinnedTitle,
+    agent: c.agent,
+    sessionId: c.sessionId,
+    model: c.model,
+    effort: c.effort,
+    permissionMode: c.permissionMode,
+    active: c.id === activeChatId
+  }))
+  try {
+    userStore.setItem(OPEN_CHATS_KEY, JSON.stringify(list))
+  } catch {
+    /* nothing to restore next time */
+  }
+}
+
+/** Reopen the chats that were open when the app quit, each resuming its own conversation. */
+export async function restoreChats(): Promise<void> {
+  let saved: SavedChat[] = []
+  try {
+    const v = JSON.parse(userStore.getItem(OPEN_CHATS_KEY) ?? 'null')
+    if (Array.isArray(v)) saved = v.filter((c) => c && typeof c.cwd === 'string')
+  } catch {
+    /* nothing saved */
+  }
+  const projects = (await window.api.sessions.list().catch(() => null)) ?? []
+  const known = new Set(projects.flatMap((g) => g.sessions.map((x) => x.id)))
+  let activeId: string | null = null
+  for (const c of saved) {
+    const agent = agentDef(c.agent)
+    if (agent.id === 'claude') {
+      // a chat nothing was ever said in left no session to resume
+      if (!c.sessionId || !known.has(c.sessionId)) continue
+      newChat({ cwd: c.cwd, args: ['--resume', c.sessionId], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: c.model, effort: c.effort, permissionMode: c.permissionMode })
+    } else {
+      newChat({ cwd: c.cwd, agent: agent.id, args: [...agent.resume], title: c.title, pinnedTitle: c.pinnedTitle })
+    }
+    if (c.active) activeId = st().activeChatId
+  }
+  if (activeId) selectChat(activeId)
+  persistChats = true
+  saveOpenChats()
+  useStore.subscribe((s, prev) => {
+    if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId) saveOpenChats()
+  })
 }

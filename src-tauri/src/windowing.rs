@@ -513,17 +513,12 @@ pub fn init(app: &mut App) -> anyhow::Result<()> {
 }
 
 /// Main window events (wired in lib.rs).
-pub fn on_event(window: &Window, event: &WindowEvent) {
+pub fn on_event(_window: &Window, event: &WindowEvent) {
     match event {
-        // The close button only tucks the window away: chats keep running and the tray icon
-        // brings it back. Quitting for real is "Quit VIBE CODE" in the tray menu.
-        WindowEvent::CloseRequested { api, .. } if !QUITTING.load(Ordering::SeqCst) => {
-            api.prevent_close();
-            if dropdown() {
-                hide_dropdown();
-            } else {
-                let _ = window.hide();
-            }
+        // Closing the window (X button, Alt+F4) quits for real; the tray's show/hide and the
+        // hotkey are what tuck the window away.
+        WindowEvent::CloseRequested { .. } if !QUITTING.load(Ordering::SeqCst) => {
+            quit();
         }
         WindowEvent::Resized(_) => {
             if !ANIMATING.load(Ordering::SeqCst) {

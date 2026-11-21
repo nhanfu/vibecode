@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AgentId } from '../../shared/agents'
 import type { AgentInfo, AppSettings, ClaudeInfo, GitState, PluginInfo, ProjectGroup, WindowState } from '../../shared/types'
+import { userStore } from './localPref'
 
 export type ChatStatus = 'starting' | 'working' | 'idle' | 'exited'
 
@@ -137,10 +138,25 @@ const ORDER_KEY = 'vibe.panelOrder'
 // (a new key: pins saved before Agent became the chat would leave the chat floating)
 const PINNED_KEY = 'vibe.stackPins'
 
+/** Browser key that holds the torn-off pages restored from a previous run (they belong to no chat). */
+export const PAGES_KEY = '_pages'
+const PAGES_STORE = 'vibe.pages'
+/** The torn-off pages kept as user data: they come back, with their address, when the app starts. */
+const savedPages: WebTab[] = (() => {
+  try {
+    const v = JSON.parse(userStore.getItem(PAGES_STORE) ?? 'null')
+    if (Array.isArray(v)) return v.filter((t) => t && typeof t.id === 'string' && typeof t.url === 'string').map((t) => ({ id: t.id, url: t.url, title: String(t.title ?? ''), detached: true }))
+  } catch {
+    /* storage unavailable */
+  }
+  return []
+})()
+const isSavedPage = (x: unknown): boolean => typeof x === 'string' && savedPages.some((t) => `page:${t.id}` === x)
+
 function loadIds(key: string, fallback: PanelId[]): PanelId[] {
   try {
-    const v = JSON.parse(localStorage.getItem(key) ?? 'null')
-    if (Array.isArray(v)) return [...new Set(v.filter((x): x is PanelId => (PANEL_IDS as string[]).includes(x)))]
+    const v = JSON.parse(userStore.getItem(key) ?? 'null')
+    if (Array.isArray(v)) return [...new Set(v.filter((x): x is PanelId => (PANEL_IDS as string[]).includes(x) || isSavedPage(x)))]
   } catch {
     /* storage unavailable */
   }
@@ -148,7 +164,7 @@ function loadIds(key: string, fallback: PanelId[]): PanelId[] {
 }
 function saveIds(key: string, ids: PanelId[]): void {
   try {
-    localStorage.setItem(key, JSON.stringify(ids))
+    userStore.setItem(key, JSON.stringify(ids))
   } catch {
     /* back to the default next time */
   }
@@ -259,7 +275,7 @@ export const useStore = create<State>((set) => ({
   plugins: [],
   preferredAgent: (() => {
     try {
-      return (localStorage.getItem('vibe.newChatAgent') as AgentId | null) ?? null
+      return (userStore.getItem('vibe.newChatAgent') as AgentId | null) ?? null
     } catch {
       return null
     }
@@ -291,7 +307,7 @@ export const useStore = create<State>((set) => ({
   activeTabId: null,
   diffSideBySide: true,
 
-  browsers: {},
+  browsers: savedPages.length ? ({ [PAGES_KEY]: { tabs: savedPages, active: savedPages[0].id } } as Record<string, ChatBrowser>) : {},
   projectBypass: {},
 
   set: (p) => set(p),
@@ -316,3 +332,17 @@ export const uid = (): string => Math.random().toString(36).slice(2, 10) + Date.
 export const basename = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
 export const fileUri = (p: string): string => 'file:///' + p.replace(/\\/g, '/').replace(/^\/+/, '')
+
+// keep the torn-off pages (address and title) as user data
+let savedJson = JSON.stringify(savedPages.map(({ id, url, title }) => ({ id, url, title })))
+useStore.subscribe((s, prev) => {
+  if (s.browsers === prev.browsers) return
+  const json = JSON.stringify(Object.values(s.browsers).flatMap((b) => b.tabs.filter((t) => t.detached).map(({ id, url, title }) => ({ id, url, title }))))
+  if (json === savedJson) return
+  savedJson = json
+  try {
+    userStore.setItem(PAGES_STORE, json)
+  } catch {
+    /* only lost on the next run */
+  }
+})

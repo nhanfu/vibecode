@@ -5,6 +5,7 @@ import { BookmarkBar } from './BrowserBookmarks'
 import { useStore } from '../store'
 import { HOME_URL, setBrowserUrl } from '../actions'
 import { SlidePill } from './motion'
+import { userStore } from '../localPref'
 
 /** transitions that never move anything (a slide or scale can move the page, so those still count) */
 const COLOR_ONLY = new Set(['background-color', 'color', 'opacity', 'box-shadow', 'border-color', 'outline-color', 'fill', 'stroke', 'text-decoration-color'])
@@ -49,7 +50,7 @@ const DEVICES: Device[] = [
 const DEVICE_KEY = 'vibe.browserDevice'
 function savedDevice(): string {
   try {
-    return localStorage.getItem(DEVICE_KEY) ?? 'fit'
+    return userStore.getItem(DEVICE_KEY) ?? 'fit'
   } catch {
     return 'fit'
   }
@@ -92,9 +93,21 @@ export function BrowserTab({
   const shown = useRef(url)
   const [loading, setLoading] = useState(true)
   const [nav, setNav] = useState({ back: false, fwd: false })
-  const [deviceKey, setDeviceKey] = useState(savedDevice)
+  const [savedKey, setDeviceKey] = useState(savedDevice)
+  // not pinned (floating): no emulated screen, the page just follows the panel as it is resized;
+  // the device picker is hidden and comes back (with the chosen device) once it is pinned
+  const pinned = useStore((s) => s.pinned.includes(detached ? `page:${tabId}` : 'web'))
+  const deviceKey = pinned ? savedKey : 'fit'
   const device = DEVICES.find((d) => d.key === deviceKey) ?? DEVICES[0]
   const [initialUa] = useState(device.ua)
+  // pinning / unpinning can switch between a phone identity and the desktop one
+  const uaSeen = useRef(device.ua ?? '')
+  useEffect(() => {
+    const ua = device.ua ?? ''
+    if (ua === uaSeen.current) return
+    uaSeen.current = ua
+    void window.api.browser.setUserAgent(label, device.ua ?? null)
+  }, [device.ua, label])
   const [box, setBox] = useState<{ w: number; h: number; zoom: number } | null>(null)
   const addressRef = useRef<HTMLInputElement>(null)
   // blank tab: the native page is hidden and a start page with a random photo shows instead
@@ -261,12 +274,11 @@ export function BrowserTab({
   const pickDevice = (key: string): void => {
     const next = DEVICES.find((d) => d.key === key) ?? DEVICES[0]
     try {
-      localStorage.setItem(DEVICE_KEY, key)
+      userStore.setItem(DEVICE_KEY, key)
     } catch {
       /* per-viewer convenience only */
     }
-    // phone/tablet ↔ desktop changes the browser identity; the page reloads to pick it up
-    if ((next.ua ?? '') !== (device.ua ?? '')) void window.api.browser.setUserAgent(label, next.ua ?? null)
+    // (the effect above switches the browser identity between phone/tablet and desktop)
     setDeviceKey(key)
   }
 
@@ -361,14 +373,16 @@ export function BrowserTab({
             </div>
           )}
         </div>
-        <div className="device-seg" role="radiogroup" aria-label="Screen size">
-          <SlidePill />
-          {DEVICES.map((d) => (
-            <button key={d.key} role="radio" aria-checked={d.key === deviceKey} className={d.key === deviceKey ? 'on' : ''} title={d.label} onClick={() => pickDevice(d.key)}>
-              {d.icon}
-            </button>
-          ))}
-        </div>
+        {pinned && (
+          <div className="device-seg" role="radiogroup" aria-label="Screen size">
+            <SlidePill />
+            {DEVICES.map((d) => (
+              <button key={d.key} role="radio" aria-checked={d.key === deviceKey} className={d.key === deviceKey ? 'on' : ''} title={d.label} onClick={() => pickDevice(d.key)}>
+                {d.icon}
+              </button>
+            ))}
+          </div>
+        )}
         {box && <span className="device-zoom" title="Zoomed out to fit">{Math.round(box.zoom * 100)}%</span>}
         <button className="icon-btn" title="Clear cache & reload (keeps logins)" disabled={clearing} onClick={clearCache}>
           <Eraser size={14} />
