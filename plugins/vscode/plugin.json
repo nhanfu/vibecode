@@ -7,7 +7,7 @@
   "homepage": "https://github.com/gitpod-io/openvscode-server",
   "panel": { "title": "VS Code", "icon": "code", "folder": true },
   "sidecar": {
-    "command": "server/bin/openvscode-server",
+    "command": "server/node",
     "theme": {
       "file": "data/User/settings.json",
       "key": "workbench.colorTheme",
@@ -15,6 +15,7 @@
       "light": "Default Light Modern"
     },
     "args": [
+      "{dir}/server/out/server-main.js",
       "--host", "127.0.0.1",
       "--port", "{port}",
       "--server-data-dir", "{data}",

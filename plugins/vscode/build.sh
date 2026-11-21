@@ -65,6 +65,8 @@ rm -rf "$OUT/server"
 mkdir -p "$OUT/server"
 cp -r "$BUILT"/. "$OUT/server/"
 [ -f "$OUT/server/LICENSE" ] && cp "$OUT/server/LICENSE" "$OUT/LICENSE-openvscode-server"
+# fewer built-in extensions: less to start, less memory (the language servers stay, see prune-extensions.sh)
+bash "$OUT/prune-extensions.sh" "$OUT/server/extensions"
 # the page follows the app's theme and settings (see patch-theme.py)
 python3 "$OUT/patch-theme.py" "$OUT/server/out/vs/code/browser/workbench/workbench.html"
 echo "server ready in $OUT/server"
