@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Image as ImageIcon, ListChecks, MessageSquare, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
+import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
 import { useStore, type Chat } from '../store'
 import { SlidePill, useEnterAnimation } from './motion'
 import {
@@ -21,8 +21,6 @@ import {
 } from '../actions'
 import { attachTerm, detachTerm, fitTerm, focusTerm, writeToTerm } from '../terminals'
 import { Logo, StatusDot, statusLabel } from './icons'
-import { ChatImages, useChatImages } from './ChatImages'
-import { ChatTasks, useChatTasks } from './ChatTasks'
 import { AttachmentTray } from './AttachmentTray'
 import { pickAttachments } from '../attachments'
 import { NewChatMenu } from './AgentMenu'
@@ -78,18 +76,6 @@ export function ClaudePanel(): React.JSX.Element {
   const claude = useStore((s) => s.claude)
   // Codex / Gemini… alone is enough to chat; the install card is for when no agent is there at all
   const anyAgent = useStore((s) => !!s.claude?.found || s.agents.some((a) => a.found))
-  const images = useChatImages(active?.sessionId)
-  const tasks = useChatTasks(active?.sessionId)
-  const runningTasks = tasks.filter((t) => t.status === 'running').length
-  const [tab, setTab] = useState<'chat' | 'images' | 'tasks'>('chat')
-  // another chat opens on its Chat tab
-  useEffect(() => setTab('chat'), [activeId])
-  // the terminal stays under Images / Tasks, so it must not keep the keyboard
-  const leaveChat = (t: 'images' | 'tasks'): void => {
-    const el = document.activeElement
-    if (el instanceof HTMLElement && termFrame.current?.contains(el)) el.blur()
-    setTab(t)
-  }
   // switching chats: the new conversation eases in
   const termFrame = useRef<HTMLDivElement>(null)
   useEnterAnimation(termFrame, activeId)
@@ -136,40 +122,10 @@ export function ClaudePanel(): React.JSX.Element {
               </button>
             </div>
           </div>
-          <div className="code-side-switch chat-tabs">
-            <SlidePill />
-            <button
-              className={tab === 'chat' ? 'on' : ''}
-              onClick={() => {
-                setTab('chat')
-                setTimeout(() => focusTerm(active.id), 0)
-              }}
-            >
-              <MessageSquare size={13} /> Chat
-            </button>
-            <button className={tab === 'images' ? 'on' : ''} onClick={() => leaveChat('images')}>
-              <ImageIcon size={13} /> Images
-              {images.length > 0 && <span className="center-count">{images.length}</span>}
-            </button>
-            <button className={tab === 'tasks' ? 'on' : ''} title="Background tasks Claude started in this chat" onClick={() => leaveChat('tasks')}>
-              <ListChecks size={13} /> Tasks
-              {runningTasks > 0 ? <span className="center-count running">{runningTasks}</span> : tasks.length > 0 && <span className="center-count">{tasks.length}</span>}
-            </button>
-          </div>
-          {/*
-            The terminal stays mounted and laid out (only made invisible): display:none would reset
-            xterm's scroll position to the top of the buffer and replay the enter animation on return.
-            Images / Tasks cover it instead.
-          */}
           <div className="term-frame" ref={termFrame}>
-            <div className="term-layer" style={tab === 'chat' ? undefined : { visibility: 'hidden' }}>
+            <div className="term-layer">
               <TerminalView id={active.id} />
             </div>
-            {tab !== 'chat' && (
-              <div className="chat-overlay">
-                {tab === 'images' ? <ChatImages images={images} /> : <ChatTasks tasks={tasks} />}
-              </div>
-            )}
           </div>
           <AttachmentTray chatId={active.id} />
           <div className={`quick-bar${busy ? ' busy' : done ? ' done' : ''}`}>
@@ -178,7 +134,6 @@ export function ClaudePanel(): React.JSX.Element {
                 className="chip chip-stop"
                 title="Stop what the AI is doing (Esc)"
                 onClick={() => {
-                  setTab('chat')
                   writeToTerm(active.id, '\x1b')
                   focusTerm(active.id)
                 }}
@@ -192,7 +147,6 @@ export function ClaudePanel(): React.JSX.Element {
               title="Attach files — they go with your next message (you can also paste pictures or drag files onto the chat)"
               disabled={active.status === 'exited'}
               onClick={async () => {
-                setTab('chat')
                 await pickAttachments(active.id, active.cwd)
                 focusTerm(active.id)
               }}
@@ -204,7 +158,6 @@ export function ClaudePanel(): React.JSX.Element {
               className="chip"
               title="Ask Claude to commit all changes (English subject line, no description, no co-author) and push"
               onClick={() => {
-                setTab('chat')
                 writeToTerm(active.id, COMMIT_PUSH)
                 focusTerm(active.id)
               }}
@@ -216,7 +169,6 @@ export function ClaudePanel(): React.JSX.Element {
               className="chip"
               title="Ask Claude to pull the latest code from the remote"
               onClick={() => {
-                setTab('chat')
                 writeToTerm(active.id, PULL)
                 focusTerm(active.id)
               }}
