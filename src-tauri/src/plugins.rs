@@ -373,7 +373,7 @@ async fn launch(plugin: &Plugin) -> Result<(u16, String)> {
             return Ok((port, token));
         }
         if let Some(mut r) = RUNNING.lock().as_mut().and_then(|m| m.remove(&id)) {
-            let _ = r.child.start_kill();
+            kill_sidecar(&id, &mut r);
         }
     }
     let program = plugin.program().with_context(|| format!("{} is not built yet (see {}/README.md)", plugin.manifest.name, plugin.dir.display()))?;
@@ -400,8 +400,12 @@ async fn launch(plugin: &Plugin) -> Result<(u16, String)> {
         cmd.env(k, fill(v));
     }
     die_with_app(&mut cmd);
+    own_group(&mut cmd);
     log(&id, format!("[start] {} on port {port}", program.display()));
     let mut child = cmd.spawn().with_context(|| format!("could not start {}", plugin.manifest.name))?;
+    if let Some(pid) = child.id() {
+        let _ = std::fs::write(pidfile(&id), format!("{pid}\n{}", program.display()));
+    }
     if let Some(o) = child.stdout.take() {
         pump(id.clone(), o);
     }
@@ -422,7 +426,7 @@ async fn launch(plugin: &Plugin) -> Result<(u16, String)> {
         tokio::time::sleep(Duration::from_millis(150)).await;
     }
     if let Some(mut r) = RUNNING.lock().as_mut().and_then(|m| m.remove(&id)) {
-        let _ = r.child.start_kill();
+        kill_sidecar(&id, &mut r);
     }
     bail!("{} did not answer in time", plugin.manifest.name)
 }
@@ -446,12 +450,67 @@ fn die_with_app(cmd: &mut tokio::process::Command) {
 #[cfg(not(target_os = "linux"))]
 fn die_with_app(_cmd: &mut tokio::process::Command) {}
 
+/// The sidecar and everything it starts (VS Code's server has a language server, an extension host, a
+/// file watcher…) form a process group of their own, so that stopping it stops all of them. Killing
+/// only the program left the rest running, and a wrapper script's child outlived its parent.
+#[cfg(unix)]
+fn own_group(cmd: &mut tokio::process::Command) {
+    cmd.process_group(0);
+}
+#[cfg(not(unix))]
+fn own_group(_cmd: &mut tokio::process::Command) {}
+
+#[cfg(unix)]
+fn kill_group(pid: u32) {
+    // SAFETY: plain signal to a process group; a group that is gone just answers ESRCH.
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGKILL);
+    }
+}
+#[cfg(not(unix))]
+fn kill_group(_pid: u32) {}
+
+/// Where the pid of a plugin's running sidecar is noted, so the next run of the app can find one
+/// the last run left behind (`reap_stale`).
+fn pidfile(id: &str) -> PathBuf {
+    user_data().join("plugin-data").join(id).join("sidecar.pid")
+}
+
+fn kill_sidecar(id: &str, r: &mut Running) {
+    if let Some(pid) = r.child.id() {
+        kill_group(pid);
+    }
+    let _ = r.child.start_kill();
+    let _ = std::fs::remove_file(pidfile(id));
+}
+
+/// A sidecar the previous run of the app did not get to stop (it was killed, or crashed) is stopped
+/// now, once, before any starts. Only when the pid still belongs to that program.
+#[cfg(unix)]
+fn reap_stale(id: &str) {
+    let Ok(raw) = std::fs::read_to_string(pidfile(id)) else { return };
+    let _ = std::fs::remove_file(pidfile(id));
+    let mut lines = raw.lines();
+    let (Some(pid), Some(program)) = (lines.next().and_then(|p| p.trim().parse::<u32>().ok()), lines.next()) else { return };
+    let args = crate::core::command_sync("ps").args(["-p", &pid.to_string(), "-o", "args="]).output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    if args.contains(program) {
+        kill_group(pid);
+        // a sidecar from before it had a group of its own: the program alone
+        // SAFETY: a plain signal to a pid whose command line was just checked.
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+    }
+}
+#[cfg(not(unix))]
+fn reap_stale(_id: &str) {}
+
 /// Stops one sidecar; false when it was not running.
 fn stop(id: &str) -> bool {
     let r = RUNNING.lock().as_mut().and_then(|m| m.remove(id));
     match r {
         Some(mut r) => {
-            let _ = r.child.start_kill();
+            kill_sidecar(id, &mut r);
             log(id, "[stopped]");
             true
         }
@@ -462,8 +521,8 @@ fn stop(id: &str) -> bool {
 /// Stops every sidecar (the app is closing).
 pub fn stop_all() {
     if let Some(map) = RUNNING.lock().take() {
-        for (_, mut r) in map {
-            let _ = r.child.start_kill();
+        for (id, mut r) in map {
+            kill_sidecar(&id, &mut r);
         }
     }
 }
@@ -471,6 +530,7 @@ pub fn stop_all() {
 /// Starts, in the background, the sidecars that ask for it, so chats get their MCP servers.
 pub fn warm_up() {
     for p in discover() {
+        reap_stale(&p.manifest.id);
         if p.available() && enabled(&p.manifest.id) && p.manifest.sidecar.is_some() && autostarts(&p) {
             tauri::async_runtime::spawn(async move {
                 let _ = ensure(&p).await;
@@ -1082,6 +1142,43 @@ mod tests {
         std::fs::write(d.join("junk"), "hello").unwrap();
         assert!(extract(&d.join("junk"), &d.join("outj")).is_err());
         std::fs::remove_dir_all(&d).ok();
+    }
+
+    /// Stopping a sidecar stops what it started too, not only the program itself.
+    #[cfg(unix)]
+    #[test]
+    fn a_group_kill_takes_the_children_with_it() {
+        use std::os::unix::process::CommandExt;
+        use std::io::Read;
+        let alive = |pid: i32| unsafe { libc::kill(pid, 0) == 0 };
+        // a wrapper script that does not exec its program: the program is a child of the shell
+        let mut sh = std::process::Command::new("sh")
+            .args(["-c", "sleep 60 & echo $!; wait"])
+            .process_group(0)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut out = String::new();
+        let mut buf = [0u8; 16];
+        while !out.contains('\n') {
+            let n = sh.stdout.as_mut().unwrap().read(&mut buf).unwrap();
+            assert!(n > 0, "the shell printed nothing");
+            out.push_str(&String::from_utf8_lossy(&buf[..n]));
+        }
+        let child: i32 = out.trim().parse().unwrap();
+        assert!(alive(child));
+        kill_group(sh.id());
+        sh.wait().unwrap();
+        // the sleeping child is reaped by init once its parent is gone; give that a moment
+        for _ in 0..50 {
+            if !alive(child) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(40));
+        }
+        // a zombie still answers signal 0: check its state instead
+        let state = std::fs::read_to_string(format!("/proc/{child}/stat")).unwrap_or_default();
+        assert!(state.is_empty() || state.contains(") Z"), "the child outlived its group: {state}");
     }
 
     #[test]
