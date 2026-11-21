@@ -9,6 +9,7 @@ import { StatusDot } from './icons'
 import { useSessionFeed } from './sessionFeed'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
+import { SessionChanges } from './SessionChanges'
 import { load, save } from '../localPref'
 
 const SIDE_W_KEY = 'vibe.agentSideWidth'
@@ -301,6 +302,8 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
           </div>
         ))}
       </SideGroup>
+
+      <SessionChanges chat={chats.find((c) => c.id === activeChatId)} />
     </div>
   )
 }

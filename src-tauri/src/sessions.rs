@@ -108,6 +108,11 @@ pub async fn sessions_subagents(session_id: String) -> Res<Vec<SubAgent>> {
     Ok(tokio::task::spawn_blocking(move || session_subagents(&session_id)).await?)
 }
 
+#[tauri::command]
+pub async fn sessions_changes(session_id: String) -> Res<Vec<SessionFile>> {
+    Ok(tokio::task::spawn_blocking(move || session_changes(&session_id)).await?)
+}
+
 /* ---------------- session list ---------------- */
 
 pub fn projects_dir() -> PathBuf {
@@ -968,6 +973,117 @@ static SUBAGENT_SCANS: ScanCache<SubAgentScan> = LazyLock::new(Default::default)
 /// The sub-agents a chat's Claude started, oldest first.
 fn session_subagents(session_id: &str) -> Vec<SubAgent> {
     scan(&SUBAGENT_SCANS, session_id, SubAgentScan::feed, |s| s.agents.clone()).unwrap_or_default()
+}
+
+/* ---------------- file changes ---------------- */
+
+/// One replacement a chat's Claude made to a file with Edit, MultiEdit or Write.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEdit {
+    /// the tool call that made it (`<tool_use id>` plus `#n` for the n-th MultiEdit replacement)
+    pub id: String,
+    /// Edit, MultiEdit or Write
+    pub tool: String,
+    /// text replaced; empty for a Write
+    pub old: String,
+    /// text put in its place (the whole file for a Write)
+    pub new: String,
+    /// a Write: the whole file was set to `new`
+    pub whole: bool,
+    pub at: i64,
+}
+
+/// Every edit a chat made to one file, oldest first. Edits that failed are left out.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionFile {
+    /// absolute path, as Claude wrote it
+    pub path: String,
+    pub edits: Vec<FileEdit>,
+}
+
+#[derive(Default)]
+struct ChangeScan {
+    /// (tool call id, path, edit) in the order they were made
+    edits: Vec<(String, String, FileEdit)>,
+    /// tool call ids that came back as errors
+    failed: HashSet<String>,
+}
+
+impl ChangeScan {
+    fn feed(&mut self, text: &str) {
+        let ChangeScan { edits, failed } = self;
+        for line in text.split('\n') {
+            if !line.contains("\"Edit\"") && !line.contains("\"Write\"") && !line.contains("\"MultiEdit\"") && !line.contains("tool_use_id") {
+                continue;
+            }
+            let Ok(row) = serde_json::from_str::<Obj>(line) else { continue };
+            let at = match row.get("timestamp") {
+                None | Some(Value::Null) => None,
+                Some(v) => parse_date(&js_string(v)),
+            }
+            .unwrap_or(0);
+            let Some(content) = row.get("message").and_then(|m| m.get("content")).and_then(Value::as_array) else { continue };
+            for b in content {
+                let Some(b) = b.as_object() else { continue };
+                if is_type(b, "tool_use") {
+                    let Some(input) = b.get("input").and_then(Value::as_object) else { continue };
+                    let tool = str_of(b, "name").unwrap_or_default();
+                    let Some(id) = str_of(b, "id").filter(|id| !id.is_empty()) else { continue };
+                    let Some(path) = str_of(input, "file_path").filter(|p| !p.is_empty()) else { continue };
+                    let text = |k: &str| str_of(input, k).unwrap_or_default().to_owned();
+                    let mut push = |key: String, old: String, new: String, whole: bool| {
+                        let edit = FileEdit { id: key, tool: tool.to_owned(), old, new, whole, at };
+                        edits.push((id.to_owned(), path.to_owned(), edit));
+                    };
+                    match tool {
+                        "Edit" => push(id.to_owned(), text("old_string"), text("new_string"), false),
+                        "Write" => push(id.to_owned(), String::new(), text("content"), true),
+                        "MultiEdit" => {
+                            for (i, e) in input.get("edits").and_then(Value::as_array).into_iter().flatten().enumerate() {
+                                let Some(e) = e.as_object() else { continue };
+                                push(
+                                    format!("{id}#{i}"),
+                                    str_of(e, "old_string").unwrap_or_default().to_owned(),
+                                    str_of(e, "new_string").unwrap_or_default().to_owned(),
+                                    false,
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+                } else if is_type(b, "tool_result")
+                    && truthy(b.get("is_error"))
+                    && let Some(id) = str_of(b, "tool_use_id")
+                {
+                    failed.insert(id.to_owned());
+                }
+            }
+        }
+    }
+}
+
+static CHANGE_SCANS: ScanCache<ChangeScan> = LazyLock::new(Default::default);
+
+/// The files a chat's Claude edited, in the order each file was first touched.
+fn session_changes(session_id: &str) -> Vec<SessionFile> {
+    scan(&CHANGE_SCANS, session_id, ChangeScan::feed, |s| {
+        let mut files: Vec<SessionFile> = Vec::new();
+        let mut index: HashMap<&str, usize> = HashMap::new();
+        for (tool_id, path, edit) in &s.edits {
+            if s.failed.contains(tool_id) {
+                continue;
+            }
+            let i = *index.entry(path.as_str()).or_insert_with(|| {
+                files.push(SessionFile { path: path.clone(), edits: Vec::new() });
+                files.len() - 1
+            });
+            files[i].edits.push(edit.clone());
+        }
+        files
+    })
+    .unwrap_or_default()
 }
 
 /* ---------------- dates ---------------- */

@@ -253,6 +253,25 @@ export interface SubAgent {
   endedAt?: number
 }
 
+/** One replacement a chat's Claude made to a file (Edit, MultiEdit or Write). */
+export interface FileEdit {
+  id: string
+  tool: string
+  /** text replaced; empty for a Write */
+  old: string
+  /** text put in its place (the whole file for a Write) */
+  new: string
+  whole: boolean
+  at: number
+}
+
+/** A file a chat's Claude edited, with every edit it made, oldest first. */
+export interface SessionFile {
+  /** absolute path */
+  path: string
+  edits: FileEdit[]
+}
+
 /** A plugin found on this machine (plugins/<id>/plugin.json, see docs/plugins.md). */
 export interface PluginInfo {
   id: string

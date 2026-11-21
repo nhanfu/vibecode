@@ -71,6 +71,7 @@ pub fn run() {
             sessions::sessions_context,
             sessions::sessions_tasks,
             sessions::sessions_subagents,
+            sessions::sessions_changes,
             plugins::plugin_list,
             plugins::plugin_start,
             plugins::plugin_stop,

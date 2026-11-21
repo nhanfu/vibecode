@@ -5572,3 +5572,79 @@ button.plan-chevron:hover {
   min-height: 0;
   display: flex;
 }
+
+/* Changes a chat's Claude made (agent sidebar): hover preview of each file's edits */
+.session-change-row .change-stats {
+  font-size: 11px;
+}
+.session-change-pop {
+  position: fixed;
+  z-index: 900;
+  width: 440px;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  background: var(--bg-elev, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  font-size: 12px;
+}
+.scp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+.scp-count {
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.scp-body {
+  overflow: hidden;
+  padding: 4px 0;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.scp-edit + .scp-edit {
+  margin-top: 6px;
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+.scp-edit-tool {
+  padding: 0 10px 2px;
+  font-family: inherit;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.scp-line {
+  display: flex;
+  white-space: pre;
+  padding: 0 10px;
+}
+.scp-line.add {
+  background: rgba(46, 160, 67, 0.14);
+}
+.scp-line.del {
+  background: rgba(248, 81, 73, 0.14);
+}
+.scp-sign {
+  flex: none;
+  width: 14px;
+  color: var(--text-dim);
+}
+.scp-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scp-more {
+  padding: 0 10px;
+  color: var(--text-dim);
+}
