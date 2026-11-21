@@ -11,10 +11,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{
-        LazyLock,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 
@@ -46,13 +43,6 @@ static LOGS: LazyLock<Mutex<HashMap<String, Vec<LogLine>>>> = LazyLock::new(Defa
 type LogLine = (Instant, String);
 /// chatId → label of the tab that chat's browser tools drive
 static ACTIVE: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
-/// Web pages drawn dark (Dark Reader, the same on every platform) while the app is in dark mode and
-/// the setting is on. Set by `web_set_dark`; every page checks it when it finishes loading.
-static WEB_DARK: AtomicBool = AtomicBool::new(false);
-/// Dark Reader, bundled (MIT licence, see vendor/darkreader.LICENSE). Injected into every page.
-const DARK_READER: &str = include_str!("../vendor/darkreader.js");
-const DARK_ON: &str = "if (window.DarkReader) DarkReader.enable();";
-const DARK_OFF: &str = "if (window.DarkReader) DarkReader.disable();";
 static WAITERS: LazyLock<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>> = LazyLock::new(Default::default);
 
 fn webview(label: &str) -> Option<Webview> {
@@ -101,7 +91,6 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     let popup_label = label.clone();
     #[allow(unused_mut)]
     let mut b = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
-        .initialization_script(DARK_READER)
         // popups open in the same tab
         .on_new_window(move |url, _features| {
             if matches!(url.scheme(), "http" | "https")
@@ -115,21 +104,15 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     if let Some(ua) = user_agent.filter(|u| !u.is_empty()) {
         b = b.user_agent(&ua);
     }
-    // the page is done: draw it dark if the app is (on every platform)
-    b = b.on_page_load(move |w, p| {
-        #[cfg(not(windows))]
-        {
-            let loading = matches!(p.event(), tauri::webview::PageLoadEvent::Started);
-            emit_nav(w.label(), WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title: String::new(), back: true, fwd: true, loading });
-        }
-        if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) && WEB_DARK.load(Ordering::Relaxed) {
-            let _ = w.eval(DARK_ON);
-        }
-    });
     #[cfg(not(windows))]
     {
+        let l1 = label.clone();
         let l2 = label.clone();
         b = b
+            .on_page_load(move |w, p| {
+                let loading = matches!(p.event(), tauri::webview::PageLoadEvent::Started);
+                emit_nav(&l1, WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title: String::new(), back: true, fwd: true, loading });
+            })
             .on_document_title_changed(move |w, title| {
                 emit_nav(&l2, WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title, back: true, fwd: true, loading: false });
             });
@@ -236,17 +219,6 @@ pub fn web_stop(label: String) {
         win::stop(&w);
         #[cfg(not(windows))]
         let _ = w.eval("window.stop()");
-    }
-}
-
-/// The app's dark mode (and the setting) for the web pages: switches every open page, and the ones
-/// still to come (see `open_tab`).
-#[tauri::command]
-pub fn web_set_dark(dark: bool) {
-    WEB_DARK.store(dark, Ordering::Relaxed);
-    let tabs: Vec<Webview> = TABS.lock().values().map(|t| t.webview.clone()).collect();
-    for w in tabs {
-        let _ = w.eval(if dark { DARK_ON } else { DARK_OFF });
     }
 }
 

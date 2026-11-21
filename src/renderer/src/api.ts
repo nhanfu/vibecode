@@ -135,7 +135,6 @@ export const api = {
     reload: (label: string, hard = false): void => void invoke('web_reload', { label, hard }),
     stop: (label: string): void => void invoke('web_stop', { label }),
     setUserAgent: (label: string, userAgent: string | null): Promise<void> => invoke('web_set_user_agent', { label, userAgent }),
-    setDark: (dark: boolean): Promise<void> => invoke('web_set_dark', { dark }),
     close: (label: string): void => void invoke('web_close', { label }),
     /** the keyboard goes into the page */
     focus: (label: string): void => void invoke('web_focus', { label }),

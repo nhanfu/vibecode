@@ -102,8 +102,6 @@ export interface AppSettings {
   permissionMode: string
   /** Linux-style overlay: transparent window background, text stays solid (needs a relaunch) */
   seeThrough: boolean
-  /** web pages drawn dark while the app is in dark mode (Dark Reader) */
-  webDark: boolean
   /** code editor (Monaco): font family name, size in px, ligatures */
   editorFont: string
   editorFontSize: number

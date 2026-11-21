@@ -247,8 +247,6 @@ export function applyTheme(): void {
   setTerminalTheme(light)
   if (st().themeResolved !== (light ? 'light' : 'dark')) useStore.setState({ themeResolved: light ? 'light' : 'dark' })
   applyGlass()
-  // web pages follow the app's theme
-  void window.api.browser.setDark(!light).catch(() => {})
 }
 
 // 'system': the OS switching light/dark switches the app too
