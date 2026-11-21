@@ -93,6 +93,10 @@ export const api = {
     },
     resize: (id: string, cols: number, rows: number): void => void invoke('pty_resize', { id, cols, rows }),
     kill: (id: string): void => void invoke('pty_kill', { id }),
+    /** the page starts: shells left from before stop, chats' terminals wait to be attached to again */
+    pageReset: (): Promise<void> => invoke('pty_page_reset'),
+    /** chats' terminals still running from before the app was closed */
+    list: (): Promise<string[]> => invoke<string[]>('pty_list'),
     /** on screen → output every 5 ms; off screen → batched every 50 ms (far fewer wake-ups) */
     visible: (id: string, visible: boolean): void => void invoke('pty_visible', { id, visible }),
     onData: (cb: (id: string, data: string) => void): Off => sub(ptyData, cb),

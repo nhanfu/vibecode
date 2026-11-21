@@ -326,6 +326,31 @@ fn pump(id: String, r: impl AsyncRead + Unpin + Send + 'static) {
     });
 }
 
+/// The port and token of the last start of this sidecar when that port is free, else new ones. The chats'
+/// terminals outlive the app (ptyd.rs) and keep the MCP address they were started with: the same port
+/// and token let them reach the plugin again once it is back up.
+fn endpoint(data: &Path) -> Result<(u16, String)> {
+    let file = data.join("endpoint.json");
+    let saved = std::fs::read(&file).ok().and_then(|raw| serde_json::from_slice::<Value>(&raw).ok()).and_then(|v| Some((u16::try_from(v["port"].as_u64()?).ok()?, v["token"].as_str()?.to_owned())));
+    if let Some((port, token)) = saved
+        && std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+    {
+        return Ok((port, token));
+    }
+    let port = free_port()?;
+    let token = {
+        let b: [u8; 24] = rand::rng().random();
+        b.iter().map(|x| format!("{x:02x}")).collect::<String>()
+    };
+    let _ = std::fs::write(&file, serde_json::to_vec(&json!({ "port": port, "token": token }))?);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok((port, token))
+}
+
 fn free_port() -> Result<u16> {
     Ok(std::net::TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port())
 }
@@ -377,13 +402,9 @@ async fn launch(plugin: &Plugin) -> Result<(u16, String)> {
         }
     }
     let program = plugin.program().with_context(|| format!("{} is not built yet (see {}/README.md)", plugin.manifest.name, plugin.dir.display()))?;
-    let port = free_port()?;
-    let token = {
-        let b: [u8; 24] = rand::rng().random();
-        b.iter().map(|x| format!("{x:02x}")).collect::<String>()
-    };
     let data = user_data().join("plugin-data").join(&id);
     std::fs::create_dir_all(&data)?;
+    let (port, token) = endpoint(&data)?;
     let fill = |s: &str| {
         s.replace("{port}", &port.to_string())
             .replace("{token}", &token)

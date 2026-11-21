@@ -43,18 +43,48 @@ const DB: &str = "vibe-mssql";
 
 static PORT: AtomicU16 = AtomicU16::new(0);
 
-fn token() -> &'static str {
-    static TOKEN: OnceLock<String> = OnceLock::new();
-    TOKEN.get_or_init(|| {
-        let bytes: [u8; 24] = rand::rng().random();
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
-    })
+static TOKEN: OnceLock<String> = OnceLock::new();
+
+fn random_token() -> String {
+    let bytes: [u8; 24] = rand::rng().random();
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Starts the server on a free localhost port; returns once chats can be given a config.
+fn token() -> &'static str {
+    TOKEN.get_or_init(random_token)
+}
+
+/// `<userData>/mcp-endpoint.json`: the port and token of the last run. A chat keeps the
+/// `--mcp-config` and `--settings` it was started with, and the chats' terminals outlive the app
+/// (ptyd.rs): the same port and token let the ones still running keep reaching this server after
+/// the app is started again.
+fn endpoint_file() -> std::path::PathBuf {
+    crate::core::user_data().join("mcp-endpoint.json")
+}
+
+/// Starts the server on the port of the last run when it is free (a new one otherwise); returns once
+/// chats can be given a config.
 pub async fn start() -> anyhow::Result<()> {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
-    PORT.store(listener.local_addr()?.port(), Ordering::SeqCst);
+    let saved: Option<(u16, String)> = std::fs::read(endpoint_file()).ok().and_then(|raw| serde_json::from_slice::<Value>(&raw).ok()).and_then(|v| Some((u16::try_from(v["port"].as_u64()?).ok()?, v["token"].as_str()?.to_owned())));
+    let (listener, token) = match saved {
+        Some((port, token)) => match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+            Ok(l) => (l, token),
+            Err(_) => (tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?, random_token()),
+        },
+        None => (tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?, random_token()),
+    };
+    let port = listener.local_addr()?.port();
+    let _ = TOKEN.set(token.clone());
+    if let Ok(raw) = serde_json::to_vec(&json!({ "port": port, "token": token })) {
+        let file = endpoint_file();
+        let _ = std::fs::write(&file, raw);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+    PORT.store(port, Ordering::SeqCst);
     let router = Router::new().route("/{kind}/{chat}", post(on_post).get(not_post).delete(not_post));
     tauri::async_runtime::spawn(async move {
         let _ = axum::serve(listener, router).await;

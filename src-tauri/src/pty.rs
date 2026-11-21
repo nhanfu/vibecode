@@ -1,23 +1,26 @@
 //! Terminals: one pseudo-console per chat / shell, streamed to the page through its own Channel.
+//!
+//! The pseudo-consoles live in ptyd (ptyd.rs), a process that outlives the app: this module is its
+//! client. A chat's terminal is kept when the app quits or the page reloads, and the next start
+//! attaches to it (`reuse`); a shell's is not.
 
 use std::{
-    collections::HashMap,
-    io::{Read, Write},
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{
-        LazyLock,
+        Arc, LazyLock,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
 use parking_lot::Mutex;
-use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tokio::sync::mpsc;
 
-use crate::core::{Res, clean_env, which};
+use crate::core::{Res, clean_env, err, which};
+use crate::ptyd::{self, Daemon, Event, NewSession};
 
 /* ---------------- coding agents ---------------- */
 
@@ -102,6 +105,10 @@ pub struct SpawnOptions {
     claude_args: Option<Vec<String>>,
     cols: u16,
     rows: u16,
+    /// the terminal may already be running in ptyd (a chat from before the app was closed): attach to
+    /// it instead of starting another
+    #[serde(default)]
+    reuse: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -111,20 +118,10 @@ pub enum PtyMsg {
     Exit { code: i32 },
 }
 
-struct Session {
-    generation: u64,
-    /// keystrokes go to a writer thread: a ConPTY input pipe whose process isn't reading blocks,
-    /// and that must never stall the command (Tauri runs sync commands on the UI thread)
-    input: std::sync::mpsc::Sender<Vec<u8>>,
-    master: Box<dyn MasterPty + Send>,
-    killer: Box<dyn ChildKiller + Send + Sync>,
+enum Chunk {
+    Data(Vec<u8>),
+    Exit(i32),
 }
-
-static SESSIONS: LazyLock<Mutex<HashMap<String, Session>>> = LazyLock::new(Default::default);
-/// Terminals on screen right now. Their output goes out every 5 ms; the others' is gathered for
-/// 50 ms — ten busy chats in the background then wake the page ~200×/s instead of ~2000×/s.
-static VISIBLE: LazyLock<Mutex<std::collections::HashSet<String>>> = LazyLock::new(Default::default);
-static GENERATION: AtomicU64 = AtomicU64::new(1);
 
 /// PowerShell-safe argument.
 fn quote_arg(a: &str) -> String {
@@ -135,14 +132,77 @@ fn quote_arg(a: &str) -> String {
     }
 }
 
-enum Chunk {
-    Data(Vec<u8>),
-    Exit(i32),
+/// The connection to ptyd, once made.
+static DAEMON: Mutex<Option<Arc<Daemon>>> = Mutex::new(None);
+static CONN: AtomicU64 = AtomicU64::new(0);
+/// Where each terminal's output goes: the task that gathers it for the page.
+static SINKS: LazyLock<Mutex<HashMap<String, mpsc::UnboundedSender<Chunk>>>> = LazyLock::new(Default::default);
+/// Terminals that are running as far as this side knows.
+static LIVE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
+/// Terminals on screen right now. Their output goes out every 16 ms; the others' is gathered for
+/// 50 ms — ten busy chats in the background then wake the page ~200×/s instead of ~2000×/s.
+static VISIBLE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
+
+fn on_event(conn: u64, ev: Event) {
+    match ev {
+        Event::Snapshot(id, data) | Event::Data(id, data) => {
+            if let Some(tx) = SINKS.lock().get(&id) {
+                let _ = tx.send(Chunk::Data(data));
+            }
+        }
+        Event::Exit(id, code) => {
+            LIVE.lock().remove(&id);
+            if let Some(tx) = SINKS.lock().remove(&id) {
+                let _ = tx.send(Chunk::Exit(code));
+            }
+        }
+        Event::Error(id, message) => {
+            LIVE.lock().remove(&id);
+            if let Some(tx) = SINKS.lock().remove(&id) {
+                let _ = tx.send(Chunk::Data(format!("\r\n\x1b[31mcould not start: {message}\x1b[0m\r\n").into_bytes()));
+                let _ = tx.send(Chunk::Exit(1));
+            }
+        }
+        Event::Closed => {
+            // ptyd went away (it stopped, or was closed here): what ran in it is gone. Only the
+            // current connection speaks for the terminals (a newer one may have replaced it).
+            if CONN.load(Ordering::SeqCst) != conn {
+                return;
+            }
+            *DAEMON.lock() = None;
+            LIVE.lock().clear();
+            for (_, tx) in SINKS.lock().drain() {
+                // -1: found dead; the chat starts again by itself, resuming its conversation
+                let _ = tx.send(Chunk::Exit(-1));
+            }
+        }
+    }
+}
+
+/// The connection to ptyd, starting ptyd when it is not running. Blocks for a moment the first time.
+fn daemon() -> Result<Arc<Daemon>, String> {
+    if let Some(d) = DAEMON.lock().clone() {
+        return Ok(d);
+    }
+    let conn = CONN.fetch_add(1, Ordering::SeqCst) + 1;
+    let mut d = ptyd::connect_or_start(move |e| on_event(conn, e)).map_err(|e| format!("could not start the terminal service: {e}"))?;
+    // an older ptyd with nothing worth keeping is replaced; one that holds chats is left alone
+    if d.version != ptyd::VERSION && d.sessions.iter().all(|s| !s.persist) {
+        d.quit_if_idle();
+        std::thread::sleep(Duration::from_millis(300));
+        d = ptyd::connect_or_start(move |e| on_event(conn, e)).map_err(|e| format!("could not start the terminal service: {e}"))?;
+    }
+    let d = Arc::new(d);
+    *DAEMON.lock() = Some(d.clone());
+    Ok(d)
+}
+
+fn current() -> Option<Arc<Daemon>> {
+    DAEMON.lock().clone()
 }
 
 #[tauri::command]
 pub async fn pty_spawn(opts: SpawnOptions, out: Channel<PtyMsg>) -> Res<()> {
-    pty_kill(opts.id.clone());
     let shell = default_shell();
     let windows = cfg!(windows);
 
@@ -173,67 +233,32 @@ pub async fn pty_spawn(opts: SpawnOptions, out: Channel<PtyMsg>) -> Res<()> {
         vec!["-l".into()]
     };
 
-    let mut cmd = CommandBuilder::new(&shell);
-    cmd.args(&args);
-    // Claude Code keys folder trust by the exact path (`E:/x` ≠ `E:\x`): hand it the native form
-    cmd.cwd(if windows { opts.cwd.replace('/', "\\") } else { opts.cwd.clone() });
-    cmd.env_clear();
-    for (k, v) in clean_env() {
-        cmd.env(k, v);
-    }
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("COLORTERM", "truecolor");
-    cmd.env("FORCE_COLOR", "1");
+    let mut env: Vec<(String, String)> = clean_env().into_iter().collect();
+    env.extend([("TERM".into(), "xterm-256color".into()), ("COLORTERM".into(), "truecolor".into()), ("FORCE_COLOR".into(), "1".into())]);
+    let req = NewSession {
+        id: opts.id.clone(),
+        // a chat is kept when the app goes; a shell is not
+        persist: opts.kind != "shell",
+        reuse: opts.reuse,
+        // Claude Code keys folder trust by the exact path (`E:/x` ≠ `E:\x`): hand it the native form
+        cwd: if windows { opts.cwd.replace('/', "\\") } else { opts.cwd.clone() },
+        program: shell,
+        args,
+        env,
+        cols: opts.cols.max(2),
+        rows: opts.rows.max(2),
+    };
 
-    let size = PtySize { rows: opts.rows.max(2), cols: opts.cols.max(2), pixel_width: 0, pixel_height: 0 };
-    let pair = native_pty_system().openpty(size)?;
-    let mut child = pair.slave.spawn_command(cmd)?;
-    drop(pair.slave);
-    let mut reader = pair.master.try_clone_reader()?;
-    let mut writer = pair.master.take_writer()?;
-    let killer = child.clone_killer();
-
-    // in order, off the caller's thread; ends when the session (its sender) is dropped or a write fails
-    let (input, keys) = std::sync::mpsc::channel::<Vec<u8>>();
-    std::thread::Builder::new().name(format!("pty-write-{}", opts.id)).spawn(move || {
-        while let Ok(mut data) = keys.recv() {
-            // a paste arrives as many pieces: write what has queued up in one go
-            while let Ok(more) = keys.try_recv() {
-                data.extend(more);
-            }
-            if writer.write_all(&data).and_then(|_| writer.flush()).is_err() {
-                break;
-            }
-        }
-    })?;
-
-    let generation = GENERATION.fetch_add(1, Ordering::Relaxed);
-    SESSIONS.lock().insert(opts.id.clone(), Session { generation, input, master: pair.master, killer });
-
+    let d = tokio::task::spawn_blocking(daemon).await?.map_err(err)?;
+    // the output goes here from the first byte (a re-attached terminal starts with its screen)
     let (tx, mut rx) = mpsc::unbounded_channel::<Chunk>();
-
-    // blocking reads on their own thread
-    let tx_read = tx.clone();
-    std::thread::Builder::new().name(format!("pty-read-{}", opts.id)).spawn(move || {
-        let mut buf = vec![0u8; 64 * 1024];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    if tx_read.send(Chunk::Data(buf[..n].to_vec())).is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-    })?;
-
-    // exit: give the last output a moment to arrive (ConPTY keeps the pipe open until closed)
-    std::thread::Builder::new().name(format!("pty-wait-{}", opts.id)).spawn(move || {
-        let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
-        std::thread::sleep(Duration::from_millis(40));
-        let _ = tx.send(Chunk::Exit(code));
-    })?;
+    SINKS.lock().insert(opts.id.clone(), tx);
+    LIVE.lock().insert(opts.id.clone());
+    if !d.spawn(&req) {
+        SINKS.lock().remove(&opts.id);
+        LIVE.lock().remove(&opts.id);
+        return Err(err("the terminal service is not answering"));
+    }
 
     // Claude Code redraws in many tiny chunks; one message per chunk floods the page and makes the
     // chat stutter. But a fixed gathering delay lands on every keystroke's echo (and a 5 ms sleep is
@@ -260,6 +285,7 @@ pub async fn pty_spawn(opts: SpawnOptions, out: Channel<PtyMsg>) -> Res<()> {
                 let _ = out.send(PtyMsg::Data { data });
             }
         };
+        // a sink replaced by a restart (or dropped by a page reset) ends the channel: that is not an exit
         while let Some(first) = rx.recv().await {
             let mut exit = None;
             match first {
@@ -293,18 +319,8 @@ pub async fn pty_spawn(opts: SpawnOptions, out: Channel<PtyMsg>) -> Res<()> {
             send(&mut carry, &out);
             last_send = std::time::Instant::now();
             if let Some(code) = exit {
-                // a process we killed or replaced (restart) must not report "exited": the id
-                // already belongs to a new, live process
-                let mine = {
-                    let mut s = SESSIONS.lock();
-                    if s.get(&id).is_some_and(|x| x.generation == generation) { s.remove(&id) } else { None }
-                };
-                if let Some(sess) = mine {
-                    VISIBLE.lock().remove(&id);
-                    let _ = out.send(PtyMsg::Exit { code });
-                    // closing a ConPTY can stall: not on an async worker
-                    std::thread::spawn(move || drop(sess));
-                }
+                VISIBLE.lock().remove(&id);
+                let _ = out.send(PtyMsg::Exit { code });
                 break;
             }
         }
@@ -315,28 +331,17 @@ pub async fn pty_spawn(opts: SpawnOptions, out: Channel<PtyMsg>) -> Res<()> {
 /// false when there is no live process for this id (it died without us hearing about it).
 #[tauri::command]
 pub fn pty_write(id: String, data: String) -> bool {
-    let mut s = SESSIONS.lock();
-    let Some(sess) = s.get(&id) else { return false };
-    if sess.input.send(data.into_bytes()).is_ok() {
-        return true;
+    if !LIVE.lock().contains(&id) {
+        return false;
     }
-    // the writer thread ended: the process is gone
-    let dead = s.remove(&id);
-    drop(s);
-    VISIBLE.lock().remove(&id);
-    std::thread::spawn(move || drop(dead));
-    false
+    current().is_some_and(|d| d.input(&id, data.as_bytes()))
 }
 
 #[tauri::command]
-pub async fn pty_resize(id: String, cols: u16, rows: u16) {
-    // ResizePseudoConsole waits on conhost: keep it off the UI thread
-    let _ = tokio::task::spawn_blocking(move || {
-        if let Some(s) = SESSIONS.lock().get(&id) {
-            let _ = s.master.resize(PtySize { rows: rows.max(2), cols: cols.max(2), pixel_width: 0, pixel_height: 0 });
-        }
-    })
-    .await;
+pub fn pty_resize(id: String, cols: u16, rows: u16) {
+    if let Some(d) = current() {
+        d.resize(&id, cols.max(2), rows.max(2));
+    }
 }
 
 #[tauri::command]
@@ -352,26 +357,51 @@ pub fn pty_visible(id: String, visible: bool) {
 #[tauri::command]
 pub fn pty_kill(id: String) {
     VISIBLE.lock().remove(&id);
-    let sess = SESSIONS.lock().remove(&id);
-    if let Some(mut s) = sess {
-        // closing a ConPTY can stall: never on the caller's thread
-        std::thread::spawn(move || {
-            let _ = s.killer.kill();
-            drop(s);
-        });
+    SINKS.lock().remove(&id);
+    LIVE.lock().remove(&id);
+    if let Some(d) = current() {
+        d.kill(&id);
     }
 }
 
-/// The page asks for this on start: terminals left from a page that was reloaded are stopped
-/// first, so the chats restored now are the only ones running.
+/// The page asks for this on start: shells left from a page that was reloaded are stopped, and the
+/// chats' terminals (still running in ptyd) are forgotten here until the page attaches to them again.
 #[tauri::command]
-pub fn pty_kill_all() {
-    kill_all();
+pub fn pty_page_reset() {
+    SINKS.lock().clear();
+    LIVE.lock().clear();
+    VISIBLE.lock().clear();
+    if let Some(d) = current() {
+        d.wipe();
+    }
 }
 
-pub fn kill_all() {
-    let all: Vec<Session> = SESSIONS.lock().drain().map(|(_, s)| s).collect();
-    for mut s in all {
-        let _ = s.killer.kill();
+/// The chats' terminals that are still running in ptyd from before (empty when ptyd is not running).
+#[tauri::command]
+pub async fn pty_list() -> Vec<String> {
+    tokio::task::spawn_blocking(|| {
+        let d = match current() {
+            Some(d) => d,
+            // ptyd is not started for this: only looked for
+            None => {
+                let Some(info) = ptyd::read_info() else { return Vec::new() };
+                let conn = CONN.fetch_add(1, Ordering::SeqCst) + 1;
+                let Ok(d) = Daemon::connect(&info, move |e| on_event(conn, e)) else { return Vec::new() };
+                let d = Arc::new(d);
+                *DAEMON.lock() = Some(d.clone());
+                d
+            }
+        };
+        d.list().into_iter().filter(|s| s.persist).map(|s| s.id).collect()
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// The app is going away (quit, restart, update): its connection to ptyd ends. The chats' terminals
+/// keep running there; shells started here stop.
+pub fn detach_all() {
+    if let Some(d) = DAEMON.lock().take() {
+        d.close();
     }
 }

@@ -158,7 +158,9 @@ interface Entry {
   term: Terminal
   fit: FitAddon
   el: HTMLDivElement
-  spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>
+  spawn: Omit<PtySpawnOptions, 'cols' | 'rows' | 'reuse'>
+  /** the first start may attach to a terminal still running from before (then it is a restart's job to replace it) */
+  reuse: boolean
   spawned: boolean
   webgl?: WebglAddon
   /** size last sent to the process, so a fit that changes nothing doesn't make Claude redraw */
@@ -590,7 +592,7 @@ function preeditView(term: Terminal): (text: string) => void {
   }
 }
 
-export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void {
+export function createTerm({ reuse, ...spawn }: Omit<PtySpawnOptions, 'cols' | 'rows'>): void {
   wire()
   if (entries.has(spawn.id)) return
   const openLink = (url: string): void => {
@@ -760,7 +762,7 @@ export function createTerm(spawn: Omit<PtySpawnOptions, 'cols' | 'rows'>): void 
     } else pasteInto(spawn.id)
   })
 
-  const entry: Entry = { term, fit, el, spawn, spawned: false }
+  const entry: Entry = { term, fit, el, spawn, reuse: !!reuse, spawned: false }
   entries.set(spawn.id, entry)
   // keep the footer cover on the right row when scrolling or resizing
   term.onScroll(() => scheduleFooterHide(entry))
@@ -838,7 +840,9 @@ export function attachTerm(id: string, container: HTMLElement, focus = true): vo
     if (!e.spawned) {
       e.spawned = true
       e.sent = `${e.term.cols}x${e.term.rows}`
-      window.api.pty.spawn({ ...e.spawn, cols: e.term.cols, rows: e.term.rows })
+      // a chat from before the app was closed attaches to its terminal; this is the only time
+      window.api.pty.spawn({ ...e.spawn, reuse: e.reuse, cols: e.term.cols, rows: e.term.rows })
+      e.reuse = false
     }
     if (focus) e.term.focus()
     if (fresh) whenIdle(() => e.el.parentElement && e.el.parentElement !== parking && loadWebgl(e), 400)
@@ -944,7 +948,7 @@ export function writeToTerm(id: string, text: string): void {
   window.api.pty.write(id, text)
 }
 
-export function restartTerm(id: string, spawn?: Partial<Omit<PtySpawnOptions, 'cols' | 'rows'>>): void {
+export function restartTerm(id: string, spawn?: Partial<Omit<PtySpawnOptions, 'cols' | 'rows' | 'reuse'>>): void {
   const e = entries.get(id)
   if (!e) return
   e.spawn = { ...e.spawn, ...spawn }

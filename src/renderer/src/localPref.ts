@@ -36,8 +36,9 @@ const LEGACY = /^(vibe\.|tinjs\.|vibe-|layout-|react-resizable-panels:)/
 const MIGRATED = '_migrated'
 
 export async function hydrateUserStore(): Promise<void> {
-  // terminals of a page that was reloaded are still running: stop them before the chats come back
-  await invoke('pty_kill_all').catch(() => {})
+  // shells of a page that was reloaded are stopped; the chats' terminals keep running (in ptyd) and
+  // the chats that come back attach to them
+  await invoke('pty_page_reset').catch(() => {})
   try {
     const snap = await invoke<{ prefs: Record<string, string>; plans: string; chats: string; pages: string }>('userdb_snapshot')
     for (const [k, v] of Object.entries(snap.prefs)) cache.set(k, v)

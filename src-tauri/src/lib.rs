@@ -13,6 +13,7 @@ mod plugins;
 mod mcp;
 mod mssql;
 mod pty;
+mod ptyd;
 mod sessions;
 mod settings;
 mod userdb;
@@ -22,6 +23,11 @@ mod windowing;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// `vibe-code --ptyd`: the process that keeps the terminals alive when the app is closed (ptyd.rs).
+pub fn ptyd_main() {
+    ptyd::run();
+}
+
 pub fn run() {
     core::fix_mac_path();
 
@@ -38,7 +44,8 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
-            pty::pty_kill_all,
+            pty::pty_page_reset,
+            pty::pty_list,
             pty::pty_visible,
             pty::claude_detect,
             pty::agents_detect,
@@ -160,7 +167,7 @@ pub fn run() {
         .expect("error while building VIBE CODE")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                pty::kill_all();
+                pty::detach_all();
                 userdb::checkpoint();
                 mssql::cancel_all();
                 plugins::stop_all();

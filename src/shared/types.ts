@@ -59,6 +59,11 @@ export interface PtySpawnOptions {
   claudeArgs?: string[]
   cols: number
   rows: number
+  /**
+   * The terminal may still be running from before the app was closed (it lives in ptyd, see
+   * src-tauri/src/ptyd.rs): attach to it instead of starting another. Only for the first start.
+   */
+  reuse?: boolean
 }
 
 export interface SessionInfo {

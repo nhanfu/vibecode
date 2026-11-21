@@ -483,6 +483,10 @@ export function refreshGit(): void {
 /* ---------------- Chats ---------------- */
 
 interface NewChatOpts {
+  /** the id of a chat restored from the previous run: its terminal may still be running (ptyd) */
+  id?: string
+  /** attach to that terminal when it is still there, start `args` when it is not */
+  reuse?: boolean
   cwd?: string
   args?: string[]
   title?: string
@@ -559,7 +563,7 @@ export function newChat(opts: NewChatOpts = {}): void {
   if (opts.prompt) args = [...args, opts.prompt]
   const n = st().chats.length + 1
   const chat: Chat = {
-    id: 'chat-' + uid(),
+    id: opts.id ?? 'chat-' + uid(),
     title: opts.title ?? `Chat ${n}`,
     pinnedTitle: opts.pinnedTitle ?? false,
     cwd,
@@ -574,7 +578,7 @@ export function newChat(opts: NewChatOpts = {}): void {
   }
   if (opts.draft) pendingDraft.set(chat.id, opts.draft)
   if (blank) blankChats.add(chat.id)
-  createTerm({ id: chat.id, cwd: chat.cwd, kind: 'claude', claudeArgs: args })
+  createTerm({ id: chat.id, cwd: chat.cwd, kind: 'claude', claudeArgs: args, reuse: opts.reuse })
   useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id), ...openPatch('agents') }))
 }
 
@@ -590,7 +594,7 @@ function newAgentChat(cwd: string, agentId: AgentId, opts: NewChatOpts, blank: b
   const args = [...(opts.args ?? []), ...agentFlags(agentId, permissionMode), ...(opts.prompt ? [opts.prompt] : [])]
   const n = st().chats.filter((c) => c.agent === agentId).length + 1
   const chat: Chat = {
-    id: 'chat-' + uid(),
+    id: opts.id ?? 'chat-' + uid(),
     title: opts.title ?? `${agent.label} ${n}`,
     pinnedTitle: opts.pinnedTitle ?? false,
     cwd,
@@ -602,7 +606,7 @@ function newAgentChat(cwd: string, agentId: AgentId, opts: NewChatOpts, blank: b
     permissionMode
   }
   if (blank) blankChats.add(chat.id)
-  createTerm({ id: chat.id, cwd, kind: 'claude', agent: agentId, claudeArgs: args })
+  createTerm({ id: chat.id, cwd, kind: 'claude', agent: agentId, claudeArgs: args, reuse: opts.reuse })
   useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id), ...openPatch('agents') }))
 }
 
@@ -1102,6 +1106,8 @@ export function cycleChat(step: 1 | -1): void {
 
 const OPEN_CHATS_KEY = 'vibe.openChats'
 interface SavedChat {
+  /** the chat's id, which is also the id of its terminal in ptyd */
+  id?: string
   cwd: string
   title: string
   pinnedTitle: boolean
@@ -1119,6 +1125,7 @@ function saveOpenChats(): void {
   if (!persistChats) return
   const { chats, activeChatId } = st()
   const list: SavedChat[] = chats.map((c) => ({
+    id: c.id,
     cwd: c.cwd,
     title: c.title,
     pinnedTitle: c.pinnedTitle,
@@ -1139,30 +1146,47 @@ function saveOpenChats(): void {
 /** Reopen the chats that were open when the app quit, each resuming its own conversation. */
 export async function restoreChats(): Promise<void> {
   let saved: SavedChat[] = []
+  // the list of chats was read properly (an empty one counts): only then is a terminal nobody claims an orphan
+  let savedOk = false
   try {
     const v = JSON.parse(userStore.getItem(OPEN_CHATS_KEY) ?? 'null')
-    if (Array.isArray(v)) saved = v.filter((c) => c && typeof c.cwd === 'string')
+    if (Array.isArray(v)) {
+      saved = v.filter((c) => c && typeof c.cwd === 'string')
+      savedOk = true
+    }
   } catch {
     /* nothing saved */
   }
   const projects = (await window.api.sessions.list().catch(() => null)) ?? []
   const known = new Set(projects.flatMap((g) => g.sessions.map((x) => x.id)))
+  // chats whose terminal is still running (ptyd keeps them when the app is closed): they come back as
+  // they are, attached to that terminal, even a chat nothing was said in yet
+  const listed = await window.api.pty.list().catch(() => null)
+  const running = new Set(listed ?? [])
+  const claimed = new Set<string>()
   let activeId: string | null = null
   // one chat per session: a session already open (or listed twice) is not opened again
   const opened = new Set(st().chats.map((c) => c.sessionId).filter(Boolean))
   for (const c of saved) {
     const agent = agentDef(c.agent)
+    // its terminal is still there: the chat keeps its id (that is the terminal's name) and attaches
+    const alive = !!c.id && running.has(c.id)
+    const same = alive ? { id: c.id, reuse: true } : {}
+    if (alive && c.id) claimed.add(c.id)
     if (agent.id === 'claude') {
-      // a chat nothing was ever said in left no session to resume
-      if (!c.sessionId || !known.has(c.sessionId) || opened.has(c.sessionId)) continue
-      opened.add(c.sessionId)
-      newChat({ cwd: c.cwd, args: ['--resume', c.sessionId], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: c.model, effort: c.effort, permissionMode: c.permissionMode })
+      // a chat nothing was ever said in left no session to resume (unless its terminal is still running)
+      if (!alive && (!c.sessionId || !known.has(c.sessionId))) continue
+      if (c.sessionId && opened.has(c.sessionId)) continue
+      if (c.sessionId) opened.add(c.sessionId)
+      newChat({ ...same, cwd: c.cwd, args: c.sessionId ? ['--resume', c.sessionId] : [], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: c.model, effort: c.effort, permissionMode: c.permissionMode })
     } else {
-      newChat({ cwd: c.cwd, agent: agent.id, args: [...agent.resume], title: c.title, pinnedTitle: c.pinnedTitle })
+      newChat({ ...same, cwd: c.cwd, agent: agent.id, args: [...agent.resume], title: c.title, pinnedTitle: c.pinnedTitle })
     }
     if (c.active) activeId = st().activeChatId
   }
   if (activeId) selectChat(activeId)
+  // terminals no chat claims (the chat was closed while the app was away, or never saved) would run for ever
+  if (savedOk && listed) for (const id of running) if (!claimed.has(id) || !st().chats.some((c) => c.id === id)) window.api.pty.kill(id)
   persistChats = true
   saveOpenChats()
   useStore.subscribe((s, prev) => {

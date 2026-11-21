@@ -247,7 +247,7 @@ pub async fn app_relaunch() -> Res<bool> {
         // `tauri dev` owns the process: the user restarts it by hand
         return Ok(false);
     }
-    crate::pty::kill_all();
+    crate::pty::detach_all();
     app().restart();
 }
 

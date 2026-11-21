@@ -440,7 +440,7 @@ fn on_menu(ev: MenuEvent) {
 
 pub fn quit() {
     QUITTING.store(true, Ordering::SeqCst);
-    crate::pty::kill_all();
+    crate::pty::detach_all();
     app().exit(0);
 }
 
