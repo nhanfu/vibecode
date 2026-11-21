@@ -52,7 +52,7 @@ static WEB_DARK: AtomicBool = AtomicBool::new(false);
 /// Dark Reader, bundled (MIT licence, see vendor/darkreader.LICENSE). Injected into every page.
 const DARK_READER: &str = include_str!("../vendor/darkreader.js");
 // Google's logos are coloured images: Dark Reader would invert them dark, so they keep their own colours
-const DARK_ON: &str = r#"if (window.DarkReader) DarkReader.enable({}, /(^|\.)google\./.test(location.hostname) ? { ignoreImageAnalysis: ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*="Google"]', 'svg[aria-label*="Google"]'] } : undefined);"#;
+const DARK_ON: &str = r#"if (window.DarkReader) DarkReader.enable({}, /(^|\.)google\./.test(location.hostname) ? { ignoreImageAnalysis: ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*="Google"]', 'svg[aria-label*="Google"]'], css: 'svg[aria-label="Google"] path{fill:#e8eaed !important}' } : undefined);"#;
 const DARK_OFF: &str = "if (window.DarkReader) DarkReader.disable();";
 static WAITERS: LazyLock<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>> = LazyLock::new(Default::default);
 /// labels of the tabs whose page is still loading: a title or history change during a load must not
