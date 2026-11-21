@@ -107,20 +107,6 @@ pub fn web_nav_state(label: String) -> Option<WebNav> {
     LAST_NAV.lock().get(&label).cloned()
 }
 
-/// Sends the page's navigation state as WebKitGTK reports it: Back and Forward follow the real history.
-#[cfg(target_os = "linux")]
-fn emit_linux_nav(w: &Webview, loading: bool, title: String) {
-    use webkit2gtk::WebViewExt;
-    let label = w.label().to_owned();
-    let _ = w.with_webview(move |pw| {
-        let view = pw.inner();
-        let url = view.uri().map(|u| u.to_string()).unwrap_or_default();
-        if url != "about:blank" {
-            emit_nav(&label, WebNav { url, title, back: view.can_go_back(), fwd: view.can_go_forward(), loading });
-        }
-    });
-}
-
 /* ---------------- commands ---------------- */
 
 /// Tabs whose page is still being created, and those of them closed meanwhile: a tab closed before
@@ -239,6 +225,71 @@ mod ads {
     }
 }
 
+/// Linux: the page's own signals (load, title) feed the app. Tauri's page-load and title hooks do
+/// not reach a Web tab here, so the WebKitWebView is connected to directly.
+#[cfg(target_os = "linux")]
+mod nav {
+    use std::{ffi::CString, ptr::null_mut, sync::atomic::Ordering};
+
+    use gtk::glib::translate::ToGlibPtr;
+    use webkit2gtk::{LoadEvent, WebViewExt};
+
+    use super::{DARK_OFF, DARK_ON, PENDING_PAGE, WEB_DARK, WebNav, emit_nav, is_loading, set_loading};
+
+    /// Runs a script in the page (its result is not needed).
+    fn run_js(view: &webkit2gtk::WebView, script: &str) {
+        let Ok(script) = CString::new(script) else { return };
+        // SAFETY: the view is alive on the main thread; no callback, so nothing outlives the call.
+        unsafe {
+            webkit2gtk_sys::webkit_web_view_run_javascript(view.to_glib_none().0, script.as_ptr(), null_mut(), None, null_mut());
+        }
+    }
+
+    /// Sends the tab's state, except for the blank start page (which the tab leaves at once).
+    fn send(view: &webkit2gtk::WebView, label: &str) {
+        let url = view.uri().map(|u| u.to_string()).unwrap_or_default();
+        if url == "about:blank" {
+            return;
+        }
+        let title = view.title().map(|t| t.to_string()).unwrap_or_default();
+        emit_nav(label, WebNav { url, title, back: view.can_go_back(), fwd: view.can_go_forward(), loading: is_loading(label) });
+    }
+
+    /// The blank start page is swapped for the real one, so it leaves no entry in the history.
+    fn swap_start_page(view: &webkit2gtk::WebView, label: &str) {
+        if let Some(page) = PENDING_PAGE.lock().remove(label)
+            && let Ok(js) = serde_json::to_string(&page)
+        {
+            run_js(view, &format!("location.replace({js})"));
+        }
+    }
+
+    /// Connects the tab's signals. Runs on the main thread, once the tab exists.
+    pub fn hook(view: &webkit2gtk::WebView, label: String) {
+        let l = label.clone();
+        view.connect_load_changed(move |v, event| match event {
+            LoadEvent::Started => {
+                set_loading(&l, true);
+                send(v, &l);
+            }
+            LoadEvent::Committed => send(v, &l),
+            LoadEvent::Finished => {
+                set_loading(&l, false);
+                swap_start_page(v, &l);
+                run_js(v, if WEB_DARK.load(Ordering::Relaxed) { DARK_ON } else { DARK_OFF });
+                send(v, &l);
+            }
+            _ => {}
+        });
+        let l = label.clone();
+        view.connect_title_notify(move |v| send(v, &l));
+        // the blank start page may have finished before this hook was connected
+        if !view.is_loading() {
+            swap_start_page(view, &label);
+        }
+    }
+}
+
 async fn open_tab(label: String, chat_id: String, url: String, user_agent: Option<String>) -> Res<()> {
     let window = app().get_window(crate::core::MAIN).ok_or_else(|| err("no main window"))?;
     let parsed: tauri::Url = url.parse().map_err(|_| err(format!("bad URL: {url}")))?;
@@ -262,42 +313,14 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     if let Some(ua) = user_agent.filter(|u| !u.is_empty()) {
         b = b.user_agent(&ua);
     }
-    // the page is done: draw it dark if the app is (on every platform)
-    b = b.on_page_load(move |w, p| {
-        #[cfg(not(windows))]
-        {
-            let loading = matches!(p.event(), tauri::webview::PageLoadEvent::Started);
-            set_loading(w.label(), loading);
-            #[cfg(target_os = "linux")]
-            emit_linux_nav(&w, loading, String::new());
-            #[cfg(not(target_os = "linux"))]
-            {
-                let url = w.url().map(|u| u.to_string()).unwrap_or_default();
-                if url != "about:blank" {
-                    emit_nav(w.label(), WebNav { url, title: String::new(), back: true, fwd: true, loading });
-                }
-            }
-        }
-        // the page is done: match the app's theme (a page that started dark is set back to light)
-        if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) {
-            // the blank start page is swapped for the real one, so it leaves no entry in the history
-            if let Some(page) = PENDING_PAGE.lock().remove(w.label())
-                && let Ok(js) = serde_json::to_string(&page)
-            {
-                let _ = w.eval(&format!("location.replace({js})"));
-            }
-            let _ = w.eval(if WEB_DARK.load(Ordering::Relaxed) { DARK_ON } else { DARK_OFF });
-        }
-    });
-    #[cfg(not(windows))]
+    // Windows: the page is done, draw it dark if the app is (Linux: see nav::hook)
+    #[cfg(windows)]
     {
-        b = b
-            .on_document_title_changed(move |w, title| {
-                #[cfg(target_os = "linux")]
-                emit_linux_nav(&w, is_loading(w.label()), title);
-                #[cfg(not(target_os = "linux"))]
-                emit_nav(w.label(), WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title, back: true, fwd: true, loading: is_loading(w.label()) });
-            });
+        b = b.on_page_load(move |w, p| {
+            if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) {
+                let _ = w.eval(if WEB_DARK.load(Ordering::Relaxed) { DARK_ON } else { DARK_OFF });
+            }
+        });
     }
     // parked off-screen until the page tells us where it goes
     let wv = window.add_child(b, LogicalPosition::new(-10_000.0, -10_000.0), LogicalSize::new(800.0, 600.0))?;
@@ -305,6 +328,11 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     if filtered {
         attach_ad_filter(&wv);
         PENDING_PAGE.lock().insert(label.clone(), parsed.to_string());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let label = label.clone();
+        let _ = wv.with_webview(move |pw| nav::hook(&pw.inner(), label));
     }
     #[cfg(windows)]
     win::hook(&wv, label.clone());
