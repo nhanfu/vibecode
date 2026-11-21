@@ -54,6 +54,12 @@ const DARK_READER: &str = include_str!("../vendor/darkreader.js");
 // Google's logos are coloured images: Dark Reader would invert them dark, so they keep their own colours
 const DARK_ON: &str = r#"if (window.DarkReader) DarkReader.enable({}, /(^|\.)google\./.test(location.hostname) ? { ignoreImageAnalysis: ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*="Google"]', 'svg[aria-label*="Google"]'], css: 'svg[aria-label="Google"] path{fill:#e8eaed !important}' } : undefined);"#;
 const DARK_OFF: &str = "if (window.DarkReader) DarkReader.disable();";
+
+/// The script every page of a tab starts with. Dark when the app is dark at the time the tab opens,
+/// so a page is drawn dark from its first paint, not after it has loaded.
+fn dark_init(dark: bool) -> String {
+    if dark { format!("{DARK_READER}\n{DARK_ON}") } else { DARK_READER.to_owned() }
+}
 static WAITERS: LazyLock<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>> = LazyLock::new(Default::default);
 /// labels of the tabs whose page is still loading: a title or history change during a load must not
 /// tell the app the load is over
@@ -118,7 +124,7 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     let popup_label = label.clone();
     #[allow(unused_mut)]
     let mut b = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
-        .initialization_script(DARK_READER)
+        .initialization_script(&dark_init(WEB_DARK.load(Ordering::Relaxed)))
         // popups open in the same tab
         .on_new_window(move |url, _features| {
             if matches!(url.scheme(), "http" | "https")
@@ -140,8 +146,9 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
             set_loading(w.label(), loading);
             emit_nav(w.label(), WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title: String::new(), back: true, fwd: true, loading });
         }
-        if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) && WEB_DARK.load(Ordering::Relaxed) {
-            let _ = w.eval(DARK_ON);
+        // the page is done: match the app's theme (a page that started dark is set back to light)
+        if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) {
+            let _ = w.eval(if WEB_DARK.load(Ordering::Relaxed) { DARK_ON } else { DARK_OFF });
         }
     });
     #[cfg(not(windows))]
