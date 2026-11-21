@@ -193,8 +193,9 @@ function VoiceButton({ chatId }: { chatId: string }): React.JSX.Element | null {
   const [error, setError] = useState<string | null>(null)
   const dictation = useRef<Dictation | null>(null)
   useEffect(() => () => dictation.current?.stop(), [])
-  if (!voiceSupported()) return null
+  const supported = voiceSupported()
   const toggle = (): void => {
+    if (!supported) return
     if (dictation.current) {
       dictation.current.stop()
       return
@@ -219,15 +220,17 @@ function VoiceButton({ chatId }: { chatId: string }): React.JSX.Element | null {
     dictation.current = d
     setLive(true)
   }
-  const label = error ? `Mic: ${error}` : live ? interim.trim() || 'Listening…' : 'Voice'
+  const label = !supported ? 'Voice' : error ? `Mic: ${error}` : live ? interim.trim() || 'Listening…' : 'Voice'
+  const title = !supported
+    ? 'Voice input is not available on this system: it needs the system speech recognizer (WebView2 on Windows)'
+    : live
+      ? 'Stop listening — the words are typed into the prompt, press Enter yourself to send'
+      : `Speak your message (${VOICE_LANG}); the words are typed into the prompt, you press Enter to send`
   return (
     <button
       className={`chip chip-voice${live ? ' chip-live' : ''}`}
-      title={
-        live
-          ? 'Stop listening — the words are typed into the prompt, press Enter yourself to send'
-          : `Speak your message (${VOICE_LANG}); the words are typed into the prompt, you press Enter to send`
-      }
+      title={title}
+      disabled={!supported}
       onClick={toggle}
     >
       <Mic size={12} />
