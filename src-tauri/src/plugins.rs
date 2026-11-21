@@ -200,6 +200,8 @@ fn discover() -> Vec<Plugin> {
             }
         }
     }
+    // removed from the app (its files are kept): not listed until it is installed again
+    out.retain(|p| !prefs(|s| s.plugins.get(&p.manifest.id).is_some_and(|x| x.removed)));
     out
 }
 
@@ -216,6 +218,9 @@ struct PluginPrefs {
     /// overrides the manifest's `sidecar.autostart`
     #[serde(default)]
     autostart: Option<bool>,
+    /// removed from the app by the user; its files are kept
+    #[serde(default)]
+    removed: bool,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -810,6 +815,12 @@ pub async fn plugin_install(source: String, sha256: Option<String>) -> Res<Strin
         Result::<String>::Ok(id)
     };
     let id = run.await.map_err(|e| err(format!("{e:#}")))?;
+    // installing again brings back a plugin removed from the app
+    update_prefs(|s| {
+        if let Some(x) = s.plugins.get_mut(&id) {
+            x.removed = false;
+        }
+    });
     // a fresh install comes up as it would at launch
     if let Some(p) = find(&id)
         && enabled(&id)
@@ -824,21 +835,25 @@ pub async fn plugin_install(source: String, sha256: Option<String>) -> Res<Strin
     Ok(id)
 }
 
-/// Remove a plugin the user installed (shipped ones can only be turned off). `purge` also deletes its data folder.
+/// Remove a plugin. One the user installed is deleted (`purge` also deletes its data folder). A shipped
+/// or development one is only hidden from the app: its files stay, and installing it again brings it back.
 #[tauri::command]
 pub fn plugin_uninstall(id: String, purge: bool) -> Res<()> {
     let p = find(&id).ok_or_else(|| err(format!("no plugin \"{id}\"")))?;
-    if p.source != Source::User || !p.dir.starts_with(user_plugins()) {
-        return Err(err("only plugins you installed can be removed; turn this one off instead"));
-    }
     stop(&id);
-    std::fs::remove_dir_all(&p.dir).map_err(|e| err(format!("could not remove it: {e}")))?;
-    if purge {
-        let _ = std::fs::remove_dir_all(user_data().join("plugin-data").join(&id));
+    if p.source == Source::User && p.dir.starts_with(user_plugins()) {
+        std::fs::remove_dir_all(&p.dir).map_err(|e| err(format!("could not remove it: {e}")))?;
+        if purge {
+            let _ = std::fs::remove_dir_all(user_data().join("plugin-data").join(&id));
+        }
+        update_prefs(|s| {
+            s.plugins.remove(&id);
+        });
+    } else {
+        update_prefs(|s| {
+            s.plugins.entry(id.clone()).or_default().removed = true;
+        });
     }
-    update_prefs(|s| {
-        s.plugins.remove(&id);
-    });
     ERRORS.lock().remove(&id);
     LOGS.lock().remove(&id);
     Ok(())

@@ -194,6 +194,12 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
   const live = p.status === 'running' || p.status === 'starting'
 
   const remove = async (): Promise<void> => {
+    if (p.source !== 'user') {
+      // shipped or development: only hidden from the app, its files stay
+      if (!window.confirm(`Remove ${p.name} from the app? Its files are kept; installing it again brings it back.`)) return
+      await run(p.id, () => api.uninstall(p.id, false), `${p.name} removed.`)
+      return
+    }
     if (!window.confirm(`Remove ${p.name}?`)) return
     const purge = window.confirm(`Also delete the data ${p.name} saved (its settings, connections, databases)?\n\nOK deletes it, Cancel keeps it.`)
     await run(p.id, () => api.uninstall(p.id, purge), `${p.name} removed.`)
@@ -253,11 +259,9 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
         <button className={`pm-btn${more ? ' on' : ''}`} onClick={() => setMore((v) => !v)}>
           Details
         </button>
-        {p.source === 'user' && (
-          <button className="pm-btn danger" disabled={busy} onClick={() => void remove()}>
-            Remove
-          </button>
-        )}
+        <button className="pm-btn danger" disabled={busy} onClick={() => void remove()}>
+          Remove
+        </button>
       </div>
       {more && (
         <div className="pm-more">
