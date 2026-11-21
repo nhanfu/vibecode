@@ -139,6 +139,8 @@ export const api = {
     stop: (label: string): void => void invoke('web_stop', { label }),
     setUserAgent: (label: string, userAgent: string | null): Promise<void> => invoke('web_set_user_agent', { label, userAgent }),
     setDark: (dark: boolean): Promise<void> => invoke('web_set_dark', { dark }),
+    /** the tab's latest navigation state (null before its first event) */
+    lastNav: (label: string): Promise<WebNav | null> => invoke('web_nav_state', { label }),
     close: (label: string): void => void invoke('web_close', { label }),
     /** the keyboard goes into the page */
     focus: (label: string): void => void invoke('web_focus', { label }),

@@ -83,6 +83,15 @@ export function BrowserTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [label])
 
+  // a tab shown again (its component is mounted anew) takes the state its page is in, not the defaults
+  useEffect(() => {
+    void window.api.browser.lastNav(label).then((n) => {
+      if (!n) return
+      setLoading(n.loading)
+      setNav({ back: n.back, fwd: n.fwd })
+    }).catch(() => {})
+  }, [label])
+
   // address bar / buttons follow the page
   useEffect(
     () =>

@@ -94,7 +94,31 @@ pub struct WebNav {
 }
 
 fn emit_nav(label: &str, nav: WebNav) {
+    LAST_NAV.lock().insert(label.to_owned(), nav.clone());
     emit("web:nav", (label, nav));
+}
+
+/// The latest navigation state of each tab, so a Web tab that is shown again knows its Back / Forward
+static LAST_NAV: LazyLock<Mutex<HashMap<String, WebNav>>> = LazyLock::new(Default::default);
+
+/// Navigation state of a tab as of its last event (None before its first one).
+#[tauri::command]
+pub fn web_nav_state(label: String) -> Option<WebNav> {
+    LAST_NAV.lock().get(&label).cloned()
+}
+
+/// Sends the page's navigation state as WebKitGTK reports it: Back and Forward follow the real history.
+#[cfg(target_os = "linux")]
+fn emit_linux_nav(w: &Webview, loading: bool, title: String) {
+    use webkit2gtk::WebViewExt;
+    let label = w.label().to_owned();
+    let _ = w.with_webview(move |pw| {
+        let view = pw.inner();
+        let url = view.uri().map(|u| u.to_string()).unwrap_or_default();
+        if url != "about:blank" {
+            emit_nav(&label, WebNav { url, title, back: view.can_go_back(), fwd: view.can_go_forward(), loading });
+        }
+    });
 }
 
 /* ---------------- commands ---------------- */
@@ -244,9 +268,14 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
         {
             let loading = matches!(p.event(), tauri::webview::PageLoadEvent::Started);
             set_loading(w.label(), loading);
-            let url = w.url().map(|u| u.to_string()).unwrap_or_default();
-            if url != "about:blank" {
-                emit_nav(w.label(), WebNav { url, title: String::new(), back: true, fwd: true, loading });
+            #[cfg(target_os = "linux")]
+            emit_linux_nav(&w, loading, String::new());
+            #[cfg(not(target_os = "linux"))]
+            {
+                let url = w.url().map(|u| u.to_string()).unwrap_or_default();
+                if url != "about:blank" {
+                    emit_nav(w.label(), WebNav { url, title: String::new(), back: true, fwd: true, loading });
+                }
             }
         }
         // the page is done: match the app's theme (a page that started dark is set back to light)
@@ -262,10 +291,12 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     });
     #[cfg(not(windows))]
     {
-        let l2 = label.clone();
         b = b
             .on_document_title_changed(move |w, title| {
-                emit_nav(&l2, WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title, back: true, fwd: true, loading: is_loading(&l2) });
+                #[cfg(target_os = "linux")]
+                emit_linux_nav(&w, is_loading(w.label()), title);
+                #[cfg(not(target_os = "linux"))]
+                emit_nav(w.label(), WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title, back: true, fwd: true, loading: is_loading(w.label()) });
             });
     }
     // parked off-screen until the page tells us where it goes
@@ -401,6 +432,7 @@ pub async fn web_set_user_agent(label: String, user_agent: Option<String>) -> Re
 #[tauri::command]
 pub fn web_close(label: String) {
     LOADING.lock().remove(&label);
+    LAST_NAV.lock().remove(&label);
     PENDING_PAGE.lock().remove(&label);
     let tab = TABS.lock().remove(&label);
     if tab.is_none() {
