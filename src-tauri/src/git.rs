@@ -117,8 +117,17 @@ pub async fn git_init(folder: String) -> Res<()> {
     git(&folder, &["init"]).await.map(drop)
 }
 
+/// A revision goes in front of `:path` in one argument: one starting with `-` would be read as an option.
+fn plain_rev(rev: &str) -> Res<()> {
+    if rev.is_empty() || rev.starts_with('-') {
+        return Err(err("not a revision"));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn git_show(root: String, rev: String, rel: String) -> Res<String> {
+    plain_rev(&rev)?;
     Ok(git(&root, &["show", &format!("{rev}:{rel}")]).await.unwrap_or_default())
 }
 
@@ -136,6 +145,7 @@ pub async fn git_snapshot(root: String, rev: String, rel: String, label: String)
     if !plain(&rel) || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') || label.is_empty() {
         return Err(err("not a path inside the repository"));
     }
+    plain_rev(&rev)?;
     let content = git(&root, &["show", &format!("{rev}:{rel}")]).await.unwrap_or_default();
     let file: PathBuf = base.join(&label).join(&rel);
     if let Some(dir) = file.parent() {

@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { FileDiff, X } from 'lucide-react'
 import { useStore } from '../store'
 import { closeTab } from '../actions'
@@ -17,10 +17,20 @@ const DiffView = lazy(() => import('./MonacoViews').then((m) => ({ default: m.Di
  */
 export function ReviewPopup(): React.JSX.Element | null {
   const tab = useStore((s) => s.tabs[0])
+  const id = tab?.id
+  // Esc, from wherever the cursor is, unless the editor used it (to close its find box, a suggestion…)
+  useEffect(() => {
+    if (!id) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !e.defaultPrevented) void closeTab(id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [id])
   if (!tab) return null
   const close = (): void => void closeTab(tab.id)
   return (
-    <div className="overlay review-overlay" onMouseDown={close} onKeyDown={(e) => e.key === 'Escape' && close()}>
+    <div className="overlay review-overlay" onMouseDown={close}>
       <div className="review-popup" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={tab.title}>
         <div className="review-head">
           {tab.kind === 'diff' ? <FileDiff size={14} color="#5aa9ff" /> : <FileIcon name={tab.title} size={14} />}

@@ -1,5 +1,5 @@
 import { clearAttachments } from './attachments'
-import { PAGES_KEY, basename, openPatch, panelShown, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
+import { PAGES_KEY, basename, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -794,7 +794,8 @@ export function toggleBottom(): void {
 
 const VSCODE = 'vscode'
 
-const vscodeReady = (): boolean => st().plugins.some((p) => p.id === VSCODE && p.available && p.enabled && p.hasSidecar)
+// the VS Code panel exists (store.ts panelPlugins): on, able to run, with a page
+const vscodeReady = (): boolean => panelPlugins(st().plugins).some((p) => p.id === VSCODE)
 
 function showInPopup(tab: EditorTab): void {
   const shown = st().tabs[0]

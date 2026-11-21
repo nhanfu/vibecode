@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, FolderOpen, GitBranch, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
 import { closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
@@ -31,9 +31,16 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
     setOpen(on)
     save(SIDE_OPEN_KEY, on ? '1' : '0')
   }
-  // Show Explorer / Show Source Control: the sidebar has to be open for its group to show
+  // Show Explorer / Show Source Control: the sidebar has to be open for its group to show. A closed
+  // sidebar has no groups to hear the request, so it is made again once they exist.
+  const openNow = useRef(open)
+  openNow.current = open
   useEffect(() => {
-    const reveal = (): void => show(true)
+    const reveal = (e: Event): void => {
+      if (openNow.current) return
+      show(true)
+      setTimeout(() => window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: (e as CustomEvent<string>).detail })), 60)
+    }
     window.addEventListener('side-group-reveal', reveal)
     return () => window.removeEventListener('side-group-reveal', reveal)
     // eslint-disable-next-line react-hooks/exhaustive-deps
