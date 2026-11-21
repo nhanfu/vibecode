@@ -67,6 +67,8 @@ const MIGRATIONS: &[&str] = &[
         title    VARCHAR NOT NULL DEFAULT '',
         position INTEGER NOT NULL CHECK (position >= 0)
      );",
+    // 2: a chat's terminal id (its name in ptyd), so a chat whose terminal outlived the app attaches to it
+    "ALTER TABLE open_chats ADD COLUMN id VARCHAR;",
 ];
 
 fn open() -> Result<Connection> {
@@ -195,6 +197,8 @@ fn save_plans(c: &Connection, items: Vec<PlanItem>) -> Result<()> {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SavedChat {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<String>,
     cwd: String,
     title: String,
     #[serde(default)]
@@ -216,9 +220,9 @@ struct SavedChat {
 }
 
 fn load_chats(c: &Connection) -> Result<Vec<SavedChat>> {
-    let mut st = c.prepare("SELECT cwd, title, pinned_title, agent, session_id, model, effort, permission_mode, host, active FROM open_chats ORDER BY position")?;
+    let mut st = c.prepare("SELECT cwd, title, pinned_title, agent, session_id, model, effort, permission_mode, host, active, id FROM open_chats ORDER BY position")?;
     let rows = st.query_map([], |r| {
-        Ok(SavedChat { cwd: r.get(0)?, title: r.get(1)?, pinned_title: r.get(2)?, agent: r.get(3)?, session_id: r.get(4)?, model: r.get(5)?, effort: r.get(6)?, permission_mode: r.get(7)?, host: r.get(8)?, active: r.get(9)? })
+        Ok(SavedChat { cwd: r.get(0)?, title: r.get(1)?, pinned_title: r.get(2)?, agent: r.get(3)?, session_id: r.get(4)?, model: r.get(5)?, effort: r.get(6)?, permission_mode: r.get(7)?, host: r.get(8)?, active: r.get(9)?, id: r.get(10)? })
     })?;
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
@@ -226,9 +230,9 @@ fn load_chats(c: &Connection) -> Result<Vec<SavedChat>> {
 fn save_chats(c: &Connection, chats: Vec<SavedChat>) -> Result<()> {
     tx(c, || {
         c.execute_batch("DELETE FROM open_chats")?;
-        let mut st = c.prepare("INSERT INTO open_chats (position, cwd, agent, session_id, title, pinned_title, model, effort, permission_mode, host, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")?;
+        let mut st = c.prepare("INSERT INTO open_chats (position, cwd, agent, session_id, title, pinned_title, model, effort, permission_mode, host, active, id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")?;
         for (pos, ch) in chats.iter().enumerate() {
-            st.execute(params![pos as i32, ch.cwd, ch.agent, ch.session_id, ch.title, ch.pinned_title, ch.model, ch.effort, ch.permission_mode, ch.host, ch.active])?;
+            st.execute(params![pos as i32, ch.cwd, ch.agent, ch.session_id, ch.title, ch.pinned_title, ch.model, ch.effort, ch.permission_mode, ch.host, ch.active, ch.id])?;
         }
         Ok(())
     })
