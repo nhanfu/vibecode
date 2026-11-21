@@ -1,0 +1,11 @@
+# A throw-away experiment, not part of the app: can a small daemon keep a terminal (a Claude Code
+# session) alive while the app is closed, and redraw it exactly when the app comes back?
+[package]
+name = "ptyd"
+version = "0.0.1"
+edition = "2024"
+publish = false
+
+[dependencies]
+portable-pty = "0.9.0"
+vt100 = "0.18.1"
