@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, Puzzle, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, Puzzle, Terminal, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
   floating,
   isPage,
+  isPluginPanel,
   leavePanel,
   movePanel,
   PANEL_IDS,
@@ -28,6 +29,7 @@ import { CodePanel, DbPanel, WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
 import { PluginManager } from './PluginManager'
+import { PluginPane } from './PluginPane'
 import { userStore } from '../localPref'
 
 /*
@@ -65,9 +67,23 @@ const PANELS: Record<StaticPanelId, PanelMeta> = {
 
 /** A torn-off web tab: titled after its page, its own width. */
 const PAGE_META: PanelMeta = { label: 'Page', icon: Globe, command: '', size: { key: 'vibe.pageWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
-const metaOf = (id: PanelId): PanelMeta => (isPage(id) ? PAGE_META : PANELS[id])
+/** Icons a plugin can name in its manifest (`panel.icon`). */
+const PLUGIN_ICONS: Record<string, typeof Code2> = { code: Code2, database: Database, globe: Globe, folder: FolderOpen, bot: Bot, terminal: Terminal, puzzle: Puzzle }
 
-const keysOf = (id: PanelId): string | undefined => (isPage(id) ? undefined : COMMANDS.find((c) => c.id === PANELS[id].command)?.keys)
+/** A plugin's panel: titled and iconed as its manifest says. */
+const pluginMeta = (id: PanelId): PanelMeta => {
+  const plugin = useStore.getState().plugins.find((p) => `plugin:${p.id}` === id)
+  return {
+    label: plugin?.panel?.title ?? plugin?.name ?? 'Plugin',
+    icon: PLUGIN_ICONS[plugin?.panel?.icon ?? ''] ?? Puzzle,
+    command: '',
+    size: { key: `vibe.${id}Width`, initial: () => Math.round(window.innerWidth * 0.45), min: 320 }
+  }
+}
+
+const metaOf = (id: PanelId): PanelMeta => (isPage(id) ? PAGE_META : isPluginPanel(id) ? pluginMeta(id) : PANELS[id])
+
+const keysOf = (id: PanelId): string | undefined => (isPage(id) || isPluginPanel(id) ? undefined : COMMANDS.find((c) => c.id === PANELS[id].command)?.keys)
 
 /* ---------------- title bar ---------------- */
 
@@ -443,7 +459,7 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   return (
     <div className="workbench stack">
       <TabHosts />
-      {[...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id))].map((id) => (
+      {[...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id)), ...order.filter(isPluginPanel)].map((id) => (
         <StackPanel
           key={id}
           id={id}
@@ -451,7 +467,15 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
           afterFill={pinned.includes(id) && fillAt >= 0 && line.indexOf(id) > fillAt}
           controls={pinned.includes(id) ? controls(id) : null}
         >
-          {id === 'agents' ? <AgentSplit>{children}</AgentSplit> : isPage(id) ? <Adopt tabId={id.slice(5)} className="page-pane" /> : <PanelBody id={id} />}
+          {id === 'agents' ? (
+            <AgentSplit>{children}</AgentSplit>
+          ) : isPage(id) ? (
+            <Adopt tabId={id.slice(5)} className="page-pane" />
+          ) : isPluginPanel(id) ? (
+            <PluginPane id={id.slice('plugin:'.length)} name={metaOf(id).label} />
+          ) : (
+            <PanelBody id={id} />
+          )}
         </StackPanel>
       ))}
       {!fill && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}

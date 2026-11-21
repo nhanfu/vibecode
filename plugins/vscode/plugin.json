@@ -1,0 +1,36 @@
+{
+  "id": "vscode",
+  "name": "VS Code",
+  "version": "1.109.5",
+  "description": "Visual Studio Code in a panel, served by openvscode-server (MIT, Gitpod)",
+  "license": "MIT",
+  "homepage": "https://github.com/gitpod-io/openvscode-server",
+  "panel": { "title": "VS Code", "icon": "code", "folder": true },
+  "sidecar": {
+    "command": "server/bin/openvscode-server",
+    "theme": {
+      "file": "data/User/settings.json",
+      "key": "workbench.colorTheme",
+      "dark": "Default Dark Modern",
+      "light": "Default Light Modern"
+    },
+    "args": [
+      "--host", "127.0.0.1",
+      "--port", "{port}",
+      "--server-data-dir", "{data}",
+      "--without-connection-token",
+      "--accept-server-license-terms"
+    ],
+    "health": "/",
+    "url": "/",
+    "autostart": false
+  },
+  "minAppVersion": "0.2.0",
+  "platforms": ["linux", "macos"],
+  "source": {
+    "git": "",
+    "ref": "",
+    "build": "",
+    "output": ""
+  }
+}

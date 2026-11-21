@@ -6,30 +6,38 @@ import { useStore } from '../store'
  * shown in a frame. `onFallback` offers the built-in panel the plugin replaces when it will not start.
  */
 export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string; name: string; onFallback?: () => void; fallbackLabel?: string }): React.JSX.Element {
-  const [url, setUrl] = useState<string | null>(null)
+  // the page on screen, with the theme it was loaded for
+  const [page, setPage] = useState<{ url: string; theme: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
+  // the plugin follows the app's theme: the resolved one travels in the address (see plugins/dbx/patch-theme.py),
+  // and a plugin with a theme setting gets it written before its page loads (src-tauri plugin_start).
+  // The page is only swapped once that write is done, so it loads with the new theme already in its settings.
+  const theme = useStore((s) => s.themeResolved)
+  const plugin = useStore((s) => s.plugins.find((p) => p.id === id))
+  // a plugin whose panel asks for it opens the project folder the sidebar shows
+  const root = useStore((s) => s.root)
+  const folder = plugin?.panel?.folder ? root : null
 
   useEffect(() => {
     let off = false
     setError(null)
-    window.api.plugins.start(id).then(
-      (r) => !off && setUrl(r.url),
+    window.api.plugins.start(id, theme === 'light').then(
+      (r) => !off && setPage({ url: r.url, theme }),
       (e) => !off && setError(String(e))
     )
     return () => {
       off = true
     }
-  }, [id, attempt])
+  }, [id, attempt, theme])
 
-  // the plugin follows the app's theme: the resolved one travels in the address (see plugins/dbx/patch-theme.py)
-  const theme = useStore((s) => s.themeResolved)
   const src = useMemo(() => {
-    if (!url) return null
-    const u = new URL(url)
-    u.searchParams.set('vibeTheme', theme)
+    if (!page) return null
+    const u = new URL(page.url)
+    u.searchParams.set('vibeTheme', page.theme)
+    if (folder) u.searchParams.set('folder', folder)
     return u.toString()
-  }, [url, theme])
+  }, [page, folder])
 
   if (src) return <iframe className="plugin-frame" src={src} title={name} />
   return (

@@ -100,7 +100,7 @@ export const api = {
   plugins: {
     list: (): Promise<PluginInfo[]> => invoke('plugin_list'),
     /** starts the plugin's sidecar if needed; the address of its page */
-    start: (id: string): Promise<{ url: string }> => invoke('plugin_start', { id }),
+    start: (id: string, light?: boolean): Promise<{ url: string }> => invoke('plugin_start', { id, light: light ?? null }),
     stop: (id: string): Promise<void> => invoke('plugin_stop', { id }),
     restart: (id: string): Promise<void> => invoke('plugin_restart', { id }),
     /** turn on / off, or choose whether it starts with the app */

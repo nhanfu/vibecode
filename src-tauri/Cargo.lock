@@ -6001,6 +6001,7 @@ dependencies = [
  "duckdb",
  "flate2",
  "gtk",
+ "libc",
  "notify",
  "notify-debouncer-full",
  "parking_lot",

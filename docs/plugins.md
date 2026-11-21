@@ -46,9 +46,14 @@ The sidecar `command` must stay inside the plugin's folder.
   folder. In `args` and `env`, `{port}`, `{token}`, `{dir}` (the plugin's folder) and `{data}` (a
   private data folder, `<userData>/plugin-data/<id>`) are filled in. `autostart` starts it with the
   app (needed for an `mcp` server chats should have from their first message).
-- **`panel`** — shows the sidecar's page (`url`) in a frame. `replaces` names a built-in panel it takes
-  over (`"db"`: the Database tab); the built-in one stays one click away, and is what shows when the
-  plugin is not built.
+- **`panel`** — shows the sidecar's page (`url`) in a frame. Without `replaces` the plugin gets its own
+  title-bar button while it is on and can run: `title` is its label and `icon` one of `code`, `database`,
+  `globe`, `folder`, `bot`, `terminal`, `puzzle` (default). `replaces` names a built-in panel it takes
+  over instead (`"db"`: the Database tab); the built-in one stays one click away, and is what shows when the
+  plugin is not built. `"folder": true` opens the page on the project folder the sidebar shows (`?folder=`).
+- **`sidecar.theme`** — `{ file, key, dark, light }`: before the sidecar starts, and when the app's theme
+  changes, the setting `key` in `file` (relative to the plugin's data folder) is set to the `dark` or `light`
+  value, keeping the rest of the file. The file must be plain JSON (no comments).
 - **`mcp`** — an MCP server (a path on the sidecar) added to every chat's `--mcp-config`, next to the
   app's own `vibe-browser` and `vibe-mssql`.
 
@@ -61,9 +66,9 @@ A title-bar button (Ctrl+Shift+X, or the command *Show / hide Plugins*) opens th
 - **Installed**: every plugin found, with its status (running, starting, stopped, failed, off, not
   available), **Open**, **Start / Stop / Restart**, **Turn off / on**, **Logs** (the last 1000 lines the
   sidecar printed), **Details** (license, homepage, MCP server, port, *Start with the app*) and
-  **Remove** (only for plugins you installed; shipped ones can only be turned off, and removing asks
-  whether to delete the plugin's data folder too). A plugin that does not replace a built-in panel opens
-  its page inside the manager.
+  **Remove** (plugins you installed are deleted, asking whether to delete their data too; shipped and
+  development ones are only hidden, and installing them again brings them back). A plugin that does not
+  replace a built-in panel opens its page inside the manager, and also gets its own title-bar button.
 - **Browse**: the plugins of a registry, with Install and Update (when the registry has a newer version).
 - **Install bar**: a folder, a `.zip` / `.tar.gz` file, or an https link to one (with an optional SHA-256
   the download is checked against). The archive may have `plugin.json` at its top or one folder down.

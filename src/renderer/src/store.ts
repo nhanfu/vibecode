@@ -116,9 +116,15 @@ export interface ChatBrowser {
 export type StaticPanelId = 'project' | 'code' | 'web' | 'db' | 'plugins' | 'agents'
 /** A web tab torn off the Web drop-down: its own button and panel, for as long as the tab lives. */
 export type PagePanelId = `page:${string}`
-export type PanelId = StaticPanelId | PagePanelId
+/** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and can run. */
+export type PluginPanelId = `plugin:${string}`
+export type PanelId = StaticPanelId | PagePanelId | PluginPanelId
 export const PANEL_IDS: StaticPanelId[] = ['project', 'code', 'web', 'db', 'plugins', 'agents']
 export const isPage = (id: PanelId): id is PagePanelId => id.startsWith('page:')
+export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith('plugin:')
+export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`
+/** The plugins that get a title-bar panel of their own: on, able to run, with a page, and not taking over a built-in panel. */
+export const panelPlugins = (plugins: PluginInfo[]): PluginInfo[] => plugins.filter((p) => p.enabled && p.available && p.hasSidecar && p.panel && !p.panel.replaces)
 export const pageTabId = (id: PagePanelId): string => id.slice(5)
 /** The torn-off tab behind a page panel, with the browser key (chat) it belongs to. */
 export function pageTab(s: Pick<State, 'browsers'>, id: PagePanelId): WebTab | undefined {
@@ -156,7 +162,7 @@ const isSavedPage = (x: unknown): boolean => typeof x === 'string' && savedPages
 function loadIds(key: string, fallback: PanelId[]): PanelId[] {
   try {
     const v = JSON.parse(userStore.getItem(key) ?? 'null')
-    if (Array.isArray(v)) return [...new Set(v.filter((x): x is PanelId => (PANEL_IDS as string[]).includes(x) || isSavedPage(x)))]
+    if (Array.isArray(v)) return [...new Set(v.filter((x): x is PanelId => (PANEL_IDS as string[]).includes(x) || isSavedPage(x) || (typeof x === 'string' && x.startsWith('plugin:'))))]
   } catch {
     /* storage unavailable */
   }
@@ -256,6 +262,23 @@ export function togglePin(id: PanelId): void {
   const pinned = s.pinned.includes(id) ? s.pinned.filter((p) => p !== id) : [...s.pinned, id]
   saveIds(PINNED_KEY, pinned)
   useStore.setState({ pinned, floatOpen: null, peek: null })
+}
+
+/**
+ * Keeps the plugin panels in step with the plugins: one appears (at the end) when its plugin can
+ * run, and one goes when it is turned off, removed or cannot run. Kept in the saved order.
+ */
+export function syncPluginPanels(plugins: PluginInfo[]): void {
+  const s = useStore.getState()
+  const want = panelPlugins(plugins).map((p) => pluginPanelId(p.id))
+  const order = s.panelOrder.filter((id) => !isPluginPanel(id) || want.includes(id))
+  const next = [...order, ...want.filter((id) => !order.includes(id))]
+  const pinned = s.pinned.filter((id) => !isPluginPanel(id) || want.includes(id))
+  const floatOpen = s.floatOpen && isPluginPanel(s.floatOpen) && !want.includes(s.floatOpen) ? null : s.floatOpen
+  if (next.join() === s.panelOrder.join() && pinned.length === s.pinned.length && floatOpen === s.floatOpen) return
+  saveIds(ORDER_KEY, next)
+  saveIds(PINNED_KEY, pinned)
+  useStore.setState({ panelOrder: next, pinned, floatOpen })
 }
 
 /** Drag a drop-down's button to `index` (in the order before the move). */

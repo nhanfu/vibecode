@@ -31,10 +31,27 @@ pub struct PanelSpec {
     /// a built-in panel this one takes over (`"db"`), keeping the built-in one as a fallback
     #[serde(default)]
     pub replaces: Option<String>,
+    /// the page opens on the project folder the sidebar shows (`?folder=` in its address)
+    #[serde(default)]
+    pub folder: bool,
+}
+
+/// Where a plugin keeps the app's light / dark choice: a JSON setting in a file of its data folder,
+/// set to `light` or `dark` (the theme names the plugin itself uses).
+#[derive(Clone, Deserialize)]
+struct ThemeSpec {
+    /// relative to the plugin's data folder
+    file: String,
+    key: String,
+    dark: String,
+    light: String,
 }
 
 #[derive(Clone, Deserialize)]
 struct Sidecar {
+    /// the light / dark choice written into the plugin's settings (see `ThemeSpec`)
+    #[serde(default)]
+    theme: Option<ThemeSpec>,
     /// relative to the plugin's folder
     command: String,
     #[serde(default)]
@@ -378,6 +395,7 @@ async fn launch(plugin: &Plugin) -> Result<(u16, String)> {
     for (k, v) in &side.env {
         cmd.env(k, fill(v));
     }
+    die_with_app(&mut cmd);
     log(&id, format!("[start] {} on port {port}", program.display()));
     let mut child = cmd.spawn().with_context(|| format!("could not start {}", plugin.manifest.name))?;
     if let Some(o) = child.stdout.take() {
@@ -404,6 +422,25 @@ async fn launch(plugin: &Plugin) -> Result<(u16, String)> {
     }
     bail!("{} did not answer in time", plugin.manifest.name)
 }
+
+/// The sidecar gets SIGKILL when the app dies, however it dies (a killed dev run, a crash): otherwise
+/// it lives on holding its port and, in dev, the file the next build wants to overwrite.
+#[cfg(target_os = "linux")]
+fn die_with_app(cmd: &mut tokio::process::Command) {
+    // SAFETY: only async-signal-safe calls (prctl, getppid) between fork and exec.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+            // the app may have died before the call above took effect
+            if libc::getppid() == 1 {
+                libc::_exit(1);
+            }
+            Ok(())
+        });
+    }
+}
+#[cfg(not(target_os = "linux"))]
+fn die_with_app(_cmd: &mut tokio::process::Command) {}
 
 /// Stops one sidecar; false when it was not running.
 fn stop(id: &str) -> bool {
@@ -719,14 +756,37 @@ pub struct Started {
     url: String,
 }
 
-/// A panel asks for its plugin's page (starting the sidecar the first time).
+/// Writes the light / dark choice into the plugin's settings file (only when it changes).
+fn apply_theme(id: &str, t: &ThemeSpec, light: bool) -> Result<()> {
+    let file = user_data().join("plugin-data").join(id).join(&t.file);
+    let mut settings: serde_json::Map<String, Value> = match std::fs::read_to_string(&file) {
+        Ok(raw) => serde_json::from_str(&raw).context("its settings file is not plain JSON, so the theme is not set")?,
+        Err(_) => serde_json::Map::new(),
+    };
+    let want = if light { &t.light } else { &t.dark };
+    if settings.get(&t.key).and_then(Value::as_str) == Some(want.as_str()) {
+        return Ok(());
+    }
+    settings.insert(t.key.clone(), json!(want));
+    std::fs::create_dir_all(file.parent().context("bad settings path")?)?;
+    std::fs::write(&file, serde_json::to_string_pretty(&settings)?)?;
+    Ok(())
+}
+
+/// A panel asks for its plugin's page (starting the sidecar the first time). `light` is the app's
+/// theme now; the plugin's settings get it before the page loads (and the page follows a change).
 #[tauri::command]
-pub async fn plugin_start(id: String) -> Res<Started> {
+pub async fn plugin_start(id: String, light: Option<bool>) -> Res<Started> {
     let p = find(&id).ok_or_else(|| err(format!("no plugin \"{id}\"")))?;
     if !enabled(&id) {
         return Err(err(format!("{} is disabled (turn it on in Plugins)", p.manifest.name)));
     }
     let side = p.manifest.sidecar.clone().ok_or_else(|| err("this plugin has no page"))?;
+    if let (Some(t), Some(light)) = (&side.theme, light)
+        && let Err(e) = apply_theme(&id, t, light)
+    {
+        log(&id, format!("[theme] {e:#}"));
+    }
     let (port, _) = ensure(&p).await.map_err(|e| err(format!("{e:#}")))?;
     Ok(Started { url: format!("http://127.0.0.1:{port}{}", side.url) })
 }

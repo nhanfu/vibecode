@@ -262,7 +262,7 @@ export interface PluginInfo {
   license: string
   homepage: string
   /** a panel the plugin brings; `replaces` names a built-in one it takes over ('db') */
-  panel: { title: string; icon: string; replaces?: string } | null
+  panel: { title: string; icon: string; replaces?: string; folder?: boolean } | null
   /** ready to run (its program is built / installed) */
   available: boolean
   /** brings an MCP server to every chat */
