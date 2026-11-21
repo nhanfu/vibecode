@@ -402,6 +402,7 @@ pub async fn pty_list() -> Vec<String> {
 /// keep running there; shells started here stop.
 pub fn detach_all() {
     if let Some(d) = DAEMON.lock().take() {
+        CONN.fetch_add(1, Ordering::SeqCst);
         d.close();
     }
 }
