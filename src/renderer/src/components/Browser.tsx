@@ -282,6 +282,12 @@ export function BrowserTab({
             </div>
           )}
         </div>
+        {/* thin bar along the toolbar's bottom edge while the page loads, like other browsers */}
+        {loading && (
+          <div className="browser-progress" aria-hidden>
+            <span />
+          </div>
+        )}
       </div>
       <BookmarkBar onOpen={(u) => go(u)} />
       <div className="browser-stage">

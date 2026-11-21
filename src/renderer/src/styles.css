@@ -4845,6 +4845,35 @@ button.plan-chevron:hover {
    under the buttons); the screen-size switch goes when the bar is too short for it */
 .browser-bar {
   container-type: inline-size;
+  position: relative;
+}
+/* page loading: a thin indeterminate bar on the toolbar's bottom edge; it waits a moment so quick
+   pages don't flash it */
+.browser-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  animation: browser-progress-in 0.2s 0.15s both;
+}
+.browser-progress span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  background: var(--accent);
+  animation: browser-progress-run 1.1s ease-in-out infinite;
+}
+@keyframes browser-progress-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes browser-progress-run {
+  from { left: -35%; }
+  to { left: 100%; }
 }
 .browser-bar > * {
   flex: none;

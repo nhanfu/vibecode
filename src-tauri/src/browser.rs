@@ -54,6 +54,22 @@ const DARK_READER: &str = include_str!("../vendor/darkreader.js");
 const DARK_ON: &str = "if (window.DarkReader) DarkReader.enable();";
 const DARK_OFF: &str = "if (window.DarkReader) DarkReader.disable();";
 static WAITERS: LazyLock<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>> = LazyLock::new(Default::default);
+/// labels of the tabs whose page is still loading: a title or history change during a load must not
+/// tell the app the load is over
+static LOADING: LazyLock<Mutex<std::collections::HashSet<String>>> = LazyLock::new(Default::default);
+
+fn set_loading(label: &str, on: bool) {
+    let mut set = LOADING.lock();
+    if on {
+        set.insert(label.to_owned());
+    } else {
+        set.remove(label);
+    }
+}
+
+fn is_loading(label: &str) -> bool {
+    LOADING.lock().contains(label)
+}
 
 fn webview(label: &str) -> Option<Webview> {
     TABS.lock().get(label).map(|t| t.webview.clone())
@@ -120,6 +136,7 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
         #[cfg(not(windows))]
         {
             let loading = matches!(p.event(), tauri::webview::PageLoadEvent::Started);
+            set_loading(w.label(), loading);
             emit_nav(w.label(), WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title: String::new(), back: true, fwd: true, loading });
         }
         if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) && WEB_DARK.load(Ordering::Relaxed) {
@@ -131,7 +148,7 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
         let l2 = label.clone();
         b = b
             .on_document_title_changed(move |w, title| {
-                emit_nav(&l2, WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title, back: true, fwd: true, loading: false });
+                emit_nav(&l2, WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title, back: true, fwd: true, loading: is_loading(&l2) });
             });
     }
     // parked off-screen until the page tells us where it goes
@@ -262,6 +279,7 @@ pub async fn web_set_user_agent(label: String, user_agent: Option<String>) -> Re
 
 #[tauri::command]
 pub fn web_close(label: String) {
+    LOADING.lock().remove(&label);
     let tab = TABS.lock().remove(&label);
     if tab.is_none() {
         let mut o = OPENING.lock();
@@ -640,6 +658,7 @@ mod win {
                 let _ = core.add_NavigationStarting(
                     &NavigationStartingEventHandler::create(Box::new(move |s, _| {
                         if let Some(s) = s {
+                            set_loading(&l, true);
                             emit_nav(&l, nav_state(&s, true));
                         }
                         Ok(())
@@ -650,6 +669,7 @@ mod win {
                 let _ = core.add_NavigationCompleted(
                     &NavigationCompletedEventHandler::create(Box::new(move |s, _| {
                         if let Some(s) = s {
+                            set_loading(&l, false);
                             emit_nav(&l, nav_state(&s, false));
                         }
                         Ok(())
@@ -660,7 +680,7 @@ mod win {
                 let _ = core.add_HistoryChanged(
                     &HistoryChangedEventHandler::create(Box::new(move |s, _| {
                         if let Some(s) = s {
-                            emit_nav(&l, nav_state(&s, false));
+                            emit_nav(&l, nav_state(&s, is_loading(&l)));
                         }
                         Ok(())
                     })),
@@ -686,7 +706,7 @@ mod win {
                 let _ = core.add_DocumentTitleChanged(
                     &DocumentTitleChangedEventHandler::create(Box::new(move |s, _| {
                         if let Some(s) = s {
-                            emit_nav(&l, nav_state(&s, false));
+                            emit_nav(&l, nav_state(&s, is_loading(&l)));
                         }
                         Ok(())
                     })),
