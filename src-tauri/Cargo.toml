@@ -49,6 +49,9 @@ duckdb = "=1.10506.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 # Web tabs are re-laid out by hand on WebKitGTK (browser.rs, gtk_layer)
 gtk = "0.18.2"
+# ad blocking: WebKit content filters (browser.rs, ads); same versions as wry's
+webkit2gtk = "2.0.2"
+webkit2gtk-sys = "2.0.2"
 
 [target.'cfg(unix)'.dependencies]
 # plugin sidecars: their own process group, and they die with the app (plugins.rs)

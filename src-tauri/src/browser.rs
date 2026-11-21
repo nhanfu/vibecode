@@ -13,7 +13,7 @@ use std::{
     collections::HashMap,
     sync::{
         LazyLock,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -118,12 +118,110 @@ pub async fn web_open(label: String, chat_id: String, url: String, user_agent: O
     res
 }
 
+/* ---------------- ad blocking ---------------- */
+
+/// EasyList, converted to WebKit content-blocker rules by scripts/adblock/convert_easylist.py.
+/// Bump FILTER_ID when the file changes, so the compiled copy is rebuilt.
+#[cfg(target_os = "linux")]
+static EASYLIST: &[u8] = include_bytes!("../adblock/easylist.json");
+#[cfg(target_os = "linux")]
+const FILTER_ID: &str = "vibecode-easylist-1";
+/// The compiled filter (a WebKitUserContentFilter*), 0 until it is ready.
+#[cfg(target_os = "linux")]
+static AD_FILTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Compiles the filter in the background (about 2 s). Tabs opened before that load without it.
+pub fn start_ad_filter() {
+    #[cfg(target_os = "linux")]
+    ads::start();
+}
+
+fn ad_filter_ready() -> bool {
+    #[cfg(target_os = "linux")]
+    return AD_FILTER.load(Ordering::SeqCst) != 0;
+    #[cfg(not(target_os = "linux"))]
+    false
+}
+
+/// Adds the filter to a tab's page; call before the page's first load.
+fn attach_ad_filter(w: &Webview) {
+    #[cfg(target_os = "linux")]
+    ads::attach(w);
+    #[cfg(not(target_os = "linux"))]
+    let _ = w;
+}
+
+#[cfg(target_os = "linux")]
+mod ads {
+    use std::{ffi::{CStr, CString}, ptr::null_mut, sync::atomic::Ordering};
+
+    use gtk::glib::{self, translate::ToGlibPtr};
+    use tauri::{Manager, Webview};
+    use webkit2gtk::WebViewExt;
+
+    use super::{AD_FILTER, EASYLIST, FILTER_ID};
+
+    /// Starts compiling the list into the app's data folder (WebKit keeps the compiled copy).
+    pub fn start() {
+        let Ok(dir) = crate::core::app().path().app_data_dir() else { return };
+        let dir = dir.join("adblock");
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let Ok(path) = CString::new(dir.to_string_lossy().as_bytes()) else { return };
+        let Ok(id) = CString::new(FILTER_ID) else { return };
+        // SAFETY: the store and the bytes live on, the callback only runs on the main loop.
+        unsafe {
+            let store = webkit2gtk_sys::webkit_user_content_filter_store_new(path.as_ptr());
+            let source = glib::ffi::g_bytes_new_static(EASYLIST.as_ptr().cast(), EASYLIST.len());
+            webkit2gtk_sys::webkit_user_content_filter_store_save(store, id.as_ptr(), source, null_mut(), Some(saved), null_mut());
+        }
+    }
+
+    unsafe extern "C" fn saved(store: *mut glib::gobject_ffi::GObject, res: *mut gtk::gio::ffi::GAsyncResult, _: glib::ffi::gpointer) {
+        let mut error = null_mut();
+        // SAFETY: called by WebKit with the store and the result of the save it started.
+        let filter = unsafe { webkit2gtk_sys::webkit_user_content_filter_store_save_finish(store.cast(), res, &mut error) };
+        if filter.is_null() {
+            if !error.is_null() {
+                // SAFETY: a GError WebKit gave us; read it, then free it.
+                unsafe {
+                    eprintln!("ad filter not compiled: {}", CStr::from_ptr((*error).message).to_string_lossy());
+                    glib::ffi::g_error_free(error);
+                }
+            }
+            return;
+        }
+        AD_FILTER.store(filter as usize, Ordering::SeqCst);
+    }
+
+    /// Runs on the main thread (through with_webview).
+    pub fn attach(w: &Webview) {
+        let filter = AD_FILTER.load(Ordering::SeqCst);
+        if filter == 0 {
+            return;
+        }
+        let _ = w.with_webview(move |pw| {
+            let filter = filter as *mut webkit2gtk_sys::WebKitUserContentFilter;
+            let view = pw.inner();
+            if let Some(manager) = view.user_content_manager() {
+                let m: *mut webkit2gtk_sys::WebKitUserContentManager = manager.to_glib_none().0;
+                // SAFETY: both pointers are live GObjects on the main thread.
+                unsafe { webkit2gtk_sys::webkit_user_content_manager_add_filter(m, filter) };
+            }
+        });
+    }
+}
+
 async fn open_tab(label: String, chat_id: String, url: String, user_agent: Option<String>) -> Res<()> {
     let window = app().get_window(crate::core::MAIN).ok_or_else(|| err("no main window"))?;
-    let parsed = url.parse().map_err(|_| err(format!("bad URL: {url}")))?;
+    let parsed: tauri::Url = url.parse().map_err(|_| err(format!("bad URL: {url}")))?;
+    // with the ad filter ready the tab starts blank: the filter goes in, then the page loads
+    let filtered = ad_filter_ready();
+    let start = if filtered { "about:blank".parse().map_err(|_| err("no blank page"))? } else { parsed.clone() };
     let popup_label = label.clone();
     #[allow(unused_mut)]
-    let mut b = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
+    let mut b = WebviewBuilder::new(&label, WebviewUrl::External(start))
         .initialization_script(&dark_init(WEB_DARK.load(Ordering::Relaxed)))
         // popups open in the same tab
         .on_new_window(move |url, _features| {
@@ -144,7 +242,10 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
         {
             let loading = matches!(p.event(), tauri::webview::PageLoadEvent::Started);
             set_loading(w.label(), loading);
-            emit_nav(w.label(), WebNav { url: w.url().map(|u| u.to_string()).unwrap_or_default(), title: String::new(), back: true, fwd: true, loading });
+            let url = w.url().map(|u| u.to_string()).unwrap_or_default();
+            if url != "about:blank" {
+                emit_nav(w.label(), WebNav { url, title: String::new(), back: true, fwd: true, loading });
+            }
         }
         // the page is done: match the app's theme (a page that started dark is set back to light)
         if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) {
@@ -162,6 +263,10 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     // parked off-screen until the page tells us where it goes
     let wv = window.add_child(b, LogicalPosition::new(-10_000.0, -10_000.0), LogicalSize::new(800.0, 600.0))?;
     let _ = wv.hide();
+    if filtered {
+        attach_ad_filter(&wv);
+        wv.navigate(parsed)?;
+    }
     #[cfg(windows)]
     win::hook(&wv, label.clone());
     #[cfg(target_os = "linux")]

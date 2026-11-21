@@ -143,6 +143,7 @@ pub fn run() {
         ])
         .setup(|app| {
             core::init(app.handle());
+            browser::start_ad_filter();
             // before any chat starts: chats get the MCP server's address at launch
             tauri::async_runtime::block_on(mcp::start())?;
             plugins::warm_up();

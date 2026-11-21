@@ -6023,6 +6023,8 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "uuid",
+ "webkit2gtk",
+ "webkit2gtk-sys",
  "webview2-com",
  "which",
  "windows",
