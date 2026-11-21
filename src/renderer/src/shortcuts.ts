@@ -33,6 +33,7 @@ import {
 } from './actions'
 import { focusTerm } from './terminals'
 import { saveFile } from './fileModelsLite'
+import type { PluginInfo } from '../../shared/types'
 import { buildBindings, keysFor, pressOf, resolve, type Binding, type Context, type KeyRule } from './keybindings'
 
 export interface Command {
@@ -57,6 +58,25 @@ const showCode = (codeSide: 'files' | 'changes'): void => {
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
 const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', plugins: 'Plugins', agents: 'Agent (chat)' }
+
+/** One command per plugin that has a settings file: opens it in the editor to edit and review. */
+export function pluginCommands(plugins: PluginInfo[]): Command[] {
+  return plugins
+    .filter((p) => p.hasSettings && p.enabled)
+    .map((p) => ({
+      id: `plugin.settings.${p.id}`,
+      label: `${p.name}: Open settings.json`,
+      run: () => {
+        window.api.plugins.settingsFile(p.id).then(
+          (file) => {
+            openFile(file)
+            showPanel('code')
+          },
+          (e) => window.alert(String(e))
+        )
+      }
+    }))
+}
 
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },

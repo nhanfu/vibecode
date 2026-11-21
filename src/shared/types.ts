@@ -293,6 +293,8 @@ export interface PluginInfo {
   overrides: boolean
   enabled: boolean
   hasSidecar: boolean
+  /** has a settings file the command palette can open */
+  hasSettings: boolean
   /** starts with the app */
   autostart: boolean
   status: 'running' | 'starting' | 'stopped' | 'error' | 'disabled' | 'unavailable' | 'ready'

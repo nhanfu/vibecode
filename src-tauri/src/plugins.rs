@@ -52,6 +52,10 @@ struct Sidecar {
     /// the light / dark choice written into the plugin's settings (see `ThemeSpec`)
     #[serde(default)]
     theme: Option<ThemeSpec>,
+    /// a JSON settings file in the plugin's data folder that the user edits from the command palette and
+    /// the page takes as its defaults (default: the theme's file)
+    #[serde(default)]
+    settings: Option<String>,
     /// relative to the plugin's folder
     command: String,
     #[serde(default)]
@@ -685,6 +689,8 @@ pub struct PluginInfo {
     overrides: bool,
     enabled: bool,
     has_sidecar: bool,
+    /// has a settings file the command palette can open
+    has_settings: bool,
     /// starts with the app (manifest, unless the user changed it)
     autostart: bool,
     /// running | starting | stopped | error | disabled | unavailable | ready (no sidecar)
@@ -731,6 +737,7 @@ fn info(p: Plugin) -> PluginInfo {
         overrides: p.overrides,
         enabled: is_enabled,
         has_sidecar: p.manifest.sidecar.is_some(),
+        has_settings: settings_path(&p).is_some(),
         autostart: autostarts(&p),
         status,
         error,
@@ -754,6 +761,36 @@ pub fn plugin_list() -> Vec<PluginInfo> {
 #[derive(Serialize)]
 pub struct Started {
     url: String,
+    /// the plugin's settings file as base64url JSON, for the page to take as its defaults
+    #[serde(skip_serializing_if = "Option::is_none")]
+    settings: Option<String>,
+}
+
+/// The plugin's settings file (it may not exist yet).
+fn settings_path(p: &Plugin) -> Option<PathBuf> {
+    let side = p.manifest.sidecar.as_ref()?;
+    let rel = side.settings.clone().or_else(|| side.theme.as_ref().map(|t| t.file.clone()))?;
+    Some(user_data().join("plugin-data").join(&p.manifest.id).join(rel))
+}
+
+/// The settings file as the page gets it. Plain JSON only (a file with comments is skipped, and said so in the log).
+fn settings_for_page(p: &Plugin) -> Option<String> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    let raw = std::fs::read_to_string(settings_path(p)?).ok()?;
+    if raw.trim().is_empty() {
+        return None;
+    }
+    let id = &p.manifest.id;
+    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(&raw) else {
+        log(id, "[settings] the settings file is not a plain JSON object (no comments or trailing commas), so the page does not get it");
+        return None;
+    };
+    let compact = serde_json::to_string(&map).ok()?;
+    if compact.len() > 64 * 1024 {
+        log(id, "[settings] the settings file is larger than 64 KB, so the page does not get it");
+        return None;
+    }
+    Some(URL_SAFE_NO_PAD.encode(compact))
 }
 
 /// Writes the light / dark choice into the plugin's settings file (only when it changes).
@@ -788,7 +825,21 @@ pub async fn plugin_start(id: String, light: Option<bool>) -> Res<Started> {
         log(&id, format!("[theme] {e:#}"));
     }
     let (port, _) = ensure(&p).await.map_err(|e| err(format!("{e:#}")))?;
-    Ok(Started { url: format!("http://127.0.0.1:{port}{}", side.url) })
+    Ok(Started { url: format!("http://127.0.0.1:{port}{}", side.url), settings: settings_for_page(&p) })
+}
+
+/// The path of a plugin's settings file, created (empty) when it is not there yet, for the palette to open.
+#[tauri::command]
+pub fn plugin_settings_file(id: String) -> Res<String> {
+    let p = find(&id).ok_or_else(|| err(format!("no plugin \"{id}\"")))?;
+    let file = settings_path(&p).ok_or_else(|| err("this plugin has no settings file"))?;
+    if !file.exists() {
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| err(format!("could not create {}: {e}", dir.display())))?;
+        }
+        std::fs::write(&file, "{}\n").map_err(|e| err(format!("could not create {}: {e}", file.display())))?;
+    }
+    Ok(file.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

@@ -74,6 +74,7 @@ pub fn run() {
             sessions::sessions_changes,
             plugins::plugin_list,
             plugins::plugin_start,
+            plugins::plugin_settings_file,
             plugins::plugin_stop,
             plugins::plugin_restart,
             plugins::plugin_set,

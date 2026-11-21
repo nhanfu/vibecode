@@ -38,7 +38,7 @@ import { languageOf } from '../fileModelsLite'
 import { FileIcon, Logo } from './icons'
 import type { UsageLimit } from '../../../shared/types'
 import { revealIn } from '../scroll'
-import { COMMANDS, type Command } from '../shortcuts'
+import { COMMANDS, pluginCommands, type Command } from '../shortcuts'
 import { MODELS, Picker } from './Claude'
 
 /* ================================ Title bar ================================ */
@@ -511,15 +511,18 @@ export function QuickOpen(): React.JSX.Element {
       .slice(0, 60)
       .map((x) => x.f)
   }, [files, lower, dq])
+  const plugins = useStore((s) => s.plugins)
   const commandHits = useMemo(() => {
     if (!commandMode) return []
+    const all = [...COMMANDS, ...pluginCommands(plugins)]
     const needle = q.slice(1).trim().toLowerCase()
-    if (!needle) return COMMANDS
-    return COMMANDS.map((c) => ({ c, s: fuzzy(needle, c.label.toLowerCase()) }))
+    if (!needle) return all
+    return all
+      .map((c) => ({ c, s: fuzzy(needle, c.label.toLowerCase()) }))
       .filter((x) => x.s >= 0)
       .sort((a, b) => b.s - a.s)
       .map((x) => x.c)
-  }, [commandMode, q])
+  }, [commandMode, q, plugins])
   const count = commandMode ? commandHits.length : fileHits.length
 
   useEffect(() => setSel(0), [q])

@@ -7,7 +7,7 @@ import { useStore } from '../store'
  */
 export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string; name: string; onFallback?: () => void; fallbackLabel?: string }): React.JSX.Element {
   // the page on screen, with the theme it was loaded for
-  const [page, setPage] = useState<{ url: string; theme: string } | null>(null)
+  const [page, setPage] = useState<{ url: string; theme: string; settings?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
   // the plugin follows the app's theme: the resolved one travels in the address (see plugins/dbx/patch-theme.py),
@@ -23,7 +23,7 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
     let off = false
     setError(null)
     window.api.plugins.start(id, theme === 'light').then(
-      (r) => !off && setPage({ url: r.url, theme }),
+      (r) => !off && setPage({ url: r.url, theme, settings: r.settings }),
       (e) => !off && setError(String(e))
     )
     return () => {
@@ -35,6 +35,8 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
     if (!page) return null
     const u = new URL(page.url)
     u.searchParams.set('vibeTheme', page.theme)
+    // the plugin's settings file, for pages that take it as their defaults (plugins/vscode/patch-theme.py)
+    if (page.settings) u.searchParams.set('vibeSettings', page.settings)
     if (folder) u.searchParams.set('folder', folder)
     return u.toString()
   }, [page, folder])

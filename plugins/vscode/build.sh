@@ -65,4 +65,6 @@ rm -rf "$OUT/server"
 mkdir -p "$OUT/server"
 cp -r "$BUILT"/. "$OUT/server/"
 [ -f "$OUT/server/LICENSE" ] && cp "$OUT/server/LICENSE" "$OUT/LICENSE-openvscode-server"
+# the page follows the app's theme and settings (see patch-theme.py)
+python3 "$OUT/patch-theme.py" "$OUT/server/out/vs/code/browser/workbench/workbench.html"
 echo "server ready in $OUT/server"
