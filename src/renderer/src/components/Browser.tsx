@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, Moon, RotateCw, Search, Shuffle, Star, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, RotateCw, Search, Shuffle, Star, X } from 'lucide-react'
 import type { WebSuggestion } from '../../../shared/types'
 import { BookmarkBar } from './BrowserBookmarks'
 import { useStore } from '../store'
@@ -58,7 +58,6 @@ export function BrowserTab({
   const shown = useRef(url)
   const [loading, setLoading] = useState(false)
   const [nav, setNav] = useState({ back: false, fwd: false })
-  const webDark = useStore((s) => s.settings?.webDark ?? true)
   // blank tab: the native page is hidden and a start page with a random photo shows instead
   const [home, setHome] = useState(url === HOME_URL)
 
@@ -236,13 +235,6 @@ export function BrowserTab({
         </button>
         <button className="icon-btn" title={loading ? 'Stop' : 'Reload'} onClick={() => (loading ? window.api.browser.stop(label) : window.api.browser.reload(label))}>
           {loading ? <X size={15} /> : <RotateCw size={14} />}
-        </button>
-        <button
-          className={`icon-btn${webDark ? ' on' : ''}`}
-          title={webDark ? 'Web pages follow the app theme: on (click to turn off)' : 'Web pages follow the app theme: off (click to turn on)'}
-          onClick={() => void window.api.app.setSettings({ webDark: !webDark }).then((settings) => useStore.setState({ settings })).catch(() => {})}
-        >
-          <Moon size={14} />
         </button>
         <div className="browser-address-wrap">
           <input
