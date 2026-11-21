@@ -3281,40 +3281,9 @@ button.plan-chevron:hover {
 .center-pane.code-pane {
   flex-direction: row;
 }
-.code-tree {
-  flex: none;
-  width: 320px;
-  border-right: 1px solid var(--border);
-}
 .code-pane > .editor-area {
   flex: 1;
   min-width: 0;
-}
-.code-side-switch {
-  flex: none;
-  display: flex;
-  gap: 2px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-}
-.code-side-switch button {
-  flex: 1;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-.code-side-switch button:hover {
-  color: var(--text);
-  background: var(--w-08);
-}
-.code-side-switch button.on {
-  color: var(--text);
-  background: var(--w-14);
 }
 
 /* bypass permissions for a whole project */
@@ -3802,14 +3771,6 @@ button.plan-chevron:hover {
   border-color: transparent;
   box-shadow: none;
 }
-/* Files | Changes, Chat | Images */
-.code-side-switch > .slide-pill {
-  background: var(--w-14);
-  border-radius: 6px;
-}
-.code-side-switch.has-pill button.on {
-  background: transparent;
-}
 /* diff: side by side | inline */
 .seg > .slide-pill {
   background: var(--bg-active);
@@ -3909,7 +3870,7 @@ button.plan-chevron:hover {
 }
 
 /* soft hover/selection changes everywhere (zero specificity: a control's own transition still wins) */
-:where(.sess-row, .proj-row, .tree-row, .change-row, .bottom-tab, .chip, .btn, .icon-btn, .center-switch button, .code-side-switch button, .seg button, .device-seg button, .sess-more) {
+:where(.sess-row, .proj-row, .tree-row, .change-row, .bottom-tab, .chip, .btn, .icon-btn, .center-switch button, .seg button, .device-seg button, .sess-more) {
   transition:
     background-color 0.15s ease,
     color 0.15s ease,
@@ -3918,7 +3879,7 @@ button.plan-chevron:hover {
     opacity 0.15s ease;
 }
 /* press feedback, like a tap on iOS */
-:where(.btn, .icon-btn, .chip, .center-switch button, .code-side-switch button, .seg button, .device-seg button, .bottom-tab):active:not(:disabled) {
+:where(.btn, .icon-btn, .chip, .center-switch button, .seg button, .device-seg button, .bottom-tab):active:not(:disabled) {
   transform: scale(0.95);
 }
 :where(.sess-row, .proj-row, .change-row):active {
@@ -3937,8 +3898,7 @@ button.plan-chevron:hover {
 }
 .center-pane.on,
 .term-frame,
-.chat-images,
-.code-tree > :last-child {
+.chat-images {
   animation: ios-enter 0.18s ease-out backwards;
 }
 
@@ -3951,8 +3911,7 @@ button.plan-chevron:hover {
   }
   .center-pane.on,
   .term-frame,
-  .chat-images,
-  .code-tree > :last-child {
+  .chat-images {
     animation: none;
   }
 }
@@ -4783,20 +4742,6 @@ button.plan-chevron:hover {
   text-overflow: ellipsis;
 }
 
-/* Source code: the file tree gives room back to the editor */
-.code-tree {
-  width: min(320px, 42%);
-  min-width: 170px;
-}
-.code-side-switch button {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-}
-.code-side-switch button > svg,
-.code-side-switch .center-count {
-  flex: none;
-}
 .empty-editor {
   min-width: 0;
   overflow: hidden;
@@ -5676,4 +5621,58 @@ button.plan-chevron:hover {
 .scp-more {
   padding: 0 10px;
   color: var(--text-dim);
+}
+
+/* Files and Git changes inside the agent sidebar: the groups scroll on their own past a height */
+.embedded-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.embedded-view .scroll {
+  flex: none;
+  max-height: 340px;
+}
+.section-header.bare {
+  height: 28px;
+  justify-content: flex-end;
+}
+
+/* Reviewing and editing one file or change in a popup (Review.tsx), when VS Code is not there to do it */
+.review-overlay {
+  align-items: center;
+  padding-top: 0;
+}
+.review-popup {
+  width: min(1180px, 94vw);
+  height: min(82vh, 820px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 30px 80px -10px #000d, 0 0 0 1px #0006;
+  overflow: hidden;
+  animation: pop 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.review-head {
+  flex: none;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 14px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+.review-title {
+  font-weight: 600;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.review-spacer {
+  flex: 1;
 }

@@ -42,7 +42,7 @@ export function Sidebar(): React.JSX.Element {
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="section-header">
+    <div className={`section-header${title ? '' : ' bare'}`}>
       <span>{title}</span>
       <div className="section-actions">{children}</div>
     </div>
@@ -513,12 +513,13 @@ function useGitDecorations(): Map<string, GitFile['status']> {
   }, [sig])
 }
 
-export function ExplorerView(): React.JSX.Element | null {
+/** `embedded`: inside a sidebar group that already has the title (the agent sidebar). */
+export function ExplorerView({ embedded }: { embedded?: boolean }): React.JSX.Element | null {
   const root = useStore((s) => s.root)
   const [collapseKey, setCollapseKey] = useState(0)
   const deco = useGitDecorations()
   if (!root) return null
-  return <ExplorerTree root={root} collapseKey={collapseKey} setCollapseKey={setCollapseKey} deco={deco} />
+  return <ExplorerTree root={root} collapseKey={collapseKey} setCollapseKey={setCollapseKey} deco={deco} embedded={!!embedded} />
 }
 
 interface CtxTarget {
@@ -529,8 +530,8 @@ interface CtxTarget {
 }
 type OpenCtx = (e: React.MouseEvent, path: string, isDir: boolean) => void
 
-function ExplorerTree(props: { root: string; collapseKey: number; setCollapseKey: (f: (k: number) => number) => void; deco: Map<string, string> }): React.JSX.Element {
-  const { root, collapseKey, setCollapseKey, deco } = props
+function ExplorerTree(props: { root: string; collapseKey: number; setCollapseKey: (f: (k: number) => number) => void; deco: Map<string, string>; embedded: boolean }): React.JSX.Element {
+  const { root, collapseKey, setCollapseKey, deco, embedded } = props
   const [ctx, setCtx] = useState<CtxTarget | null>(null)
   // stable, so the memoized tree nodes don't all re-render with this one
   const openCtx = useCallback<OpenCtx>((e, path, isDir) => {
@@ -540,7 +541,7 @@ function ExplorerTree(props: { root: string; collapseKey: number; setCollapseKey
   }, [])
   return (
     <>
-      <SectionHeader title="Explorer">
+      <SectionHeader title={embedded ? '' : 'Explorer'}>
         <button className="icon-btn" title="Refresh" onClick={() => useStore.setState((s) => ({ fsTick: s.fsTick + 1 }))}>
           <RefreshCw size={14} />
         </button>
@@ -548,9 +549,11 @@ function ExplorerTree(props: { root: string; collapseKey: number; setCollapseKey
           <ChevronsDownUp size={14} />
         </button>
       </SectionHeader>
-      <div className="tree-root-label" onContextMenu={(e) => openCtx(e, root, true)}>
-        {basename(root)}
-      </div>
+      {!embedded && (
+        <div className="tree-root-label" onContextMenu={(e) => openCtx(e, root, true)}>
+          {basename(root)}
+        </div>
+      )}
       <div className="scroll tree" key={collapseKey}>
         <DirChildren dir={root} depth={0} deco={deco} openCtx={openCtx} />
       </div>
@@ -722,7 +725,8 @@ const statusName: Record<string, string> = {
   C: 'Copied'
 }
 
-export function ChangesView(): React.JSX.Element {
+/** `embedded`: inside a sidebar group that already has the title (the agent sidebar). */
+export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Element {
   const git = useStore((s) => s.git)
   const root = useStore((s) => s.root)!
   const activeTabId = useStore((s) => s.activeTabId)
@@ -731,7 +735,7 @@ export function ChangesView(): React.JSX.Element {
   if (!git.isRepo) {
     return (
       <>
-        <SectionHeader title="Changes" />
+        {!embedded && <SectionHeader title="Changes" />}
         <div className="empty-state-small">
           <FolderGit2 size={30} strokeWidth={1.4} />
           <h4>Not a Git repository</h4>
@@ -752,7 +756,7 @@ export function ChangesView(): React.JSX.Element {
 
   return (
     <>
-      <SectionHeader title="Changes">
+      <SectionHeader title={embedded ? '' : 'Changes'}>
         <button className="icon-btn" title="Refresh" onClick={() => refreshGit()}>
           <RefreshCw size={14} />
         </button>

@@ -1,5 +1,5 @@
 import { clearAttachments } from './attachments'
-import { PAGES_KEY, basename, openPatch, panelShown, showPanel, syncPluginPanels, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
+import { PAGES_KEY, basename, openPatch, panelShown, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -783,17 +783,58 @@ export function toggleBottom(): void {
   useStore.setState({ bottomOpen: !s.bottomOpen })
 }
 
-/* ---------------- Editor tabs ---------------- */
+/* ---------------- Reviewing files and changes ---------------- */
 
-function pushTab(tab: EditorTab): void {
-  useStore.setState((s) => {
-    if (s.tabs.some((t) => t.id === tab.id)) return { activeTabId: tab.id, ...openPatch('code') }
-    return { tabs: [...s.tabs, tab], activeTabId: tab.id, ...openPatch('code') }
-  })
+/*
+ * A file or a change is shown in VS Code when its plugin is on and can run (its panel opens on that
+ * file, or on a diff of the two versions); without it, in a popup with a Monaco editor to review and
+ * edit it (components/Review.tsx). There are no editor tabs: the popup holds one file at a time
+ * (`tabs` has at most one entry, the one on show).
+ */
+
+const VSCODE = 'vscode'
+
+const vscodeReady = (): boolean => st().plugins.some((p) => p.id === VSCODE && p.available && p.enabled && p.hasSidecar)
+
+function showInPopup(tab: EditorTab): void {
+  const shown = st().tabs[0]
+  if (shown && shown.id !== tab.id && !closeTab(shown.id)) return
+  useStore.setState({ tabs: [tab], activeTabId: tab.id })
+}
+
+function showInVSCode(open: { file?: string; diff?: { left: string; right: string } }): void {
+  useStore.setState((s) => ({ pluginOpen: { ...s.pluginOpen, [VSCODE]: { ...open, n: (s.pluginOpen[VSCODE]?.n ?? 0) + 1 } } }))
+  showPanel(pluginPanelId(VSCODE))
+}
+
+/** Both versions of a change as files VS Code can open: the working copy itself, the older one a snapshot. */
+async function diffFiles(tab: Extract<EditorTab, { kind: 'diff' }>): Promise<{ left: string; right: string }> {
+  const root = st().git.root ?? st().root
+  if (!root) throw new Error('no folder')
+  const rel = tab.rel
+  if (tab.commit) {
+    const { hash, short } = tab.commit
+    const [left, right] = await Promise.all([
+      window.api.git.snapshot(root, `${hash}^`, rel, `${short}-before`),
+      window.api.git.snapshot(root, hash, rel, short)
+    ])
+    return { left, right }
+  }
+  const left = await window.api.git.snapshot(root, 'HEAD', rel, 'HEAD')
+  // a deleted file has no working copy: its right side is empty
+  const exists = await window.api.fs.readFile(tab.path).then(() => true, () => false)
+  const right = exists ? tab.path : await window.api.git.snapshot(root, 'HEAD-none', rel, 'deleted')
+  return { left, right }
+}
+
+function review(tab: EditorTab): void {
+  if (!vscodeReady()) return showInPopup(tab)
+  if (tab.kind === 'file') return showInVSCode({ file: tab.path })
+  diffFiles(tab).then((diff) => showInVSCode({ diff }), () => showInPopup(tab))
 }
 
 export function openFile(path: string): void {
-  pushTab({ id: 'f:' + path.toLowerCase(), kind: 'file', path, title: basename(path), dirty: false })
+  review({ id: 'f:' + path.toLowerCase(), kind: 'file', path, title: basename(path), dirty: false })
 }
 
 export const HOME_URL = 'about:blank'
@@ -1024,53 +1065,27 @@ export function setBrowserUrl(key: string, url: string, tabId?: string, title?: 
 }
 
 export function openDiff(abs: string, rel: string): void {
-  pushTab({ id: 'd:' + abs.toLowerCase(), kind: 'diff', path: abs, rel, title: basename(abs) })
+  review({ id: 'd:' + abs.toLowerCase(), kind: 'diff', path: abs, rel, title: basename(abs) })
 }
 
 /** A file as one commit changed it (commit vs its parent). */
 export function openCommitDiff(gitRoot: string, commit: { hash: string; short: string; subject: string }, rel: string): void {
   const abs = gitRoot.replace(/[\\/]+$/, '') + '/' + rel
-  pushTab({ id: `c:${commit.hash}:${rel}`, kind: 'diff', path: abs, rel, title: `${basename(rel)} @${commit.short}`, commit })
+  review({ id: `c:${commit.hash}:${rel}`, kind: 'diff', path: abs, rel, title: `${basename(rel)} @${commit.short}`, commit })
 }
 
-/** recently closed editor tabs, newest last (Ctrl+Shift+T brings them back) */
-const closedTabs: EditorTab[] = []
-
-export function closeTab(id: string): void {
+/** Close the popup's file (asks first when it has unsaved edits); false when it stays open. */
+export function closeTab(id: string): boolean {
   const tab = st().tabs.find((t) => t.id === id)
   if (tab?.kind === 'file') {
-    if (hasUnsaved(tab.path) && !window.confirm(`Discard unsaved changes to ${tab.title}?`)) return
+    if (hasUnsaved(tab.path) && !window.confirm(`Discard unsaved changes to ${tab.title}?`)) return false
     disposeModel(tab.path)
   }
-  if (tab) {
-    closedTabs.push(tab.kind === 'file' ? { ...tab, dirty: false } : tab)
-    if (closedTabs.length > 30) closedTabs.shift()
-  }
   useStore.setState((s) => {
-    const idx = s.tabs.findIndex((t) => t.id === id)
     const tabs = s.tabs.filter((t) => t.id !== id)
-    const activeTabId = s.activeTabId === id ? (tabs[Math.min(idx, tabs.length - 1)]?.id ?? null) : s.activeTabId
-    return { tabs, activeTabId }
+    return { tabs, activeTabId: s.activeTabId === id ? (tabs[0]?.id ?? null) : s.activeTabId }
   })
-}
-
-/** Ctrl+Shift+T: the last closed editor tab again. */
-export function reopenClosedTab(): void {
-  while (closedTabs.length) {
-    const t = closedTabs.pop()!
-    if (st().tabs.some((x) => x.id === t.id)) continue
-    return pushTab(t)
-  }
-}
-
-/** Ctrl+Tab / Ctrl+PageDown (+1) and Ctrl+Shift+Tab / Ctrl+PageUp (−1) through the editor tabs. */
-export function cycleTab(step: 1 | -1): void {
-  const { tabs, activeTabId } = st()
-  if (!tabs.length) return
-  const i = tabs.findIndex((t) => t.id === activeTabId)
-  const next = tabs[(i + step + tabs.length) % tabs.length]
-  useStore.setState({ activeTabId: next.id })
-  showPanel('code')
+  return true
 }
 
 /** Next / previous chat in the sidebar's order. */

@@ -25,7 +25,7 @@ import { SiteIcon } from './SiteIcon'
 import { Adopt, TabHosts } from './webHosts'
 import { COMMANDS } from '../shortcuts'
 import { Sidebar } from './Sidebar'
-import { CodePanel, DbPanel, WebPanel } from './Editor'
+import { DbPanel, WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
 import { PluginManager } from './PluginManager'
@@ -58,7 +58,6 @@ interface FloatSize {
 
 const PANELS: Record<StaticPanelId, PanelMeta> = {
   project: { label: 'Project', icon: FolderOpen, command: 'sidebar', size: { key: 'vibe.sidebarWidth', initial: () => 300, min: 220 } },
-  code: { label: 'Source code', icon: Code2, command: 'viewCode', size: { key: 'vibe.centerWidth', initial: () => Math.round(window.innerWidth * 0.55), min: 360 } },
   web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
   db: { label: 'Database', icon: Database, command: 'viewDb', size: { key: 'vibe.dbWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 360 } },
   plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
@@ -148,7 +147,6 @@ function StackButton(props: {
   const page = useStore((s) => (isPage(id) ? pageTab(s, id) : undefined))
   const pinned = useStore((s) => s.pinned.includes(id))
   const shown = useStore((s) => floating(s) === id)
-  const files = useStore((s) => (id === 'code' ? s.tabs.length : 0))
   const running = useStore((s) => (id === 'agents' ? s.chats.filter((c) => c.status === 'working').length : 0))
   // Agent: named after the agent of the chat you are in ("Claude Code", "Codex"…)
   const agent = useStore((s) => (id === 'agents' ? agentDef(s.chats.find((c) => c.id === s.activeChatId)?.agent).label : ''))
@@ -236,7 +234,6 @@ function StackButton(props: {
         onContextMenu={openMenu}
       >
         {page ? <SiteIcon url={page.url} size={14} /> : <Icon size={13} />}
-        {files > 0 && <span className="center-count">{files}</span>}
         {running > 0 && <span className="center-count">{running}</span>}
       </button>
       {menu && <FolderMenu close={() => setMenu(false)} />}
@@ -566,8 +563,6 @@ function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.
   switch (id) {
     case 'project':
       return <Sidebar />
-    case 'code':
-      return <CodePanel />
     case 'web':
       return <WebPanel />
     case 'db':

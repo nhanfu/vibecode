@@ -1,10 +1,14 @@
 //! Git through the `git` CLI (the user's own config, credentials and hooks apply).
 
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Component, Path, PathBuf},
+    sync::Once,
+};
 
 use serde::Serialize;
 
-use crate::core::{Res, command, err};
+use crate::core::{Res, command, err, user_data};
 
 async fn git(cwd: &str, args: &[&str]) -> Res<String> {
     let out = command("git").args(args).current_dir(cwd).output().await?;
@@ -116,6 +120,29 @@ pub async fn git_init(folder: String) -> Res<()> {
 #[tauri::command]
 pub async fn git_show(root: String, rev: String, rel: String) -> Res<String> {
     Ok(git(&root, &["show", &format!("{rev}:{rel}")]).await.unwrap_or_default())
+}
+
+/// A file as it was at `rev` (`HEAD`, a commit, its parent), written to `<userData>/review/<label>/<rel>`
+/// so another editor (VS Code) can open it next to the working copy. Empty when it did not exist then.
+/// The review folder is emptied the first time this runs after the app starts.
+#[tauri::command]
+pub async fn git_snapshot(root: String, rev: String, rel: String, label: String) -> Res<String> {
+    static FRESH: Once = Once::new();
+    let base = user_data().join("review");
+    FRESH.call_once(|| {
+        let _ = std::fs::remove_dir_all(&base);
+    });
+    let plain = |p: &str| !p.is_empty() && Path::new(p).components().all(|c| matches!(c, Component::Normal(_)));
+    if !plain(&rel) || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') || label.is_empty() {
+        return Err(err("not a path inside the repository"));
+    }
+    let content = git(&root, &["show", &format!("{rev}:{rel}")]).await.unwrap_or_default();
+    let file: PathBuf = base.join(&label).join(&rel);
+    if let Some(dir) = file.parent() {
+        tokio::fs::create_dir_all(dir).await?;
+    }
+    tokio::fs::write(&file, content).await?;
+    Ok(file.to_string_lossy().into_owned())
 }
 
 #[derive(Serialize)]

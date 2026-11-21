@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Copy, FolderOpen, GitBranch, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
 import { closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
@@ -10,6 +10,7 @@ import { useSessionFeed } from './sessionFeed'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
 import { SessionChanges } from './SessionChanges'
+import { ChangesView, ExplorerView } from './Sidebar'
 import { load, save } from '../localPref'
 
 const SIDE_W_KEY = 'vibe.agentSideWidth'
@@ -30,6 +31,13 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
     setOpen(on)
     save(SIDE_OPEN_KEY, on ? '1' : '0')
   }
+  // Show Explorer / Show Source Control: the sidebar has to be open for its group to show
+  useEffect(() => {
+    const reveal = (): void => show(true)
+    window.addEventListener('side-group-reveal', reveal)
+    return () => window.removeEventListener('side-group-reveal', reveal)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const resize = (e: React.PointerEvent<HTMLDivElement>): void => {
     e.preventDefault()
     const handle = e.currentTarget
@@ -216,6 +224,7 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
   const chats = useStore((s) => s.chats)
   const activeChatId = useStore((s) => s.activeChatId)
   const root = useStore((s) => s.root)
+  const gitChanged = useStore((s) => s.git.files.length)
   // re-render when the default changes (defaultAgent() reads it)
   useStore((s) => s.preferredAgent)
   const fallback = defaultAgent()
@@ -304,6 +313,22 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
       </SideGroup>
 
       <SessionChanges chat={chats.find((c) => c.id === activeChatId)} />
+
+      {root && (
+        <>
+          <SideGroup id="git-changes" label="Git changes" count={gitChanged}>
+            <div className="embedded-view">
+              <ChangesView embedded />
+            </div>
+          </SideGroup>
+
+          <SideGroup id="files" label="Files">
+            <div className="embedded-view">
+              <ExplorerView embedded />
+            </div>
+          </SideGroup>
+        </>
+      )}
     </div>
   )
 }

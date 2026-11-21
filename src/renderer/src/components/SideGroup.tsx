@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { load, save } from '../localPref'
 
@@ -24,6 +24,18 @@ export function SideGroup(props: {
 }): React.JSX.Element {
   const { id, label, count, actions, children } = props
   const [collapsed, setCollapsed] = useState(() => loadCollapsed().includes(id))
+  const box = useRef<HTMLDivElement>(null)
+  // a command (Show Explorer, Show Source Control) asks for this group: open it and bring it into view
+  useEffect(() => {
+    const reveal = (e: Event): void => {
+      if ((e as CustomEvent<string>).detail !== id) return
+      setCollapsed(false)
+      save(COLLAPSED_KEY, JSON.stringify(loadCollapsed().filter((x) => x !== id)))
+      requestAnimationFrame(() => box.current?.scrollIntoView({ block: 'nearest' }))
+    }
+    window.addEventListener('side-group-reveal', reveal)
+    return () => window.removeEventListener('side-group-reveal', reveal)
+  }, [id])
   const toggle = (): void => {
     // read again: another group may have been folded since this one loaded
     const rest = loadCollapsed().filter((x) => x !== id)
@@ -32,7 +44,7 @@ export function SideGroup(props: {
     save(COLLAPSED_KEY, JSON.stringify(next))
   }
   return (
-    <div className="side-group">
+    <div className="side-group" ref={box}>
       <div
         className="side-group-label collapsible"
         role="button"

@@ -7,6 +7,7 @@ import { focusTerm } from './terminals'
 import { reloadIfClean } from './fileModelsLite'
 import { QuickOpen, StatusBar, TitleBar, Welcome } from './components/Chrome'
 import { StackLayout } from './components/Stack'
+import { ReviewPopup } from './components/Review'
 import { BottomPanel, ClaudePanel } from './components/Claude'
 import { userStore } from './localPref'
 
@@ -98,6 +99,7 @@ export default function App(): React.JSX.Element {
       )}
       <StatusBar />
       {quickOpen && <QuickOpen />}
+      <ReviewPopup />
     </div>
   )
 }

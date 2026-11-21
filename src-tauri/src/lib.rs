@@ -119,6 +119,7 @@ pub fn run() {
             git::git_original,
             git::git_init,
             git::git_show,
+            git::git_snapshot,
             git::git_log,
             git::git_commit_files,
             git::git_branches,

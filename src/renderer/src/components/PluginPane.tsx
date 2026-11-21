@@ -1,5 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useStore } from '../store'
+import { useStore, type PluginOpen } from '../store'
+
+/** `vscode-remote://<the page's host><path>`: how the VS Code web client names a file of the machine it runs on. */
+const vscodeUri = (host: string, path: string): string => `vscode-remote://${host}${path.split('/').map(encodeURIComponent).join('/')}`
+
+/**
+ * VS Code takes the file to open (or two to compare) in the address: `payload`. A diff shows `diffFileSecondary`
+ * on the left and `diffFilePrimary` on the right. See review() in actions.ts.
+ */
+function vscodePayload(host: string, open: PluginOpen): string | null {
+  if (open.file) return JSON.stringify([['openFile', vscodeUri(host, open.file)]])
+  if (open.diff) return JSON.stringify([['diffFilePrimary', vscodeUri(host, open.diff.right)], ['diffFileSecondary', vscodeUri(host, open.diff.left)]])
+  return null
+}
 
 /**
  * A plugin's panel: its sidecar's page (src-tauri/src/plugins.rs starts the sidecar on first use),
@@ -18,6 +31,8 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
   // a plugin whose panel asks for it opens the project folder the sidebar shows
   const root = useStore((s) => s.root)
   const folder = plugin?.panel?.folder ? root : null
+  // a file or a change to show (the Files / Changes lists of the agent sidebar), for the VS Code plugin
+  const open = useStore((s) => s.pluginOpen[id])
 
   useEffect(() => {
     let off = false
@@ -38,8 +53,14 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
     // the plugin's settings file, for pages that take it as their defaults (plugins/vscode/patch-theme.py)
     if (page.settings) u.searchParams.set('vibeSettings', page.settings)
     if (folder) u.searchParams.set('folder', folder)
+    const payload = id === 'vscode' && open ? vscodePayload(u.host, open) : null
+    if (payload) {
+      u.searchParams.set('payload', payload)
+      // asking again for the same file still reloads the page onto it
+      u.searchParams.set('vibeOpen', String(open?.n))
+    }
     return u.toString()
-  }, [page, folder])
+  }, [page, folder, id, open])
 
   if (src) return <iframe className="plugin-frame" src={src} title={name} />
   return (

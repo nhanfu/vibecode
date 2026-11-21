@@ -17,7 +17,6 @@ import {
   closeChat,
   closeTab,
   cycleChat,
-  cycleTab,
   defaultAgent,
   newChat,
   newShell,
@@ -25,7 +24,6 @@ import {
   openBrowser,
   openFolder,
   openFile,
-  reopenClosedTab,
   reopenClosedWebTab,
   selectChat,
   toggleBottom,
@@ -52,12 +50,13 @@ const activeFile = (): { path: string; dirty: boolean } | null => {
   return t?.kind === 'file' ? { path: t.path, dirty: t.dirty } : null
 }
 
-const showCode = (codeSide: 'files' | 'changes'): void => {
-  useStore.setState({ codeSide })
-  showPanel('code')
+/** Files and Git changes are groups of the agent sidebar: show the chat's panel, open the group. */
+const revealSide = (group: 'files' | 'git-changes'): void => {
+  showPanel('agents')
+  window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: group }))
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', code: 'Source code', web: 'Web', db: 'Database', plugins: 'Plugins', agents: 'Agent (chat)' }
+const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', web: 'Web', db: 'Database', plugins: 'Plugins', agents: 'Agent (chat)' }
 
 /** One command per plugin that has a settings file: opens it in the editor to edit and review. */
 export function pluginCommands(plugins: PluginInfo[]): Command[] {
@@ -68,10 +67,7 @@ export function pluginCommands(plugins: PluginInfo[]): Command[] {
       label: `${p.name}: Open settings.json`,
       run: () => {
         window.api.plugins.settingsFile(p.id).then(
-          (file) => {
-            openFile(file)
-            showPanel('code')
-          },
+          (file) => openFile(file),
           (e) => window.alert(String(e))
         )
       }
@@ -100,8 +96,7 @@ export const COMMANDS: Command[] = [
   },
 
   { id: 'save', label: 'Save file', run: () => saveActive() },
-  { id: 'closeTab', label: 'Close editor tab', run: () => closeActiveTab() },
-  { id: 'reopenTab', label: 'Reopen closed editor tab', run: () => reopenClosedTab() },
+  { id: 'closeTab', label: 'Close the file or change on show', run: () => closeActiveTab() },
   { id: 'newWebTab', label: 'New web tab', run: () => newWebTab() },
   {
     id: 'closeWebTab',
@@ -113,11 +108,9 @@ export const COMMANDS: Command[] = [
     }
   },
   { id: 'reopenWebTab', label: 'Reopen closed web tab', run: () => reopenClosedWebTab() },
-  { id: 'nextTab', label: 'Next editor tab', run: () => cycleTab(1) },
-  { id: 'prevTab', label: 'Previous editor tab', run: () => cycleTab(-1) },
 
-  { id: 'explorer', label: 'Show Explorer (files)', run: () => showCode('files') },
-  { id: 'changes', label: 'Show Source Control (changes)', run: () => showCode('changes') },
+  { id: 'explorer', label: 'Show Explorer (files)', run: () => revealSide('files') },
+  { id: 'changes', label: 'Show Source Control (changes)', run: () => revealSide('git-changes') },
   {
     id: 'chats',
     label: 'Show chats (Project)',
@@ -132,7 +125,6 @@ export const COMMANDS: Command[] = [
 
   // the title-bar drop-downs: float open / close; pinned ones get the cursor instead (store.ts togglePanel)
   { id: 'sidebar', label: 'Show / hide Project (chats and folders)', run: () => togglePanel('project') },
-  { id: 'viewCode', label: 'Show / hide Source code', run: () => togglePanel('code') },
   {
     id: 'viewWeb',
     label: 'Show / hide Web',
@@ -180,8 +172,8 @@ function saveActive(): void {
 }
 
 function closeActiveTab(): void {
-  const id = st().activeTabId
-  if (id && panelShown(st(), 'code')) closeTab(id)
+  const id = st().tabs[0]?.id
+  if (id) closeTab(id)
 }
 
 function switchChat(n: number): void {
@@ -212,17 +204,12 @@ export const DEFAULT_KEYS: KeyRule[] = [
 
   // nothing unsaved: the key is left alone
   { key: 'ctrl+s', command: 'save', when: '!terminalFocus && fileDirty' },
-  { key: 'ctrl+w', command: 'closeTab', when: '!terminalFocus && !textInputFocus && codeShown' },
-  { key: 'ctrl+f4', command: 'closeTab', when: '!terminalFocus && codeShown' },
-  { key: 'ctrl+shift+t', command: 'reopenTab' },
+  { key: 'ctrl+w', command: 'closeTab', when: '!terminalFocus && !textInputFocus && reviewOpen' },
+  { key: 'ctrl+f4', command: 'closeTab', when: '!terminalFocus && reviewOpen' },
   // the keyboard in a Web tab: these keys belong to the tabs there (the later rule wins)
   { key: 'ctrl+t', command: 'newWebTab', when: '!terminalFocus' },
   { key: 'ctrl+w', command: 'closeWebTab', when: 'webFocus' },
   { key: 'ctrl+shift+t', command: 'reopenWebTab', when: 'webFocus' },
-  { key: 'ctrl+tab', command: 'nextTab' },
-  { key: 'ctrl+pagedown', command: 'nextTab' },
-  { key: 'ctrl+shift+tab', command: 'prevTab' },
-  { key: 'ctrl+pageup', command: 'prevTab' },
 
   { key: 'ctrl+shift+e', command: 'explorer' },
   { key: 'ctrl+shift+g', command: 'changes' },
@@ -234,12 +221,10 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+shift+`', command: 'newTerminal' },
 
   // the title-bar drop-downs (Ctrl+B: Project, above), from a terminal too
-  { key: 'ctrl+e', command: 'viewCode' },
   { key: 'ctrl+shift+w', command: 'viewWeb' },
   { key: 'ctrl+shift+d', command: 'viewDb' },
   { key: 'ctrl+shift+a', command: 'viewAgents' },
   { key: 'ctrl+shift+x', command: 'viewPlugins' },
-  { key: 'ctrl+1', command: 'viewCode' },
   { key: 'ctrl+2', command: 'viewWeb' },
   { key: 'ctrl+3', command: 'viewDb' },
   { key: 'ctrl+4', command: 'viewAgents' }
@@ -266,6 +251,7 @@ function context(): Context {
     inputFocus: editor || field,
     hasFolder: !!s.root,
     fileDirty: !!activeFile()?.dirty,
+    reviewOpen: s.tabs.length > 0,
     floating: floating(s) ?? '',
     ...Object.fromEntries(PANEL_IDS.flatMap((id) => [[`${id}Shown`, panelShown(s, id)], [`${id}Pinned`, s.pinned.includes(id)]]))
   }
@@ -280,9 +266,10 @@ const CONTEXT_HELP = [
   'inputFocus         editorFocus || textInputFocus',
   'hasFolder          a project folder is open',
   'fileDirty          the open file has unsaved changes',
-  "floating           the drop-down floating now: 'project' | 'code' | 'web' | 'db' | 'plugins' | 'agents', '' if none",
-  'projectShown codeShown webShown dbShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
-  'projectPinned codePinned webPinned dbPinned pluginsPinned agentsPinned   … pinned in the stack'
+  'reviewOpen         a file or a change is open in the popup',
+  "floating           the drop-down floating now: 'project' | 'web' | 'db' | 'plugins' | 'agents', '' if none",
+  'projectShown webShown dbShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
+  'projectPinned webPinned dbPinned pluginsPinned agentsPinned   … pinned in the stack'
 ]
 
 let bindings: Binding[] = []

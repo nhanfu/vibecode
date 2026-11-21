@@ -348,7 +348,14 @@ export function StatusBar(): React.JSX.Element {
     <div className="statusbar">
       <div className="statusbar-left">
         {git.isRepo && (
-          <button className="sb-item" onClick={() => showPanel('code')}>
+          <button
+            className="sb-item"
+            title="Show the changes in the agent sidebar"
+            onClick={() => {
+              showPanel('agents')
+              window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: 'git-changes' }))
+            }}
+          >
             <GitBranch size={12} /> {git.branch}
             {git.files.length > 0 && <span className="sb-muted">· {git.files.length} changed</span>}
           </button>

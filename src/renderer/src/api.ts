@@ -213,6 +213,8 @@ export const api = {
     original: (root: string, rel: string): Promise<string> => invoke('git_original', { root, rel }),
     init: (folder: string): Promise<void> => invoke('git_init', { folder }),
     show: (root: string, rev: string, rel: string): Promise<string> => invoke('git_show', { root, rev, rel }),
+    /** a file as it was at `rev`, written to a file another editor can open; its path */
+    snapshot: (root: string, rev: string, rel: string, label: string): Promise<string> => invoke('git_snapshot', { root, rev, rel, label }),
     log: (root: string): Promise<GitCommit[]> => invoke('git_log', { root }),
     commitFiles: (root: string, hash: string): Promise<GitCommitFile[]> => invoke('git_commit_files', { root, hash }),
     branches: (root: string): Promise<GitBranch[]> => invoke('git_branches', { root }),

@@ -37,6 +37,14 @@ export type EditorTab =
   /** commit set: that commit vs its parent; otherwise working tree vs HEAD */
   | { id: string; kind: 'diff'; path: string; rel: string; title: string; commit?: { hash: string; short: string; subject: string } }
 
+/** What to show in a plugin's page next (the VS Code panel: a file, or two files side by side). `n` makes a repeat count. */
+export interface PluginOpen {
+  n: number
+  file?: string
+  /** `left` is the older version, `right` the one being edited */
+  diff?: { left: string; right: string }
+}
+
 export type SidebarView = 'chats' | 'explorer' | 'changes'
 
 interface State {
@@ -47,6 +55,8 @@ interface State {
   agents: AgentInfo[]
   /** plugins found on this machine (plugins/<id>/plugin.json) */
   plugins: PluginInfo[]
+  /** files and diffs to show in a plugin's page (by plugin id), see actions.ts `review` */
+  pluginOpen: Record<string, PluginOpen>
   /** AI picked as "in use" — a plain New chat starts with it */
   preferredAgent: AgentId | null
   git: GitState
@@ -71,8 +81,6 @@ interface State {
   quickOpen: boolean
   /** what the palette starts with: '' files, '>' commands (Ctrl+Shift+P) */
   quickOpenQuery: string
-  /** left column of Source code */
-  codeSide: 'files' | 'changes'
 
   chats: Chat[]
   activeChatId: string | null
@@ -113,13 +121,13 @@ export interface ChatBrowser {
  * double-click pins it into the horizontal stack, where it stays. Dragging the buttons reorders the
  * stack. Agent starts pinned, so the chat is on screen.
  */
-export type StaticPanelId = 'project' | 'code' | 'web' | 'db' | 'plugins' | 'agents'
+export type StaticPanelId = 'project' | 'web' | 'db' | 'plugins' | 'agents'
 /** A web tab torn off the Web drop-down: its own button and panel, for as long as the tab lives. */
 export type PagePanelId = `page:${string}`
 /** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and can run. */
 export type PluginPanelId = `plugin:${string}`
 export type PanelId = StaticPanelId | PagePanelId | PluginPanelId
-export const PANEL_IDS: StaticPanelId[] = ['project', 'code', 'web', 'db', 'plugins', 'agents']
+export const PANEL_IDS: StaticPanelId[] = ['project', 'web', 'db', 'plugins', 'agents']
 export const isPage = (id: PanelId): id is PagePanelId => id.startsWith('page:')
 export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith('plugin:')
 export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`
@@ -296,6 +304,7 @@ export const useStore = create<State>((set) => ({
   claude: null,
   agents: [],
   plugins: [],
+  pluginOpen: {},
   preferredAgent: (() => {
     try {
       return (userStore.getItem('vibe.newChatAgent') as AgentId | null) ?? null
@@ -318,7 +327,6 @@ export const useStore = create<State>((set) => ({
   bottomOpen: false,
   quickOpen: false,
   quickOpenQuery: '',
-  codeSide: 'files',
 
   chats: [],
   activeChatId: null,
