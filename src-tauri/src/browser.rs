@@ -64,6 +64,8 @@ static WAITERS: LazyLock<Mutex<HashMap<String, Vec<oneshot::Sender<String>>>>> =
 /// labels of the tabs whose page is still loading: a title or history change during a load must not
 /// tell the app the load is over
 static LOADING: LazyLock<Mutex<std::collections::HashSet<String>>> = LazyLock::new(Default::default);
+/// label → the page a tab starts on, once its blank start page has loaded (see open_tab)
+static PENDING_PAGE: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
 
 fn set_loading(label: &str, on: bool) {
     let mut set = LOADING.lock();
@@ -249,6 +251,12 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
         }
         // the page is done: match the app's theme (a page that started dark is set back to light)
         if matches!(p.event(), tauri::webview::PageLoadEvent::Finished) {
+            // the blank start page is swapped for the real one, so it leaves no entry in the history
+            if let Some(page) = PENDING_PAGE.lock().remove(w.label())
+                && let Ok(js) = serde_json::to_string(&page)
+            {
+                let _ = w.eval(&format!("location.replace({js})"));
+            }
             let _ = w.eval(if WEB_DARK.load(Ordering::Relaxed) { DARK_ON } else { DARK_OFF });
         }
     });
@@ -265,7 +273,7 @@ async fn open_tab(label: String, chat_id: String, url: String, user_agent: Optio
     let _ = wv.hide();
     if filtered {
         attach_ad_filter(&wv);
-        wv.navigate(parsed)?;
+        PENDING_PAGE.lock().insert(label.clone(), parsed.to_string());
     }
     #[cfg(windows)]
     win::hook(&wv, label.clone());
@@ -393,6 +401,7 @@ pub async fn web_set_user_agent(label: String, user_agent: Option<String>) -> Re
 #[tauri::command]
 pub fn web_close(label: String) {
     LOADING.lock().remove(&label);
+    PENDING_PAGE.lock().remove(&label);
     let tab = TABS.lock().remove(&label);
     if tab.is_none() {
         let mut o = OPENING.lock();
