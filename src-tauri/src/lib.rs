@@ -57,6 +57,7 @@ pub fn run() {
             browser::web_reload,
             browser::web_stop,
             browser::web_set_user_agent,
+            browser::web_set_dark,
             browser::web_close,
             browser::web_focus,
             webdata::web_data,

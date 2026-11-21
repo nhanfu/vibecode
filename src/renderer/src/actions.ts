@@ -1,5 +1,5 @@
 import { clearAttachments } from './attachments'
-import { PAGES_KEY, basename, openPatch, panelShown, showPanel, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
+import { PAGES_KEY, basename, openPatch, panelShown, showPanel, syncPluginPanels, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -247,6 +247,8 @@ export function applyTheme(): void {
   setTerminalTheme(light)
   if (st().themeResolved !== (light ? 'light' : 'dark')) useStore.setState({ themeResolved: light ? 'light' : 'dark' })
   applyGlass()
+  // web pages follow the app: dark when the app is dark and the setting (webDark) is on
+  void window.api.browser.setDark(!light && (st().settings?.webDark ?? true)).catch(() => {})
 }
 
 // 'system': the OS switching light/dark switches the app too
@@ -436,7 +438,9 @@ export function newChatWith(agent: AgentId): void {
 }
 
 export async function loadPlugins(): Promise<void> {
-  useStore.setState({ plugins: await window.api.plugins.list().catch(() => []) })
+  const plugins = await window.api.plugins.list().catch(() => [])
+  useStore.setState({ plugins })
+  syncPluginPanels(plugins)
 }
 
 export async function detectClaude(): Promise<void> {

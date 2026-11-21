@@ -28,6 +28,8 @@ pub struct AppSettings {
     pub effort: String,
     pub permission_mode: String,
     pub see_through: bool,
+    /// web pages drawn dark while the app is dark
+    pub web_dark: bool,
     pub editor_font: String,
     pub editor_font_size: f64,
     pub editor_ligatures: bool,
@@ -50,6 +52,7 @@ impl Default for AppSettings {
             effort: String::new(),
             permission_mode: String::new(),
             see_through: false,
+            web_dark: true,
             editor_font: "JetBrains Mono".into(),
             editor_font_size: 12.0,
             editor_ligatures: true,

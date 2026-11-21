@@ -5572,3 +5572,8 @@ button.plan-chevron:hover {
   min-height: 0;
   display: flex;
 }
+
+/* Web tab: the "web pages follow the app theme" toggle is lit while it is on */
+.browser-bar .icon-btn.on {
+  color: var(--accent);
+}

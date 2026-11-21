@@ -146,7 +146,7 @@ pub async fn app_remember_folder(folder: String) -> Res<AppSettings> {
 
 #[tauri::command]
 pub async fn app_set_settings(patch: Map<String, Value>) -> Res<AppSettings> {
-    const ALLOWED: [&str; 8] = ["theme", "dropOpacity", "dropHeight", "hideOnBlur", "model", "effort", "permissionMode", "seeThrough"];
+    const ALLOWED: [&str; 9] = ["theme", "dropOpacity", "dropHeight", "hideOnBlur", "model", "effort", "permissionMode", "seeThrough", "webDark"];
     let clean: Map<String, Value> = patch.into_iter().filter(|(k, _)| ALLOWED.contains(&k.as_str())).collect();
     let drop_prefs = ["dropOpacity", "dropHeight", "hideOnBlur"].iter().any(|k| clean.contains_key(*k));
     let s = settings::update(clean).await;
