@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
+import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink, Mic } from 'lucide-react'
 import { useStore, type Chat } from '../store'
+import { VOICE_LANG, startDictation, voiceSupported, type Dictation } from '../voice'
 import { SlidePill, useEnterAnimation } from './motion'
 import {
   closeChat,
@@ -176,12 +177,62 @@ export function ClaudePanel(): React.JSX.Element {
               <Download size={12} />
               Pull
             </button>
+            <VoiceButton key={active.id} chatId={active.id} />
           </div>
           <ChatStatusBar chat={active} />
           {agentDef(active.agent).id === 'claude' && <ContextBar chat={active} />}
         </>
       )}
     </div>
+  )
+}
+
+function VoiceButton({ chatId }: { chatId: string }): React.JSX.Element | null {
+  const [live, setLive] = useState(false)
+  const [interim, setInterim] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const dictation = useRef<Dictation | null>(null)
+  useEffect(() => () => dictation.current?.stop(), [])
+  if (!voiceSupported()) return null
+  const toggle = (): void => {
+    if (dictation.current) {
+      dictation.current.stop()
+      return
+    }
+    setError(null)
+    setInterim('')
+    const d = startDictation({
+      lang: VOICE_LANG,
+      onFinal: (text) => {
+        const words = text.trim()
+        if (words) writeToTerm(chatId, words + ' ')
+      },
+      onInterim: setInterim,
+      onEnd: (err) => {
+        dictation.current = null
+        setLive(false)
+        setInterim('')
+        if (err && err !== 'aborted') setError(err)
+      }
+    })
+    if (!d) return
+    dictation.current = d
+    setLive(true)
+  }
+  const label = error ? `Mic: ${error}` : live ? interim.trim() || 'Listening…' : 'Voice'
+  return (
+    <button
+      className={`chip chip-voice${live ? ' chip-live' : ''}`}
+      title={
+        live
+          ? 'Stop listening — the words are typed into the prompt, press Enter yourself to send'
+          : `Speak your message (${VOICE_LANG}); the words are typed into the prompt, you press Enter to send`
+      }
+      onClick={toggle}
+    >
+      <Mic size={12} />
+      {label}
+    </button>
   )
 }
 

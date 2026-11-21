@@ -2874,6 +2874,17 @@ button.plan-chevron:hover {
 .quick-bar .chip-stop:hover {
   background: color-mix(in srgb, var(--red) 22%, transparent);
 }
+.quick-bar .chip-voice {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.quick-bar .chip-voice.chip-live,
+.quick-bar .chip-voice.chip-live:hover {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
 
 /* window opacity popover */
 .opacity-ctl {
