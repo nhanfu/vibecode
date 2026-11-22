@@ -2,3 +2,8 @@ keybindings_path	null	"ok":true
 keybindings_path	null	keybindings.json
 keybindings_read	null	"ok":true
 not_a_command	null	permission_denied
+fs_read_dir	{"dir":"/home/nhanjs/projects/vibecode-zero-native/native"}	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/assets","name":"assets","isDir":true}
+fs_read_dir	{"dir":"/home/nhanjs/projects/vibecode-zero-native/native"}	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/build.zig","name":"build.zig","isDir":false}
+fs_read_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/build.zig"}	"binary":false,"tooLarge":false
+fs_read_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/assets/icon.icns"}	"binary":true
+fs_read_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/missing.txt"}	handler_failed
