@@ -32,7 +32,7 @@ one command at a time; the renderer in `src/renderer` is shared with the Tauri b
 
 ## Status
 
-Ported and checked by `scripts/bridge-check.sh` (53 cases):
+Ported and checked by `scripts/bridge-check.sh` (59 cases):
 
 - sessions (list only): `sessions_list`
 - keybindings: `keybindings_path`, `keybindings_read`
@@ -46,7 +46,7 @@ Not ported yet (still in `src-tauri/`):
 - `keybindings:changed` and `sessions:changed` events; the streaming channel used for terminal output
 - windowing: minimise, maximise, hide, drop-down mode, badge (needs window control that zero-native does not expose yet)
 - pickers (`app_pick_folder`, `app_pick_files`: use the built-in dialogs), `app_relaunch`, `app_clear_browser_cache`
-- terminals and the ptyd daemon (`pty.rs`, `ptyd.rs`)
+- terminals (in-process, forkpty, output as `pty:data` events): `pty_spawn`, `pty_write`, `pty_resize`, `pty_kill`, `pty_page_reset`, `pty_list` (empty), `pty_visible` (accepted, not throttled). Not yet: ptyd (`ptyd.rs`), so a terminal ends with the app; MCP settings for Claude Code
 - browser tabs (`browser.rs`), web data and Chrome import (`webdata.rs`), sessions (`sessions.rs`)
 - plugins (`plugins.rs`), SQL Server (`mssql.rs`), Claude usage (`claude_usage`), MCP (`mcp.rs`)
 - global shortcut, tray, autostart (zero-native has shortcut and tray APIs, not yet wired)

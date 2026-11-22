@@ -12,6 +12,7 @@ const client_log = @import("client_log.zig");
 const detect = @import("detect.zig");
 const windowing = @import("windowing.zig");
 const watch = @import("watch.zig");
+const pty = @import("pty.zig");
 
 pub const handlers = [_]cmd.Handler{
     cmd.handler("keybindings_path", keybindings.path),
@@ -35,6 +36,13 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("claude_detect", detect.claudeDetect),
     cmd.handler("win_state", windowing.winState),
     cmd.handler("fs_watch", watch.fsWatch),
+    cmd.handler("pty_spawn", pty.spawn),
+    cmd.handler("pty_write", pty.write),
+    cmd.handler("pty_resize", pty.resize),
+    cmd.handler("pty_kill", pty.kill),
+    cmd.handler("pty_page_reset", pty.pageReset),
+    cmd.handler("pty_list", pty.list),
+    cmd.handler("pty_visible", pty.visible),
     cmd.handler("claude_get_project_bypass", appcmds.getProjectBypass),
     cmd.handler("claude_set_project_bypass", appcmds.setProjectBypass),
     cmd.handler("sys_memory", appcmds.sysMemory),
@@ -70,6 +78,13 @@ pub const names = [_][]const u8{
     "claude_detect",
     "win_state",
     "fs_watch",
+    "pty_spawn",
+    "pty_write",
+    "pty_resize",
+    "pty_kill",
+    "pty_page_reset",
+    "pty_list",
+    "pty_visible",
     "claude_get_project_bypass",
     "claude_set_project_bypass",
     "sys_memory",

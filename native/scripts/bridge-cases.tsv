@@ -51,3 +51,9 @@ win_state	null	"hotkeyOk":false
 client_log	{"message":"check message"}	"result":null
 fs_watch	{"root":"/home/nhanjs/projects/vibecode-zero-native/native/.zig-cache/watch-check"}	"result":null
 fs_watch	{"root":null}	"result":null
+pty_spawn	{"opts":{"id":"check-term","cwd":"/home/nhanjs/projects/vibecode-zero-native/native","kind":"shell","cols":80,"rows":24}}	null
+pty_write	{"id":"check-term","data":"echo check\n"}	"result":true
+pty_resize	{"id":"check-term","cols":100,"rows":30}	null
+pty_visible	{"id":"check-term","visible":true}	null
+pty_list	null	"result":[]
+pty_kill	{"id":"check-term"}	null

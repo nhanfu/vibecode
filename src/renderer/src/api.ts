@@ -5,7 +5,7 @@
  * event whose payload is the argument list. Terminal output is the hot path, so it streams
  * through one `Channel` per terminal instead of the global event bus.
  */
-import { Channel, invoke, listen, bytesToBase64 } from './nativeBridge'
+import { invoke, listen, bytesToBase64 } from './nativeBridge'
 import type {
   AgentInfo,
   AppSettings,
@@ -45,10 +45,12 @@ function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Off
 
 /* ---------------- terminals: one Channel per process ---------------- */
 
-type PtyMsg = { kind: 'data'; data: string } | { kind: 'exit'; code: number }
 const ptyData = new Set<(id: string, data: string) => void>()
 const ptyExit = new Set<(id: string, code: number) => void>()
 const exitNow = (id: string, code: number): void => ptyExit.forEach((cb) => cb(id, code))
+// the backend sends terminal output and exits as events, each with the terminal's id
+listen<[string, string]>('pty:data', (id, data) => ptyData.forEach((cb) => cb(id, data)))
+listen<[string, number]>('pty:exit', (id, code) => exitNow(id, code))
 const sub = <F>(set: Set<F>, cb: F): Off => {
   set.add(cb)
   return () => set.delete(cb)
@@ -76,11 +78,7 @@ const platform: 'win32' | 'darwin' | 'linux' = navigator.userAgent.includes('Win
 export const api = {
   platform,
   pty: {
-    spawn: (o: PtySpawnOptions): Promise<void> => {
-      const ch = new Channel<PtyMsg>()
-      ch.onmessage = (m) => (m.kind === 'data' ? ptyData.forEach((cb) => cb(o.id, m.data)) : exitNow(o.id, m.code))
-      return invoke('pty_spawn', { opts: o, out: ch })
-    },
+    spawn: (o: PtySpawnOptions): Promise<void> => invoke('pty_spawn', { opts: o }),
     write: (id: string, data: string): void => {
       void invoke<boolean>('pty_write', { id, data }).then((ok) => ok || exitNow(id, -1))
     },
