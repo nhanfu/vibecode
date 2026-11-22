@@ -388,8 +388,76 @@ fn stopSidecar(id: []const u8) bool {
     killGroup(r.pid);
     var status: c_int = 0;
     _ = std.c.waitpid(r.pid, &status, 0);
+    removePidfile(id);
     logLine(id, "[stopped]");
     return true;
+}
+
+fn pidfilePath(a: Allocator, id: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(a, "{s}/plugin-data/{s}/sidecar.pid", .{ try userDataDir(a), id });
+}
+
+fn removePidfile(id: []const u8) void {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const path = pidfilePath(arena.allocator(), id) catch return;
+    std.Io.Dir.cwd().deleteFile(cmd.io, path) catch {};
+}
+
+/// Stops every sidecar: the app is closing. Their process groups go with them.
+pub fn stopAll() void {
+    state_mutex.lockUncancelable(cmd.io);
+    var stopped: std.ArrayList(Running) = .empty;
+    while (running.pop()) |r| stopped.append(cmd.gpa, r) catch {};
+    state_mutex.unlock(cmd.io);
+    for (stopped.items) |r| {
+        killGroup(r.pid);
+        var status: c_int = 0;
+        _ = std.c.waitpid(r.pid, &status, 0);
+        removePidfile(r.id);
+    }
+}
+
+/// Stops a sidecar the previous run of the app did not get to stop (it was killed, or crashed), once,
+/// before any start. Its process group is found by the pid in the pidfile, even when the program itself
+/// already exited (its children keep the group). Only when a member still runs the same program.
+pub fn warmUp() void {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    for (discover(a) catch return) |p| {
+        if (p.manifest.sidecar == null) continue;
+        const path = pidfilePath(a, p.manifest.id) catch continue;
+        const raw = std.Io.Dir.cwd().readFileAlloc(cmd.io, path, a, .limited(4096)) catch continue;
+        std.Io.Dir.cwd().deleteFile(cmd.io, path) catch {};
+        var lines = std.mem.splitScalar(u8, raw, '\n');
+        const pid = std.fmt.parseInt(c_int, std.mem.trim(u8, lines.next() orelse continue, " \r"), 10) catch continue;
+        const program = lines.next() orelse continue;
+        if (!groupRunsProgram(a, pid, program)) continue;
+        killGroup(pid);
+        logLine(p.manifest.id, "[stopped] a sidecar left by the previous run");
+    }
+}
+
+/// Whether some process in process group `pgid` runs `program` (scans /proc; Linux).
+fn groupRunsProgram(a: Allocator, pgid: c_int, program: []const u8) bool {
+    var proc = std.Io.Dir.cwd().openDir(cmd.io, "/proc", .{ .iterate = true }) catch return false;
+    defer proc.close(cmd.io);
+    var it = proc.iterate();
+    while (it.next(cmd.io) catch return false) |entry| {
+        const pid = std.fmt.parseInt(c_int, entry.name, 10) catch continue;
+        const stat = std.Io.Dir.cwd().readFileAlloc(cmd.io, std.fmt.allocPrint(a, "/proc/{d}/stat", .{pid}) catch continue, a, .limited(4096)) catch continue;
+        // the process group is the 3rd field after the command name, which is in parentheses
+        const close_paren = std.mem.lastIndexOfScalar(u8, stat, ')') orelse continue;
+        var fields = std.mem.tokenizeScalar(u8, stat[close_paren + 1 ..], ' ');
+        _ = fields.next(); // state
+        _ = fields.next(); // parent
+        const group = std.fmt.parseInt(c_int, fields.next() orelse continue, 10) catch continue;
+        if (group != pgid) continue;
+        const cmdline = std.Io.Dir.cwd().readFileAlloc(cmd.io, std.fmt.allocPrint(a, "/proc/{d}/cmdline", .{pid}) catch continue, a, .limited(64 * 1024)) catch continue;
+        if (std.mem.indexOf(u8, cmdline, program) != null) return true;
+    }
+    return false;
 }
 
 /// Free localhost port (bound once, then released).
@@ -505,6 +573,11 @@ fn spawnSidecar(a: Allocator, p: Plugin, program: []const u8, port: u16, token: 
     const program_z = try cString(a, program);
     const pid = fork();
     if (pid < 0) return error.ForkFailed;
+    if (pid > 0) {
+        const pidfile = try std.fmt.allocPrint(a, "{s}/sidecar.pid", .{data});
+        const text = try std.fmt.allocPrint(a, "{d}\n{s}", .{ pid, program });
+        std.Io.Dir.cwd().writeFile(cmd.io, .{ .sub_path = pidfile, .data = text }) catch {};
+    }
     if (pid == 0) {
         _ = std.c.setpgid(0, 0);
         _ = linux.prctl(1, 9, 0, 0, 0); // PR_SET_PDEATHSIG, SIGKILL
@@ -548,15 +621,22 @@ fn ensure(a: Allocator, p: Plugin) !struct { port: u16, token: []const u8 } {
     const side = p.manifest.sidecar orelse return error.NoSidecar;
     const health = side.health orelse "/";
 
+    // one instance per plugin: a running process is reused even while it is busy and its health probe
+    // misses. Only a process that has exited is replaced.
     state_mutex.lockUncancelable(cmd.io);
     const known = stateKnown(p.manifest.id);
     state_mutex.unlock(cmd.io);
     if (known) |k| {
-        if (healthy(a, k.port, health)) return .{ .port = k.port, .token = k.token };
+        if (reapExited(p.manifest.id) == null) {
+            var waited: usize = 0;
+            while (waited < 100 and !healthy(a, k.port, health)) : (waited += 1) {
+                std.Io.sleep(cmd.io, std.Io.Duration.fromMilliseconds(150), .real) catch {};
+            }
+            return .{ .port = k.port, .token = k.token };
+        }
         state_mutex.lockUncancelable(cmd.io);
-        const stale = removeRunning(p.manifest.id);
+        _ = removeRunning(p.manifest.id);
         state_mutex.unlock(cmd.io);
-        if (stale) |s| killGroup(s.pid);
     }
 
     const program = (try programPath(a, p.dir, side.command)) orelse return error.NotBuilt;

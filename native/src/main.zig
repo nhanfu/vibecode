@@ -3,6 +3,7 @@ const runner = @import("runner");
 const zero_native = @import("zero-native");
 const commands = @import("commands/root.zig");
 const registry = @import("commands/registry.zig");
+const plugins = @import("commands/plugins.zig");
 
 pub const panic = std.debug.FullPanic(zero_native.debug.capturePanic);
 
@@ -16,11 +17,17 @@ const App = struct {
             .source = zero_native.frontend.productionSource(.{ .dist = "../out/renderer" }),
             .source_fn = source,
             .start_fn = start,
+            .stop_fn = stop,
         };
     }
 
     fn start(_: *anyopaque, runtime: *zero_native.Runtime) anyerror!void {
         commands.runtime = runtime;
+        plugins.warmUp();
+    }
+
+    fn stop(_: *anyopaque, _: *zero_native.Runtime) anyerror!void {
+        plugins.stopAll();
     }
 
     fn source(context: *anyopaque) anyerror!zero_native.WebViewSource {

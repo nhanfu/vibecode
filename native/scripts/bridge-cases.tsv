@@ -13,7 +13,7 @@ git_original	{"root":"/home/nhanjs/projects/vibecode-zero-native","rel":"native/
 git_show	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"HEAD","rel":"native/README.md"}	# native/: the zero-native shell
 git_show	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"--evil","rel":"x"}	"__error":"not a revision"
 git_log	{"root":"/home/nhanjs/projects/vibecode-zero-native"}	"short":"
-git_commit_files	{"root":"/home/nhanjs/projects/vibecode-zero-native","hash":"HEAD"}	"rel":"native/
+git_commit_files	{"root":"/home/nhanjs/projects/vibecode-zero-native","hash":"HEAD"}	"rel":"
 git_branches	{"root":"/home/nhanjs/projects/vibecode-zero-native"}	"name":"spike/zero-native","current":true,"remote":false
 git_snapshot	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"HEAD","rel":"native/README.md","label":"base"}	review/base/native/README.md
 git_snapshot	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"HEAD","rel":"../x","label":"base"}	not a path inside the repository
