@@ -323,7 +323,9 @@ fn logLine(id: []const u8, line: []const u8) void {
 }
 
 /// Copies a sidecar's output (one of its pipes) into its log until the pipe closes.
+/// `id` is owned by the thread: it outlives the request that started the sidecar, and is freed here.
 fn pump(id: []const u8, fd: c_int) void {
+    defer cmd.gpa.free(id);
     var pending: std.ArrayList(u8) = .empty;
     defer pending.deinit(cmd.gpa);
     var buffer: [4096]u8 = undefined;
@@ -514,10 +516,11 @@ fn spawnSidecar(a: Allocator, p: Plugin, program: []const u8, port: u16, token: 
     }
     _ = close(out_pipe[1]);
     _ = close(err_pipe[1]);
-    const id = try a.dupe(u8, p.manifest.id);
-    const out_thread = try std.Thread.spawn(.{}, pump, .{ id, out_pipe[0] });
+    const out_id = try cmd.gpa.dupe(u8, p.manifest.id);
+    const out_thread = try std.Thread.spawn(.{}, pump, .{ out_id, out_pipe[0] });
     out_thread.detach();
-    const err_thread = try std.Thread.spawn(.{}, pump, .{ id, err_pipe[0] });
+    const err_id = try cmd.gpa.dupe(u8, p.manifest.id);
+    const err_thread = try std.Thread.spawn(.{}, pump, .{ err_id, err_pipe[0] });
     err_thread.detach();
     return pid;
 }

@@ -37,6 +37,10 @@ const builtin_commands = [_]zero_native.BridgeCommandPolicy{
     .{ .name = "zero-native.dialog.openFile", .origins = &commands.origins },
 };
 
+/// Pages the window may navigate to: the app itself, and the panels' sidecars (their ports change each start,
+/// so the localhost ports are a prefix match). Sidecars are not given the bridge: the bridge's origins are separate.
+const navigation_origins = commands.origins ++ [_][]const u8{"http://127.0.0.1:*"};
+
 pub fn main(init: std.process.Init) !void {
     commands.io = init.io;
     commands.gpa = init.gpa;
@@ -47,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
         .bundle_id = "vn.tinjs.vibecode",
         .icon_path = "assets/icon.icns",
         .security = .{
-            .navigation = .{ .allowed_origins = &commands.origins },
+            .navigation = .{ .allowed_origins = &navigation_origins },
         },
         .builtin_bridge = .{ .enabled = true, .commands = &builtin_commands },
         .bridge = .{
