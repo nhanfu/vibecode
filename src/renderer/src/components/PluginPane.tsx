@@ -14,9 +14,26 @@ function vscodePayload(host: string, open: PluginOpen): string | null {
   return null
 }
 
+/** The tab's name: the file's own name (or both names of a diff). */
+function tabLabel(open: PluginOpen): string {
+  const name = (path: string): string => path.split('/').pop() || path
+  if (open.file) return name(open.file)
+  if (open.diff) return `${name(open.diff.left)} ↔ ${name(open.diff.right)}`
+  return 'VS Code'
+}
+
+interface VscodeTab {
+  key: string
+  label: string
+  src: string
+}
+
 /**
  * A plugin's panel: its sidecar's page (src-tauri/src/plugins.rs starts the sidecar on first use),
  * shown in a frame. `onFallback` offers the built-in panel the plugin replaces when it will not start.
+ *
+ * VS Code is one server for the whole panel: each file asked for opens in a tab of its own, a frame of the
+ * same address with its `payload`. Tabs stay mounted, so going back to one does not reload the editor.
  */
 export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string; name: string; onFallback?: () => void; fallbackLabel?: string }): React.JSX.Element {
   // the page on screen, with the theme it was loaded for
@@ -33,6 +50,8 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
   const folder = plugin?.panel?.folder ? root : null
   // a file or a change to show (the Files / Changes lists of the agent sidebar), for the VS Code plugin
   const open = useStore((s) => s.pluginOpen[id])
+  const [tabs, setTabs] = useState<VscodeTab[]>([])
+  const [active, setActive] = useState('main')
 
   useEffect(() => {
     let off = false
@@ -46,23 +65,70 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
     }
   }, [id, attempt, theme])
 
-  const src = useMemo(() => {
+  // the address without a file: the page's own theme, settings and folder
+  const base = useMemo(() => {
     if (!page) return null
     const u = new URL(page.url)
     u.searchParams.set('vibeTheme', page.theme)
     // the plugin's settings file, for pages that take it as their defaults (plugins/vscode/patch-theme.py)
     if (page.settings) u.searchParams.set('vibeSettings', page.settings)
     if (folder) u.searchParams.set('folder', folder)
-    const payload = id === 'vscode' && open ? vscodePayload(u.host, open) : null
-    if (payload) {
-      u.searchParams.set('payload', payload)
-      // asking again for the same file still reloads the page onto it
-      u.searchParams.set('vibeOpen', String(open?.n))
-    }
-    return u.toString()
-  }, [page, folder, id, open])
+    return u
+  }, [page, folder])
 
-  if (src) return <iframe className="plugin-frame" src={src} title={name} />
+  // a new page (theme change) starts the tabs over; a file asked for adds its tab, or shows the one it has
+  useEffect(() => {
+    if (!base) return
+    if (id !== 'vscode') {
+      setTabs([{ key: 'main', label: name, src: base.toString() }])
+      return
+    }
+    const payload = open ? vscodePayload(base.host, open) : null
+    if (!open || !payload) {
+      setTabs((prev) => (prev.length ? prev : [{ key: 'main', label: 'VS Code', src: base.toString() }]))
+      return
+    }
+    const key = `file-${open.n}`
+    const u = new URL(base.toString())
+    u.searchParams.set('payload', payload)
+    // the same file asked again gets the same tab, brought to the front
+    setTabs((prev) => {
+      const main = prev.find((t) => t.key === 'main') ?? { key: 'main', label: 'VS Code', src: base.toString() }
+      const existing = prev.find((t) => t.key === key)
+      const others = prev.filter((t) => t.key !== 'main' && t.key !== key)
+      return [main, ...others, existing ?? { key, label: tabLabel(open), src: u.toString() }]
+    })
+    setActive(key)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, open, id, name])
+
+  const closeTab = (key: string): void => {
+    setTabs((prev) => prev.filter((t) => t.key !== key))
+    setActive((a) => (a === key ? 'main' : a))
+  }
+
+  if (base && tabs.length) {
+    if (id !== 'vscode') return <iframe className="plugin-frame" src={tabs[0].src} title={name} />
+    return (
+      <div className="plugin-tabs">
+        <div className="plugin-tabbar" role="tablist">
+          {tabs.map((t) => (
+            <div key={t.key} className={`plugin-tab${active === t.key ? ' on' : ''}`} role="tab" aria-selected={active === t.key} onClick={() => setActive(t.key)}>
+              <span>{t.label}</span>
+              {t.key !== 'main' && (
+                <button className="plugin-tab-close" title="Close" onClick={(e) => { e.stopPropagation(); closeTab(t.key) }}>
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        {tabs.map((t) => (
+          <iframe key={t.key} className="plugin-frame" src={t.src} title={t.label} style={{ display: active === t.key ? 'block' : 'none' }} />
+        ))}
+      </div>
+    )
+  }
   return (
     <div className="plugin-status">
       {error ? (
