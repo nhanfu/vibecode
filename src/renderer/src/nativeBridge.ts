@@ -3,12 +3,24 @@
  * Zig handler registered in native/src/commands/registry.zig, called by the same name the Tauri
  * build used, with the same argument object.
  */
-type ZeroBridge = { invoke(command: string, payload: unknown): Promise<unknown> }
+type ZeroBridge = {
+  invoke(command: string, payload: unknown): Promise<unknown>
+  on(name: string, callback: (detail: unknown) => void): () => void
+}
+
+function bridge(): ZeroBridge {
+  const zero = (window as unknown as { zero?: ZeroBridge }).zero
+  if (!zero) throw new Error('native bridge is not available')
+  return zero
+}
+
+/** Subscribes to an event the backend sends (Zig `commands.emit`); the listener gets the event's arguments. */
+export function listen<T extends unknown[]>(name: string, cb: (...args: T) => void): () => void {
+  return bridge().on(name, (detail) => cb(...(detail as T)))
+}
 
 export function invoke<T = unknown>(command: string, payload?: Record<string, unknown> | null): Promise<T> {
-  const zero = (window as unknown as { zero?: ZeroBridge }).zero
-  if (!zero) return Promise.reject(new Error('native bridge is not available'))
-  return zero.invoke(command, payload ?? null).then((result) => {
+  return bridge().invoke(command, payload ?? null).then((result) => {
     // a handler's own failure message (Tauri's Err(message)) arrives as { __error }
     if (result && typeof result === 'object' && '__error' in result) throw new Error(String((result as { __error: unknown }).__error))
     return result as T

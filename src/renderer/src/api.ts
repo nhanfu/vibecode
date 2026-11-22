@@ -6,8 +6,7 @@
  * through one `Channel` per terminal instead of the global event bus.
  */
 import { Channel } from '@tauri-apps/api/core'
-import { invoke, bytesToBase64 } from './nativeBridge'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { invoke, listen, bytesToBase64 } from './nativeBridge'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import type {
   AgentInfo,
@@ -42,13 +41,8 @@ type Off = () => void
 
 /** Subscribe to a backend event; the payload is the listener's argument list. */
 function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Off {
-  let off: UnlistenFn | null = null
-  let dead = false
-  void listen<T>(channel, (e) => cb(...e.payload)).then((u) => (dead ? u() : (off = u)))
-  return () => {
-    dead = true
-    off?.()
-  }
+  const off = listen<T>(channel, cb)
+  return off
 }
 
 /* ---------------- terminals: one Channel per process ---------------- */
@@ -253,7 +247,7 @@ export const api = {
      * from Explorer arrive here with their paths and the drop point, instead of as DOM drop events.
      */
     onFileDrop: (cb: (e: DropEvent) => void): Off => {
-      let off: UnlistenFn | null = null
+      let off: Off | null = null
       let dead = false
       let last: string[] = []
       void getCurrentWebview()

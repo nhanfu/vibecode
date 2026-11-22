@@ -95,3 +95,12 @@ pub fn tempDir() []const u8 {
 
 /// Bounds a helper program (clipboard tools, a browser launcher) so a stuck one cannot freeze the UI.
 pub const helper_timeout: std.Io.Timeout = .{ .duration = .{ .raw = std.Io.Duration.fromMilliseconds(2000), .clock = .awake } };
+
+/// The runtime, captured when the app starts, so commands can send events to the page.
+pub var runtime: ?*zero_native.Runtime = null;
+
+/// Sends a named event to the page: its listeners receive `args_json`, a JSON array of the arguments.
+pub fn emit(name: []const u8, args_json: []const u8) void {
+    const rt = runtime orelse return;
+    rt.emitWindowEvent(1, name, args_json) catch {};
+}

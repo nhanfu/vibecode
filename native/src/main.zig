@@ -15,7 +15,12 @@ const App = struct {
             .name = "vibe-code",
             .source = zero_native.frontend.productionSource(.{ .dist = "../out/renderer" }),
             .source_fn = source,
+            .start_fn = start,
         };
+    }
+
+    fn start(_: *anyopaque, runtime: *zero_native.Runtime) anyerror!void {
+        commands.runtime = runtime;
     }
 
     fn source(context: *anyopaque) anyerror!zero_native.WebViewSource {
