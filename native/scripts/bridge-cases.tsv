@@ -29,3 +29,18 @@ userdb_save	{"table":"chats","json":"[{\"cwd\":\"/check/chat\",\"title\":\"c\"}]
 userdb_snapshot	null	\"cwd\":\"/check/chat\"
 userdb_save	{"table":"pages","json":"[{\"id\":\"w1\",\"url\":\"https://example.com\"}]"}	"result":null
 userdb_save	{"table":"nope","json":"[]"}	"__error":"unknown table"
+claude_get_project_bypass	{"folder":"/proc"}	"result":false
+claude_set_project_bypass	{"folder":"/home/nhanjs/projects/vibecode-zero-native/native/.zig-cache/test-userdata/proj","on":true}	"result":true
+claude_get_project_bypass	{"folder":"/home/nhanjs/projects/vibecode-zero-native/native/.zig-cache/test-userdata/proj"}	"result":true
+claude_set_project_bypass	{"folder":"/home/nhanjs/projects/vibecode-zero-native/native/.zig-cache/test-userdata/proj","on":false}	"result":false
+sys_memory	null	"result":null
+app_settings	null	"theme":
+app_set_settings	{"patch":{"theme":"dark","bogus":1}}	"theme":"dark"
+app_settings	null	"theme":"dark"
+app_remember_folder	{"folder":"/check/recent"}	"lastFolder":"/check/recent"
+app_file_info	{"paths":["/home/nhanjs/projects/vibecode-zero-native/native/build.zig","/nope/missing","/home/nhanjs/projects/vibecode-zero-native/resources/icon.png"]}	"preview":"data:image/png;base64,
+app_file_info	{"paths":["/nope/missing"]}	"size":-1
+app_save_image	{"ext":"png","data":"aGk="}	tinjs-paste/image-
+app_clipboard_files	null	"result":[]
+app_clipboard_image	null	"ok":true
+app_open_external	{"url":"ftp://example.com"}	"result":null

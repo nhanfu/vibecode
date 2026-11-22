@@ -6,6 +6,7 @@ const keybindings = @import("keybindings.zig");
 const fsx = @import("fsx.zig");
 const git = @import("git.zig");
 const userdb = @import("userdb.zig");
+const appcmds = @import("appcmds.zig");
 
 pub const handlers = [_]cmd.Handler{
     cmd.handler("keybindings_path", keybindings.path),
@@ -24,6 +25,17 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("userdb_snapshot", userdb.snapshot),
     cmd.handler("userdb_prefs_write", userdb.prefsWrite),
     cmd.handler("userdb_save", userdb.save),
+    cmd.handler("claude_get_project_bypass", appcmds.getProjectBypass),
+    cmd.handler("claude_set_project_bypass", appcmds.setProjectBypass),
+    cmd.handler("sys_memory", appcmds.sysMemory),
+    cmd.handler("app_settings", appcmds.appSettings),
+    cmd.handler("app_remember_folder", appcmds.appRememberFolder),
+    cmd.handler("app_set_settings", appcmds.appSetSettings),
+    cmd.handler("app_file_info", appcmds.appFileInfo),
+    cmd.handler("app_open_external", appcmds.appOpenExternal),
+    cmd.handler("app_save_image", appcmds.appSaveImage),
+    cmd.handler("app_clipboard_files", appcmds.appClipboardFiles),
+    cmd.handler("app_clipboard_image", appcmds.appClipboardImage),
 };
 
 pub const names = [_][]const u8{
@@ -43,6 +55,17 @@ pub const names = [_][]const u8{
     "userdb_snapshot",
     "userdb_prefs_write",
     "userdb_save",
+    "claude_get_project_bypass",
+    "claude_set_project_bypass",
+    "sys_memory",
+    "app_settings",
+    "app_remember_folder",
+    "app_set_settings",
+    "app_file_info",
+    "app_open_external",
+    "app_save_image",
+    "app_clipboard_files",
+    "app_clipboard_image",
 };
 
 pub const policy = cmd.policy(&names);

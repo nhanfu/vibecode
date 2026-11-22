@@ -55,7 +55,7 @@ const migrations = [_][:0]const u8{
 var opened = false;
 
 /// Opens the file and runs the pending migrations, once. On failure the message is in `db.lastError()`.
-fn ensureOpen() !void {
+pub fn ensureOpen() !void {
     if (opened) return;
     var path_buffer: [4096]u8 = undefined;
     const path: [:0]const u8 = if (std.c.getenv("VIBECODE_DB")) |raw|
@@ -86,9 +86,9 @@ fn schemaVersion() !usize {
     var rows = try db.query("SELECT value FROM meta WHERE key = 'schema_version'", &.{});
     defer rows.deinit();
     if (rows.count() == 0) return 0;
-    var scratch: [64]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&scratch);
-    const text = (try rows.text(fba.allocator(), 0, 0)) orelse return 0;
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const text = (try rows.text(arena.allocator(), 0, 0)) orelse return 0;
     return std.fmt.parseInt(usize, text, 10) catch 0;
 }
 
@@ -296,10 +296,12 @@ pub fn snapshot(_: cmd.Invocation, output: []u8) ![]const u8 {
 
 /// `{ entries: { key: text | null } }`: a null value deletes the key.
 pub fn prefsWrite(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
     ensureOpen() catch |err| return failure(output, err);
 
-    var scratch: [65536]u8 = undefined;
-    const args = try cmd.args(struct { entries: std.json.Value }, invocation, &scratch);
+    const args = try cmd.args(struct { entries: std.json.Value }, a, invocation);
     try db.begin();
     errdefer db.rollback();
     for (args.entries.object.keys(), args.entries.object.values()) |key, value| {
@@ -322,8 +324,7 @@ pub fn save(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     const a = arena.allocator();
     ensureOpen() catch |err| return failure(output, err);
 
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(struct { table: []const u8, json: []const u8 }, invocation, &scratch);
+    const args = try cmd.args(struct { table: []const u8, json: []const u8 }, a, invocation);
     const result = if (std.mem.eql(u8, args.table, "plans"))
         savePlans(try std.json.parseFromSliceLeaky([]PlanItem, a, args.json, .{ .ignore_unknown_fields = true }))
     else if (std.mem.eql(u8, args.table, "chats"))

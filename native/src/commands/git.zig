@@ -92,8 +92,7 @@ pub fn state(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(Args, invocation, &scratch);
+    const args = try cmd.args(Args, a, invocation);
 
     const root = trimmed(git(a, args.folder, &.{ "rev-parse", "--show-toplevel" }) catch return notRepo(output));
     const root_copy = try a.dupe(u8, root);
@@ -157,8 +156,7 @@ pub fn original(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(RootRel, invocation, &scratch);
+    const args = try cmd.args(RootRel, a, invocation);
     const spec = try std.fmt.allocPrint(a, "HEAD:{s}", .{args.rel});
     const body = text(a, args.root, &.{ "show", spec }) catch "";
     return cmd.json(output, body);
@@ -168,8 +166,7 @@ pub fn init(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(Args, invocation, &scratch);
+    const args = try cmd.args(Args, a, invocation);
     _ = git(a, args.folder, &.{"init"}) catch return cmd.fail(output, last_error);
     return cmd.json(output, null);
 }
@@ -185,8 +182,7 @@ pub fn show(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(RevRel, invocation, &scratch);
+    const args = try cmd.args(RevRel, a, invocation);
     if (!plainRev(args.rev)) return cmd.fail(output, "not a revision");
     const spec = try std.fmt.allocPrint(a, "{s}:{s}", .{ args.rev, args.rel });
     const body = text(a, args.root, &.{ "show", spec }) catch "";
@@ -211,8 +207,7 @@ pub fn snapshot(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(SnapshotArgs, invocation, &scratch);
+    const args = try cmd.args(SnapshotArgs, a, invocation);
 
     var dir_buffer: [4096]u8 = undefined;
     const base = try std.fmt.allocPrint(a, "{s}/review", .{try cmd.userData(&dir_buffer)});
@@ -252,8 +247,7 @@ pub fn log(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(RootArg, invocation, &scratch);
+    const args = try cmd.args(RootArg, a, invocation);
 
     const out = text(a, args.root, &.{ "log", "-n200", "--format=%H%x1f%h%x1f%an%x1f%at%x1f%s%x1e" }) catch
         return cmd.json(output, @as([]const Commit, &.{}));
@@ -278,8 +272,7 @@ pub fn commitFiles(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(struct { root: []const u8, hash: []const u8 }, invocation, &scratch);
+    const args = try cmd.args(struct { root: []const u8, hash: []const u8 }, a, invocation);
 
     const names = text(a, args.root, &.{ "diff-tree", "--root", "--no-commit-id", "-r", "--no-renames", "-z", "--name-status", args.hash }) catch "";
     const nums = text(a, args.root, &.{ "diff-tree", "--root", "--no-commit-id", "-r", "--no-renames", "-z", "--numstat", args.hash }) catch "";
@@ -314,8 +307,7 @@ pub fn branches(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(RootArg, invocation, &scratch);
+    const args = try cmd.args(RootArg, a, invocation);
 
     const out = git(a, args.root, &.{ "for-each-ref", "--sort=-committerdate", "--format=%(refname)%1f%(HEAD)", "refs/heads", "refs/remotes" }) catch
         return cmd.fail(output, last_error);
@@ -351,8 +343,7 @@ pub fn checkout(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
     const a = arena.allocator();
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(CheckoutArgs, invocation, &scratch);
+    const args = try cmd.args(CheckoutArgs, a, invocation);
 
     if (args.remote) {
         const local = if (std.mem.indexOfScalar(u8, args.name, '/')) |slash| args.name[slash + 1 ..] else args.name;

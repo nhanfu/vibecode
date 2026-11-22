@@ -32,10 +32,9 @@ pub fn policy(comptime names: []const []const u8) []const Policy {
     return &frozen;
 }
 
-/// Decodes the request payload into `T`. Strings point into `scratch`, so the caller keeps it alive.
-pub fn args(comptime T: type, invocation: Invocation, scratch: []u8) !T {
-    var fba = std.heap.FixedBufferAllocator.init(scratch);
-    return std.json.parseFromSliceLeaky(T, fba.allocator(), invocation.request.payload, .{
+/// Decodes the request payload into `T`, with strings allocated in `a` (the handler's arena).
+pub fn args(comptime T: type, a: std.mem.Allocator, invocation: Invocation) !T {
+    return std.json.parseFromSliceLeaky(T, a, invocation.request.payload, .{
         .ignore_unknown_fields = true,
     });
 }
@@ -82,3 +81,17 @@ pub fn lossy(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
     }
     return out.toOwnedSlice(allocator);
 }
+
+pub fn nowMs() u64 {
+    const ms = std.Io.Clock.real.now(io).toMilliseconds();
+    return if (ms < 0) 0 else @intCast(ms);
+}
+
+/// The temp folder the Tauri build used: `$TMPDIR`, else `/tmp`.
+pub fn tempDir() []const u8 {
+    if (std.c.getenv("TMPDIR")) |raw| return std.mem.span(raw);
+    return "/tmp";
+}
+
+/// Bounds a helper program (clipboard tools, a browser launcher) so a stuck one cannot freeze the UI.
+pub const helper_timeout: std.Io.Timeout = .{ .duration = .{ .raw = std.Io.Duration.fromMilliseconds(2000), .clock = .awake } };

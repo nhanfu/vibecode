@@ -27,8 +27,10 @@ const Args = struct { dir: []const u8 };
 
 /// Entries of a folder, without the hidden ones: folders first, then by name (case-insensitive).
 pub fn readDir(invocation: cmd.Invocation, output: []u8) ![]const u8 {
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(Args, invocation, &scratch);
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(Args, a, invocation);
 
     var dir = try std.Io.Dir.openDirAbsolute(cmd.io, args.dir, .{ .iterate = true });
     defer dir.close(cmd.io);
@@ -63,8 +65,10 @@ const FileContent = struct {
 
 /// A file's text. Large files and binary files (a NUL in the first 8000 bytes) come back empty, with a flag.
 pub fn readFile(invocation: cmd.Invocation, output: []u8) ![]const u8 {
-    var scratch: [8192]u8 = undefined;
-    const args = try cmd.args(struct { path: []const u8 }, invocation, &scratch);
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(struct { path: []const u8 }, a, invocation);
 
     const stat = try std.Io.Dir.cwd().statFile(cmd.io, args.path, .{});
     if (stat.size > max_text_bytes) {
