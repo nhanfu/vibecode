@@ -32,8 +32,9 @@ one command at a time; the renderer in `src/renderer` is shared with the Tauri b
 
 ## Status
 
-Ported and checked by `scripts/bridge-check.sh` (46 cases):
+Ported and checked by `scripts/bridge-check.sh` (48 cases):
 
+- sessions (list only): `sessions_list`
 - keybindings: `keybindings_path`, `keybindings_read`
 - files: `fs_read_dir`, `fs_read_file`
 - git: `git_state`, `git_original`, `git_init`, `git_show`, `git_snapshot`, `git_log`, `git_commit_files`, `git_branches`, `git_checkout`
