@@ -32,8 +32,6 @@ pub fn run() {
     core::fix_mac_path();
 
     tauri::Builder::default()
-        // one instance: launching it again toggles the running window (Guake-style)
-        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| windowing::toggle()))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
