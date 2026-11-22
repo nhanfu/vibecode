@@ -7,3 +7,16 @@ fs_read_dir	{"dir":"/home/nhanjs/projects/vibecode-zero-native/native"}	{"path":
 fs_read_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/build.zig"}	"binary":false,"tooLarge":false
 fs_read_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/assets/icon.icns"}	"binary":true
 fs_read_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/missing.txt"}	handler_failed
+git_state	{"folder":"/home/nhanjs/projects/vibecode-zero-native"}	"isRepo":true,"root":"/home/nhanjs/projects/vibecode-zero-native","branch":"spike/zero-native"
+git_state	{"folder":"/proc"}	"isRepo":false
+git_original	{"root":"/home/nhanjs/projects/vibecode-zero-native","rel":"native/README.md"}	# native/: the zero-native shell
+git_show	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"HEAD","rel":"native/README.md"}	# native/: the zero-native shell
+git_show	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"--evil","rel":"x"}	"__error":"not a revision"
+git_log	{"root":"/home/nhanjs/projects/vibecode-zero-native"}	"short":"
+git_commit_files	{"root":"/home/nhanjs/projects/vibecode-zero-native","hash":"HEAD"}	"rel":"native/
+git_branches	{"root":"/home/nhanjs/projects/vibecode-zero-native"}	"name":"spike/zero-native","current":true,"remote":false
+git_snapshot	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"HEAD","rel":"native/README.md","label":"base"}	review/base/native/README.md
+git_snapshot	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"HEAD","rel":"../x","label":"base"}	not a path inside the repository
+git_checkout	{"root":"/home/nhanjs/projects/vibecode-zero-native","name":"spike/zero-native","remote":false}	"ok":true
+git_checkout	{"root":"/home/nhanjs/projects/vibecode-zero-native","name":"no-such-branch","remote":false}	"__error"
+git_init	{"folder":"/tmp/claude-1000/-home-nhanjs-projects-vibecode/18e2cc09-af8c-4811-b010-0fbc9593850a/scratchpad/git-init-check"}	"ok":true

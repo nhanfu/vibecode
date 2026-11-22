@@ -58,3 +58,27 @@ pub fn userData(buffer: []u8) ![]const u8 {
     };
     return std.fmt.bufPrint(buffer[0 .. buffer.len / 2], "{s}/TINJS Studio", .{base});
 }
+
+/// A failure the page should show as-is (the Tauri `Err(message)`): the bridge result carries `__error`,
+/// and the renderer's invoke rejects with this message.
+pub fn fail(output: []u8, message: []const u8) ![]const u8 {
+    return json(output, .{ .__error = message });
+}
+
+/// Invalid UTF-8 bytes become U+FFFD, as String::from_utf8_lossy does on the Tauri side.
+pub fn lossy(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    var i: usize = 0;
+    while (i < bytes.len) {
+        const len = std.unicode.utf8ByteSequenceLength(bytes[i]) catch 0;
+        if (len != 0 and i + len <= bytes.len and std.unicode.utf8ValidateSlice(bytes[i .. i + len])) {
+            try out.appendSlice(allocator, bytes[i .. i + len]);
+            i += len;
+        } else {
+            try out.appendSlice(allocator, "\xef\xbf\xbd");
+            i += 1;
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}

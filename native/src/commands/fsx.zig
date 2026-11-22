@@ -75,25 +75,7 @@ pub fn readFile(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     if (std.mem.indexOfScalar(u8, bytes[0..@min(bytes.len, 8000)], 0) != null) {
         return cmd.json(output, FileContent{ .content = "", .binary = true, .tooLarge = false });
     }
-    const text = try lossyUtf8(bytes);
+    const text = try cmd.lossy(cmd.gpa, bytes);
     defer cmd.gpa.free(text);
     return cmd.json(output, FileContent{ .content = text, .binary = false, .tooLarge = false });
-}
-
-/// Invalid UTF-8 bytes become U+FFFD, as String::from_utf8_lossy does on the Tauri side.
-fn lossyUtf8(bytes: []const u8) ![]u8 {
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(cmd.gpa);
-    var i: usize = 0;
-    while (i < bytes.len) {
-        const len = std.unicode.utf8ByteSequenceLength(bytes[i]) catch 0;
-        if (len != 0 and i + len <= bytes.len and std.unicode.utf8ValidateSlice(bytes[i .. i + len])) {
-            try out.appendSlice(cmd.gpa, bytes[i .. i + len]);
-            i += len;
-        } else {
-            try out.appendSlice(cmd.gpa, "\xef\xbf\xbd");
-            i += 1;
-        }
-    }
-    return out.toOwnedSlice(cmd.gpa);
 }

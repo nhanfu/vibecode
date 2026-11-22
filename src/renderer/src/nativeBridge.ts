@@ -8,7 +8,11 @@ type ZeroBridge = { invoke(command: string, payload: unknown): Promise<unknown> 
 export function invoke<T = unknown>(command: string, payload?: Record<string, unknown> | null): Promise<T> {
   const zero = (window as unknown as { zero?: ZeroBridge }).zero
   if (!zero) return Promise.reject(new Error('native bridge is not available'))
-  return zero.invoke(command, payload ?? null) as Promise<T>
+  return zero.invoke(command, payload ?? null).then((result) => {
+    // a handler's own failure message (Tauri's Err(message)) arrives as { __error }
+    if (result && typeof result === 'object' && '__error' in result) throw new Error(String((result as { __error: unknown }).__error))
+    return result as T
+  })
 }
 
 /** Bytes as base64, for a command payload (zero-native payloads are JSON, not raw bodies). */
