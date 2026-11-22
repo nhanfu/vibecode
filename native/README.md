@@ -32,12 +32,13 @@ one command at a time; the renderer in `src/renderer` is shared with the Tauri b
 
 ## Status
 
-Ported and checked by `scripts/bridge-check.sh` (59 cases):
+Ported and checked by `scripts/bridge-check.sh` (77 cases):
 
 - sessions (list only): `sessions_list`
 - keybindings: `keybindings_path`, `keybindings_read`
 - files: `fs_read_dir`, `fs_read_file`, `fs_watch` (inotify; sends `fs:changed` and `git:changed` to the page)
 - git: `git_state`, `git_original`, `git_init`, `git_show`, `git_snapshot`, `git_log`, `git_commit_files`, `git_branches`, `git_checkout`
+- plugins (`native/src/commands/plugins.zig`): list, start/stop/restart, settings file, logs, enable and autostart, install from a folder, a .zip/.tar.gz or an https link (checked with its SHA-256), uninstall, registry and its address. Sidecars run in their own process group and die with the app. Still to do: autostart at launch, the MCP servers handed to chats, and the Tauri build's own helpers (`curl`, `unzip`, `tar` are called as programs)
 - user database (DuckDB, vendored): `userdb_snapshot`, `userdb_prefs_write`, `userdb_save`
 - app: `app_settings`, `app_set_settings`, `app_remember_folder`, `app_file_info`, `app_open_external`, `app_save_image`, `app_clipboard_files`, `app_clipboard_image`, `sys_memory`, `claude_get_project_bypass`, `claude_set_project_bypass`
 
@@ -48,5 +49,5 @@ Not ported yet (still in `src-tauri/`):
 - pickers (`app_pick_folder`, `app_pick_files`: use the built-in dialogs), `app_relaunch`, `app_clear_browser_cache`
 - terminals (in-process, forkpty, output as `pty:data` events): `pty_spawn`, `pty_write`, `pty_resize`, `pty_kill`, `pty_page_reset`, `pty_list` (empty), `pty_visible` (accepted, not throttled). Not yet: ptyd (`ptyd.rs`), so a terminal ends with the app; MCP settings for Claude Code
 - browser tabs (`browser.rs`), web data and Chrome import (`webdata.rs`), sessions (`sessions.rs`)
-- plugins (`plugins.rs`), SQL Server (`mssql.rs`), Claude usage (`claude_usage`), MCP (`mcp.rs`)
+- SQL Server (`mssql.rs`), Claude usage (`claude_usage`), MCP (`mcp.rs`)
 - global shortcut, tray, autostart (zero-native has shortcut and tray APIs, not yet wired)

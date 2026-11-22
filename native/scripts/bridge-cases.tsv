@@ -57,3 +57,21 @@ pty_resize	{"id":"check-term","cols":100,"rows":30}	null
 pty_visible	{"id":"check-term","visible":true}	null
 pty_list	null	"result":[]
 pty_kill	{"id":"check-term"}	null
+plugin_list	null	"id":"vscode"
+plugin_list	null	"id":"dbx"
+plugin_list	null	"available":true
+plugin_start	{"id":"vscode"}	"url":"http://127.0.0.1:
+plugin_logs	{"id":"vscode"}	[ready]
+plugin_list	null	"status":"running"
+plugin_stop	{"id":"vscode"}	"result":null
+plugin_start	{"id":"dbx"}	"url":"http://127.0.0.1:
+plugin_set	{"id":"dbx","enabled":false}	"result":null
+plugin_list	null	"status":"disabled"
+plugin_set	{"id":"dbx","enabled":true}	"result":null
+plugin_stop	{"id":"dbx"}	"result":null
+plugin_install	{"source":"/home/nhanjs/projects/vibecode-zero-native/plugins/vscode"}	"result":"vscode"
+plugin_uninstall	{"id":"vscode","purge":false}	"result":null
+plugin_settings_file	{"id":"vscode"}	settings.json
+plugin_registry_url	{"set":""}	raw.githubusercontent.com
+plugin_registry	null	"entries":[
+plugin_start	{"id":"no-such-plugin"}	"__error":"no plugin

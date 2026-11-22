@@ -13,6 +13,7 @@ const detect = @import("detect.zig");
 const windowing = @import("windowing.zig");
 const watch = @import("watch.zig");
 const pty = @import("pty.zig");
+const plugins = @import("plugins.zig");
 
 pub const handlers = [_]cmd.Handler{
     cmd.handler("keybindings_path", keybindings.path),
@@ -43,6 +44,17 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("pty_page_reset", pty.pageReset),
     cmd.handler("pty_list", pty.list),
     cmd.handler("pty_visible", pty.visible),
+    cmd.handler("plugin_list", plugins.list),
+    cmd.handler("plugin_start", plugins.start),
+    cmd.handler("plugin_settings_file", plugins.settingsFile),
+    cmd.handler("plugin_stop", plugins.stop),
+    cmd.handler("plugin_restart", plugins.restart),
+    cmd.handler("plugin_set", plugins.set),
+    cmd.handler("plugin_logs", plugins.logsFor),
+    cmd.handler("plugin_install", plugins.install),
+    cmd.handler("plugin_uninstall", plugins.uninstall),
+    cmd.handler("plugin_registry", plugins.registry),
+    cmd.handler("plugin_registry_url", plugins.registryUrlCommand),
     cmd.handler("claude_get_project_bypass", appcmds.getProjectBypass),
     cmd.handler("claude_set_project_bypass", appcmds.setProjectBypass),
     cmd.handler("sys_memory", appcmds.sysMemory),
@@ -85,6 +97,17 @@ pub const names = [_][]const u8{
     "pty_page_reset",
     "pty_list",
     "pty_visible",
+    "plugin_list",
+    "plugin_start",
+    "plugin_settings_file",
+    "plugin_stop",
+    "plugin_restart",
+    "plugin_set",
+    "plugin_logs",
+    "plugin_install",
+    "plugin_uninstall",
+    "plugin_registry",
+    "plugin_registry_url",
     "claude_get_project_bypass",
     "claude_set_project_bypass",
     "sys_memory",

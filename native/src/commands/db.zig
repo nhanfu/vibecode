@@ -40,6 +40,10 @@ pub fn open(path: [:0]const u8) Error!void {
         remember("could not connect to the database");
         return Error.DbOpenFailed;
     }
+    // DuckDB would load extensions from ~/.duckdb/extensions (for example json), built for another
+    // DuckDB build; this build has none of them, and loading one crashes the process.
+    try exec("SET autoload_known_extensions = false");
+    try exec("SET autoinstall_known_extensions = false");
 }
 
 /// Runs one or more statements with no parameters, and discards any rows.

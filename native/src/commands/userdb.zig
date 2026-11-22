@@ -10,7 +10,7 @@ const db = @import("db.zig");
 const migrations = [_][:0]const u8{
     \\CREATE TABLE settings (
     \\    key     VARCHAR PRIMARY KEY,
-    \\    value   JSON NOT NULL,
+    \\    value   VARCHAR NOT NULL,
     \\    updated TIMESTAMP NOT NULL DEFAULT now()
     \\);
     \\CREATE TABLE ui_prefs (

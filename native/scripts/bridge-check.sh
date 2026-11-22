@@ -34,7 +34,7 @@ while IFS=$'\t' read -r command payload expect; do
   n=$((n + 1)); id="case$n"
   response=""
   # the page also talks over the bridge while this runs, and its responses can overwrite ours: retry the case
-  for _attempt in 1 2 3 4 5 6; do
+  for _attempt in $(seq 1 10); do
     printf 'bridge {"id":"%s","command":"%s","payload":%s}\n' "$id" "$command" "$payload" > "$DIR/command.txt"
     for _ in $(seq 1 60); do
       response=$(cat "$DIR/bridge-response.txt" 2>/dev/null)
