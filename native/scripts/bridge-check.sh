@@ -12,6 +12,13 @@ LOG=.zig-cache/bridge-check.log
 
 pkill -x zn-probe 2>/dev/null; sleep 1
 rm -rf "$DIR"; mkdir -p .zig-cache
+
+# an isolated user-data folder: the user database is a copy of the real one (if any), so checks never write to it
+DATA="$PWD/.zig-cache/test-userdata"
+rm -rf "$DATA"; mkdir -p "$DATA"
+REAL="$HOME/.config/TINJS Studio"
+[ -f "$REAL/vibecode.duckdb" ] && cp "$REAL/vibecode.duckdb" "$DATA/" && [ -f "$REAL/vibecode.duckdb.wal" ] && cp "$REAL/vibecode.duckdb.wal" "$DATA/"
+export STUDIO_USER_DATA="$DATA" VIBECODE_DB="$DATA/vibecode.duckdb"
 "$BIN" >"$LOG" 2>&1 &
 APP=$!
 trap 'kill $APP 2>/dev/null' EXIT

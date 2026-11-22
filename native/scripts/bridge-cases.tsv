@@ -20,3 +20,12 @@ git_snapshot	{"root":"/home/nhanjs/projects/vibecode-zero-native","rev":"HEAD","
 git_checkout	{"root":"/home/nhanjs/projects/vibecode-zero-native","name":"spike/zero-native","remote":false}	"ok":true
 git_checkout	{"root":"/home/nhanjs/projects/vibecode-zero-native","name":"no-such-branch","remote":false}	"__error"
 git_init	{"folder":"/tmp/claude-1000/-home-nhanjs-projects-vibecode/18e2cc09-af8c-4811-b010-0fbc9593850a/scratchpad/git-init-check"}	"ok":true
+userdb_snapshot	null	"plans":"[
+userdb_prefs_write	{"entries":{"check.key":"v1"}}	"result":null
+userdb_snapshot	null	check.key
+userdb_save	{"table":"plans","json":"[{\"id\":\"p1\",\"kind\":\"plan\",\"title\":\"Check plan\",\"description\":\"\"}]"}	"result":null
+userdb_snapshot	null	Check plan
+userdb_save	{"table":"chats","json":"[{\"cwd\":\"/check/chat\",\"title\":\"c\"}]"}	"result":null
+userdb_snapshot	null	\"cwd\":\"/check/chat\"
+userdb_save	{"table":"pages","json":"[{\"id\":\"w1\",\"url\":\"https://example.com\"}]"}	"result":null
+userdb_save	{"table":"nope","json":"[]"}	"__error":"unknown table"

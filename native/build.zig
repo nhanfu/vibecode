@@ -88,6 +88,9 @@ pub fn build(b: *std.Build) void {
     const app_mod = localModule(b, target, optimize, "src/main.zig");
     app_mod.addImport("zero-native", zero_native_mod);
     app_mod.addImport("runner", runner_mod);
+    const duck = duckdbLibrary(b, target, optimize);
+    app_mod.addImport("duckdb_c", duck.header);
+    app_mod.linkLibrary(duck.lib);
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,
@@ -443,4 +446,56 @@ fn boolField(source: []const u8, field: []const u8) ?bool {
     if (std.mem.startsWith(u8, source[index..], "true")) return true;
     if (std.mem.startsWith(u8, source[index..], "false")) return false;
     return null;
+}
+
+const duckdb_sources = @embedFile("vendor/duckdb/sources.txt");
+const duckdb_archive = "vendor/duckdb/duckdb-1.10506.1.tar.gz";
+const duckdb_root = ".zig-cache/duckdb";
+
+const DuckDb = struct {
+    lib: *std.Build.Step.Compile,
+    header: *std.Build.Module,
+};
+
+/// DuckDB built from the archive the Tauri build used (same version, same database format), with
+/// the defines libduckdb-sys sets for its bundled build.
+fn duckdbLibrary(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) DuckDb {
+    const extract = b.addSystemCommand(&.{ "sh", "-c", b.fmt("rm -rf {s} && mkdir -p {s} && tar -xzf {s} -C {s}", .{ duckdb_root, duckdb_root, duckdb_archive, duckdb_root }) });
+
+    const mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true, .link_libcpp = true });
+    var files: std.ArrayList([]const u8) = .empty;
+    var lines = std.mem.tokenizeScalar(u8, duckdb_sources, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "F ")) {
+            files.append(b.allocator, b.dupe(line[2..])) catch @panic("out of memory");
+        } else if (std.mem.startsWith(u8, line, "I ")) {
+            mod.addIncludePath(.{ .cwd_relative = b.fmt("{s}/duckdb/{s}", .{ duckdb_root, line[2..] }) });
+        }
+    }
+    mod.addIncludePath(.{ .cwd_relative = b.fmt("{s}/duckdb", .{duckdb_root}) });
+    mod.addCSourceFiles(.{
+        .root = .{ .cwd_relative = duckdb_root },
+        .files = files.items,
+        .flags = &.{
+            "-std=c++11",
+            "-w",
+            "-DNDEBUG",
+            "-DDUCKDB_EXTENSION_CORE_FUNCTIONS_LINKED=1",
+            "-DDUCKDB_EXTENSION_AUTOINSTALL_DEFAULT=1",
+            "-DDUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1",
+        },
+        .language = .cpp,
+    });
+
+    const lib = b.addLibrary(.{ .name = "duckdb", .linkage = .static, .root_module = mod });
+    lib.step.dependOn(&extract.step);
+
+    const header = b.addTranslateC(.{
+        .root_source_file = .{ .cwd_relative = b.fmt("{s}/duckdb/src/include/duckdb.h", .{duckdb_root}) },
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    header.step.dependOn(&extract.step);
+    return .{ .lib = lib, .header = header.createModule() };
 }

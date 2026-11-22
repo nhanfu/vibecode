@@ -5,6 +5,7 @@ const cmd = @import("root.zig");
 const keybindings = @import("keybindings.zig");
 const fsx = @import("fsx.zig");
 const git = @import("git.zig");
+const userdb = @import("userdb.zig");
 
 pub const handlers = [_]cmd.Handler{
     cmd.handler("keybindings_path", keybindings.path),
@@ -20,6 +21,9 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("git_commit_files", git.commitFiles),
     cmd.handler("git_branches", git.branches),
     cmd.handler("git_checkout", git.checkout),
+    cmd.handler("userdb_snapshot", userdb.snapshot),
+    cmd.handler("userdb_prefs_write", userdb.prefsWrite),
+    cmd.handler("userdb_save", userdb.save),
 };
 
 pub const names = [_][]const u8{
@@ -36,6 +40,9 @@ pub const names = [_][]const u8{
     "git_commit_files",
     "git_branches",
     "git_checkout",
+    "userdb_snapshot",
+    "userdb_prefs_write",
+    "userdb_save",
 };
 
 pub const policy = cmd.policy(&names);
