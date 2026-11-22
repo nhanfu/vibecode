@@ -32,6 +32,11 @@ const App = struct {
     }
 };
 
+/// The built-in open dialog is the only desktop API the page may call (the folder and file pickers).
+const builtin_commands = [_]zero_native.BridgeCommandPolicy{
+    .{ .name = "zero-native.dialog.openFile", .origins = &commands.origins },
+};
+
 pub fn main(init: std.process.Init) !void {
     commands.io = init.io;
     commands.gpa = init.gpa;
@@ -44,6 +49,7 @@ pub fn main(init: std.process.Init) !void {
         .security = .{
             .navigation = .{ .allowed_origins = &commands.origins },
         },
+        .builtin_bridge = .{ .enabled = true, .commands = &builtin_commands },
         .bridge = .{
             .policy = .{ .enabled = true, .commands = registry.policy },
             .registry = .{ .handlers = &registry.handlers },
