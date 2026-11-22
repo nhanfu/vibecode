@@ -7,6 +7,7 @@ const fsx = @import("fsx.zig");
 const git = @import("git.zig");
 const userdb = @import("userdb.zig");
 const appcmds = @import("appcmds.zig");
+const sessions = @import("sessions.zig");
 
 pub const handlers = [_]cmd.Handler{
     cmd.handler("keybindings_path", keybindings.path),
@@ -25,6 +26,7 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("userdb_snapshot", userdb.snapshot),
     cmd.handler("userdb_prefs_write", userdb.prefsWrite),
     cmd.handler("userdb_save", userdb.save),
+    cmd.handler("sessions_list", sessions.list),
     cmd.handler("claude_get_project_bypass", appcmds.getProjectBypass),
     cmd.handler("claude_set_project_bypass", appcmds.setProjectBypass),
     cmd.handler("sys_memory", appcmds.sysMemory),
@@ -55,6 +57,7 @@ pub const names = [_][]const u8{
     "userdb_snapshot",
     "userdb_prefs_write",
     "userdb_save",
+    "sessions_list",
     "claude_get_project_bypass",
     "claude_set_project_bypass",
     "sys_memory",

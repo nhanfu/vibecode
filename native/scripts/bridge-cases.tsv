@@ -44,3 +44,5 @@ app_save_image	{"ext":"png","data":"aGk="}	tinjs-paste/image-
 app_clipboard_files	null	"result":[]
 app_clipboard_image	null	"ok":true
 app_open_external	{"url":"ftp://example.com"}	"result":null
+sessions_list	null	"sessions":[{"id":"
+sessions_list	null	"cwdExists":true
