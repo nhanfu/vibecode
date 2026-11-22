@@ -25,17 +25,22 @@ trap 'kill $APP 2>/dev/null' EXIT
 
 for _ in $(seq 1 60); do grep -q "ready=true" "$DIR/snapshot.txt" 2>/dev/null && break; sleep 0.5; done
 grep -q "ready=true" "$DIR/snapshot.txt" 2>/dev/null || { echo "FAIL app did not become ready (see $LOG)"; exit 1; }
+# the page makes its own bridge calls at startup; their responses share the response file, so wait for them to finish
+sleep 6
 
 pass=0; fail=0; n=0
 while IFS=$'\t' read -r command payload expect; do
   [ -z "$command" ] && continue
   n=$((n + 1)); id="case$n"
-  printf 'bridge {"id":"%s","command":"%s","payload":%s}\n' "$id" "$command" "$payload" > "$DIR/command.txt"
   response=""
-  for _ in $(seq 1 40); do
-    response=$(cat "$DIR/bridge-response.txt" 2>/dev/null)
-    case "$response" in *"\"id\":\"$id\""*) break ;; esac
-    sleep 0.25
+  # the page also talks over the bridge while this runs, and its responses can overwrite ours: retry the case
+  for _attempt in 1 2 3; do
+    printf 'bridge {"id":"%s","command":"%s","payload":%s}\n' "$id" "$command" "$payload" > "$DIR/command.txt"
+    for _ in $(seq 1 40); do
+      response=$(cat "$DIR/bridge-response.txt" 2>/dev/null)
+      case "$response" in *"\"id\":\"$id\""*) break 2 ;; esac
+      sleep 0.25
+    done
   done
   if [[ "$response" == *"\"id\":\"$id\""* && "$response" == *"$expect"* ]]; then
     pass=$((pass + 1)); echo "ok   $command"

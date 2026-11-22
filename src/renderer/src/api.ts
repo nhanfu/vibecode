@@ -5,9 +5,7 @@
  * event whose payload is the argument list. Terminal output is the hot path, so it streams
  * through one `Channel` per terminal instead of the global event bus.
  */
-import { Channel } from '@tauri-apps/api/core'
-import { invoke, listen, bytesToBase64 } from './nativeBridge'
-import { getCurrentWebview } from '@tauri-apps/api/webview'
+import { Channel, invoke, listen, bytesToBase64 } from './nativeBridge'
 import type {
   AgentInfo,
   AppSettings,
@@ -247,22 +245,8 @@ export const api = {
      * from Explorer arrive here with their paths and the drop point, instead of as DOM drop events.
      */
     onFileDrop: (cb: (e: DropEvent) => void): Off => {
-      let off: Off | null = null
-      let dead = false
-      let last: string[] = []
-      void getCurrentWebview()
-        .onDragDropEvent(({ payload: p }) => {
-          const ratio = window.devicePixelRatio || 1
-          const pos = 'position' in p ? { x: p.position.x / ratio, y: p.position.y / ratio } : { x: -1, y: -1 }
-          if (p.type === 'enter') last = p.paths
-          const paths = p.type === 'drop' ? p.paths : last
-          cb({ kind: p.type, paths, ...pos })
-        })
-        .then((u) => (dead ? u() : (off = u)))
-      return () => {
-        dead = true
-        off?.()
-      }
+      // file drops on the window arrive with the native drop events (native/PLAN.md, step 2)
+      return () => {}
     }
   }
 }

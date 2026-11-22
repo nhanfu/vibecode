@@ -20,7 +20,9 @@ export function listen<T extends unknown[]>(name: string, cb: (...args: T) => vo
 }
 
 export function invoke<T = unknown>(command: string, payload?: Record<string, unknown> | null): Promise<T> {
-  return bridge().invoke(command, payload ?? null).then((result) => {
+  return bridge().invoke(command, payload ?? null).catch((error: unknown) => {
+    throw new Error(`${command}: ${error instanceof Error ? error.message : String(error)}`)
+  }).then((result) => {
     // a handler's own failure message (Tauri's Err(message)) arrives as { __error }
     if (result && typeof result === 'object' && '__error' in result) throw new Error(String((result as { __error: unknown }).__error))
     return result as T
@@ -32,4 +34,12 @@ export function bytesToBase64(bytes: Uint8Array): string {
   let text = ''
   for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
   return btoa(text)
+}
+
+/**
+ * Stream of messages from one backend call (terminal output). Until the terminal port lands, the
+ * backend cannot send to it; the class only keeps the page's type and call shape.
+ */
+export class Channel<T> {
+  onmessage: (message: T) => void = () => {}
 }

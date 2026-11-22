@@ -46,3 +46,6 @@ app_clipboard_image	null	"ok":true
 app_open_external	{"url":"ftp://example.com"}	"result":null
 sessions_list	null	"sessions":[{"id":"
 sessions_list	null	"cwdExists":true
+claude_detect	null	"shell":"
+win_state	null	"hotkeyOk":false
+client_log	{"message":"check message"}	"result":null

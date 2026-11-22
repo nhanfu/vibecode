@@ -1,3 +1,4 @@
+import './errors'
 import './api'
 import { hydrateUserStore } from './localPref'
 
