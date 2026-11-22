@@ -49,3 +49,5 @@ sessions_list	null	"cwdExists":true
 claude_detect	null	"shell":"
 win_state	null	"hotkeyOk":false
 client_log	{"message":"check message"}	"result":null
+fs_watch	{"root":"/home/nhanjs/projects/vibecode-zero-native/native/.zig-cache/watch-check"}	"result":null
+fs_watch	{"root":null}	"result":null

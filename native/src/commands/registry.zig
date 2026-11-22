@@ -11,6 +11,7 @@ const sessions = @import("sessions.zig");
 const client_log = @import("client_log.zig");
 const detect = @import("detect.zig");
 const windowing = @import("windowing.zig");
+const watch = @import("watch.zig");
 
 pub const handlers = [_]cmd.Handler{
     cmd.handler("keybindings_path", keybindings.path),
@@ -33,6 +34,7 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("client_log", client_log.log),
     cmd.handler("claude_detect", detect.claudeDetect),
     cmd.handler("win_state", windowing.winState),
+    cmd.handler("fs_watch", watch.fsWatch),
     cmd.handler("claude_get_project_bypass", appcmds.getProjectBypass),
     cmd.handler("claude_set_project_bypass", appcmds.setProjectBypass),
     cmd.handler("sys_memory", appcmds.sysMemory),
@@ -67,6 +69,7 @@ pub const names = [_][]const u8{
     "client_log",
     "claude_detect",
     "win_state",
+    "fs_watch",
     "claude_get_project_bypass",
     "claude_set_project_bypass",
     "sys_memory",

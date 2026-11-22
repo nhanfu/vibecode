@@ -32,18 +32,18 @@ one command at a time; the renderer in `src/renderer` is shared with the Tauri b
 
 ## Status
 
-Ported and checked by `scripts/bridge-check.sh` (48 cases):
+Ported and checked by `scripts/bridge-check.sh` (53 cases):
 
 - sessions (list only): `sessions_list`
 - keybindings: `keybindings_path`, `keybindings_read`
-- files: `fs_read_dir`, `fs_read_file`
+- files: `fs_read_dir`, `fs_read_file`, `fs_watch` (inotify; sends `fs:changed` and `git:changed` to the page)
 - git: `git_state`, `git_original`, `git_init`, `git_show`, `git_snapshot`, `git_log`, `git_commit_files`, `git_branches`, `git_checkout`
 - user database (DuckDB, vendored): `userdb_snapshot`, `userdb_prefs_write`, `userdb_save`
 - app: `app_settings`, `app_set_settings`, `app_remember_folder`, `app_file_info`, `app_open_external`, `app_save_image`, `app_clipboard_files`, `app_clipboard_image`, `sys_memory`, `claude_get_project_bypass`, `claude_set_project_bypass`
 
 Not ported yet (still in `src-tauri/`):
 
-- events to the page (`emit` / `listen`), and the streaming channel used for terminal output
+- `keybindings:changed` and `sessions:changed` events; the streaming channel used for terminal output
 - windowing: minimise, maximise, hide, drop-down mode, badge (needs window control that zero-native does not expose yet)
 - pickers (`app_pick_folder`, `app_pick_files`: use the built-in dialogs), `app_relaunch`, `app_clear_browser_cache`
 - terminals and the ptyd daemon (`pty.rs`, `ptyd.rs`)
