@@ -7,3 +7,5 @@ plugins/*/bin
 plugins/*/dist
 plugins/*/source
 plugins/*/server
+native/.zig-cache
+native/zig-out
