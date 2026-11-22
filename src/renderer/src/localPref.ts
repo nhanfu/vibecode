@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from './nativeBridge'
 
 /**
  * The user's preferences and saved UI state (plans, open chats, panel sizes…). They live in the

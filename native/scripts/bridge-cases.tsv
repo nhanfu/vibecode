@@ -1,0 +1,4 @@
+keybindings_path	null	"ok":true
+keybindings_path	null	keybindings.json
+keybindings_read	null	"ok":true
+not_a_command	null	permission_denied

@@ -5,7 +5,8 @@
  * event whose payload is the argument list. Terminal output is the hot path, so it streams
  * through one `Channel` per terminal instead of the global event bus.
  */
-import { Channel, invoke } from '@tauri-apps/api/core'
+import { Channel } from '@tauri-apps/api/core'
+import { invoke, bytesToBase64 } from './nativeBridge'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import type {
@@ -242,7 +243,7 @@ export const api = {
     fileInfo: (paths: string[]): Promise<{ path: string; size: number; dir: boolean; preview?: string }[]> => invoke('app_file_info', { paths }),
     openExternal: (url: string): Promise<void> => invoke('app_open_external', { url }),
     relaunch: (): Promise<boolean> => invoke('app_relaunch'),
-    saveImage: (data: Uint8Array, ext: string): Promise<string> => invoke('app_save_image', data, { headers: { 'x-ext': ext } }),
+    saveImage: (data: Uint8Array, ext: string): Promise<string> => invoke('app_save_image', { ext, data: bytesToBase64(data) }),
     /** paths of files copied in Explorer (Ctrl+C on a file), [] when the clipboard holds none */
     clipboardFiles: (): Promise<string[]> => invoke('app_clipboard_files'),
     /** a picture on the clipboard, saved to a temp PNG (Linux), or null */
