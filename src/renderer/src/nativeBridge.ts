@@ -6,6 +6,20 @@
 type ZeroBridge = {
   invoke(command: string, payload: unknown): Promise<unknown>
   on(name: string, callback: (detail: unknown) => void): () => void
+  dialogs: { openFile(options: OpenFileOptions): Promise<unknown> }
+}
+
+export interface OpenFileOptions {
+  title?: string
+  defaultPath?: string
+  allowDirectories?: boolean
+  allowMultiple?: boolean
+}
+
+/** The desktop's open dialog (zero-native built-in). Resolves to the chosen paths, or null when cancelled. */
+export async function openFileDialog(options: OpenFileOptions): Promise<string[] | null> {
+  const result = await bridge().dialogs.openFile(options)
+  return Array.isArray(result) ? (result as string[]) : null
 }
 
 function bridge(): ZeroBridge {

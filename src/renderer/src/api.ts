@@ -5,7 +5,7 @@
  * event whose payload is the argument list. Terminal output is the hot path, so it streams
  * through one `Channel` per terminal instead of the global event bus.
  */
-import { invoke, listen, bytesToBase64 } from './nativeBridge'
+import { invoke, listen, openFileDialog, bytesToBase64 } from './nativeBridge'
 import type {
   AgentInfo,
   AppSettings,
@@ -228,8 +228,12 @@ export const api = {
     settings: (): Promise<AppSettings> => invoke('app_settings'),
     rememberFolder: (folder: string): Promise<AppSettings> => invoke('app_remember_folder', { folder }),
     setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => invoke('app_set_settings', { patch }),
-    pickFolder: (): Promise<string | null> => invoke('app_pick_folder'),
-    pickFiles: (defaultPath?: string): Promise<string[]> => invoke('app_pick_files', { defaultPath }),
+    pickFolder: async (): Promise<string | null> => {
+      const picked = await openFileDialog({ title: 'Open folder', allowDirectories: true })
+      return picked?.[0] ?? null
+    },
+    pickFiles: async (defaultPath?: string): Promise<string[]> =>
+      (await openFileDialog({ title: 'Attach files to the chat', allowMultiple: true, defaultPath: defaultPath ?? '' })) ?? [],
     fileInfo: (paths: string[]): Promise<{ path: string; size: number; dir: boolean; preview?: string }[]> => invoke('app_file_info', { paths }),
     openExternal: (url: string): Promise<void> => invoke('app_open_external', { url }),
     relaunch: (): Promise<boolean> => invoke('app_relaunch'),
