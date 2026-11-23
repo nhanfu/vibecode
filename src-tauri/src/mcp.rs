@@ -2,7 +2,6 @@
 //!
 //! Every `claude` chat is launched with `--mcp-config <file>` naming two servers:
 //!   vibe-browser  http://127.0.0.1:<port>/mcp/<chatId>   — that chat's own Web tab
-//!   vibe-mssql    http://127.0.0.1:<port>/db/<chatId>    — SQL Server connections
 //! Streamable HTTP transport with plain JSON replies (no SSE), guarded by a per-launch token.
 //!
 //! The same server takes the chat's Claude Code hooks (`--settings <file>`, see settings_for):
@@ -13,7 +12,6 @@
 //! restart resumes the right one.
 
 use std::{
-    future::Future,
     sync::{
         OnceLock,
         atomic::{AtomicU16, Ordering},
@@ -39,7 +37,6 @@ use crate::{
 };
 
 const BROWSER: &str = "vibe-browser";
-const DB: &str = "vibe-mssql";
 
 static PORT: AtomicU16 = AtomicU16::new(0);
 
@@ -97,7 +94,7 @@ pub fn config_for(chat: &str) -> Option<String> {
     let chat_enc = urlencode(chat);
     let server = |port: u16, kind: &str| json!({ "type": "http", "url": format!("http://127.0.0.1:{port}/{kind}/{chat_enc}"), "headers": { "Authorization": format!("Bearer {}", token()) } });
     write_for(chat, "json", |port| {
-        let mut servers = json!({ BROWSER: server(port, "mcp"), DB: server(port, "db") });
+        let mut servers = json!({ BROWSER: server(port, "mcp") });
         // what plugins bring (see plugins.rs): their sidecars' MCP endpoints, when they are up
         for (name, cfg) in crate::plugins::mcp_servers() {
             servers[name] = cfg;
@@ -147,7 +144,7 @@ async fn not_post() -> Response {
 }
 
 async fn on_post(Path((kind, chat)): Path<(String, String)>, headers: HeaderMap, body: Bytes) -> Response {
-    if !matches!(kind.as_str(), "mcp" | "db" | "hook") {
+    if !matches!(kind.as_str(), "mcp" | "hook") {
         return StatusCode::NOT_FOUND.into_response();
     }
     let auth = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
@@ -166,7 +163,7 @@ async fn on_post(Path((kind, chat)): Path<(String, String)>, headers: HeaderMap,
     };
     let method = msg["method"].as_str().unwrap_or_default();
     let params = msg.get("params").cloned().unwrap_or(Value::Null);
-    let reply = match handle(&kind, &chat, method, &params).await {
+    let reply = match handle(&chat, method, &params).await {
         Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
         Err((code, message)) => json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }),
     };
@@ -189,11 +186,8 @@ fn json_reply(v: Value) -> Response {
     ([(header::CONTENT_TYPE, "application/json")], v.to_string()).into_response()
 }
 
-async fn handle(kind: &str, chat: &str, method: &str, params: &Value) -> Result<Value, (i32, String)> {
-    let (name, instructions, tools) = match kind {
-        "db" => (DB, crate::mssql::INSTRUCTIONS, crate::mssql::tools()),
-        _ => (BROWSER, BROWSER_INSTRUCTIONS, browser_tools()),
-    };
+async fn handle(chat: &str, method: &str, params: &Value) -> Result<Value, (i32, String)> {
+    let (name, instructions, tools) = (BROWSER, BROWSER_INSTRUCTIONS, browser_tools());
     match method {
         "initialize" => Ok(json!({
             "protocolVersion": params["protocolVersion"].as_str().unwrap_or("2025-06-18"),
@@ -206,10 +200,7 @@ async fn handle(kind: &str, chat: &str, method: &str, params: &Value) -> Result<
         "tools/call" => {
             let tool = params["name"].as_str().unwrap_or_default().to_owned();
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            let result = match kind {
-                "db" => text_result(crate::mssql::call_tool(&tool, args)).await,
-                _ => call_browser(chat, &tool, &args).await,
-            };
+            let result = call_browser(chat, &tool, &args).await;
             Ok(match result {
                 Ok(content) => json!({ "content": content }),
                 Err(e) => json!({ "content": [{ "type": "text", "text": format!("{e:#}") }], "isError": true }),
@@ -217,10 +208,6 @@ async fn handle(kind: &str, chat: &str, method: &str, params: &Value) -> Result<
         }
         _ => Err((-32601, format!("Method not found: {method}"))),
     }
-}
-
-async fn text_result(f: impl Future<Output = anyhow::Result<String>>) -> anyhow::Result<Value> {
-    Ok(json!([{ "type": "text", "text": f.await? }]))
 }
 
 /* ---------------- browser tools ---------------- */

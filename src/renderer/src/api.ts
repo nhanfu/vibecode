@@ -13,12 +13,6 @@ import type {
   SubAgent,
   SessionFile,
   ClaudeInfo,
-  DbColumn,
-  DbConnection,
-  DbConnectionInput,
-  DbFound,
-  DbObject,
-  DbQueryResult,
   DirEntry,
   GitCommit,
   GitBranch,
@@ -173,24 +167,6 @@ export const api = {
     onChanged: (cb: (ids: string[]) => void): Off => on('sessions:changed', cb),
     /** a chat's Claude Code reported the session it writes to (on each prompt: it changes on /clear, forks…) */
     onChatSession: (cb: (chatId: string, sessionId: string) => void): Off => on('chat:session', cb)
-  },
-  db: {
-    list: (): Promise<DbConnection[]> => invoke('db_list'),
-    get: (id: string): Promise<(DbConnection & { conn: string }) | null> => invoke('db_get', { id }),
-    save: (c: DbConnectionInput): Promise<DbConnection[]> => invoke('db_save', { c }),
-    saveMany: (list: DbConnectionInput[]): Promise<DbConnection[]> => invoke('db_save_many', { list }),
-    remove: (id: string): Promise<DbConnection[]> => invoke('db_remove', { id }),
-    test: (conn: string): Promise<{ ok: boolean; error?: string; version?: string }> => invoke('db_test', { conn }),
-    buildConn: (f: { server: string; database?: string; windowsAuth: boolean; user?: string; password?: string; trustCert?: boolean; encrypt?: boolean }): Promise<string> =>
-      invoke('db_build_conn', { f }),
-    parseConn: (conn: string): Promise<Record<string, string>> => invoke('db_parse_conn', { conn }),
-    query: (id: string, sql: string, database?: string, maxRows?: number): Promise<DbQueryResult> => invoke('db_query', { id, sql, database, maxRows }),
-    cancel: (): void => void invoke('db_cancel'),
-    databases: (id: string): Promise<string[]> => invoke('db_databases', { id }),
-    objects: (id: string, database: string): Promise<DbObject[]> => invoke('db_objects', { id, database }),
-    columns: (id: string, database: string, schema: string, table: string): Promise<DbColumn[]> => invoke('db_columns', { id, database, schema, table }),
-    scanProject: (folder: string): Promise<DbFound[]> => invoke('db_scan_project', { folder }),
-    scanSsms: (): Promise<DbFound[]> => invoke('db_scan_ssms')
   },
   win: {
     state: (): Promise<WindowState> => invoke('win_state'),

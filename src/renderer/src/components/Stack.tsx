@@ -25,7 +25,7 @@ import { SiteIcon } from './SiteIcon'
 import { Adopt, TabHosts } from './webHosts'
 import { COMMANDS } from '../shortcuts'
 import { Sidebar } from './Sidebar'
-import { DbPanel, WebPanel } from './Editor'
+import { WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
 import { PluginManager } from './PluginManager'
@@ -59,7 +59,6 @@ interface FloatSize {
 const PANELS: Record<StaticPanelId, PanelMeta> = {
   project: { label: 'Project', icon: FolderOpen, command: 'sidebar', size: { key: 'vibe.sidebarWidth', initial: () => 300, min: 220 } },
   web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
-  db: { label: 'Database', icon: Database, command: 'viewDb', size: { key: 'vibe.dbWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 360 } },
   plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
   agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
 }
@@ -579,8 +578,6 @@ function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.
       return <Sidebar />
     case 'web':
       return <WebPanel />
-    case 'db':
-      return <DbPanel />
     case 'plugins':
       return <PluginManager />
   }

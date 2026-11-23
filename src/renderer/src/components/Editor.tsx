@@ -1,78 +1,18 @@
 import { createPortal } from 'react-dom'
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SiteIcon } from './SiteIcon'
-import { Database, X, Globe, Plus, VolumeX } from 'lucide-react'
+import { X, Globe, Plus, VolumeX } from 'lucide-react'
 import { panelShown, useStore, type WebTab } from '../store'
 import { HOME_URL, browserKey, closeBrowserTab, closeBrowserTabsToRight, closeOtherBrowserTabs, detachBrowserTab, ensureBrowser, moveBrowserTab, newBrowserTab, openBrowser, openTabToRight, reloadBrowserTab, selectBrowserTab, setBrowserTabMuted, toggleBrowserTabPin } from '../actions'
 import { Adopt } from './webHosts'
 import { SlidePill } from './motion'
-// heavy parts load on first use
-const PluginPane = lazy(() => import('./PluginPane').then((m) => ({ default: m.PluginPane })))
-const DatabasePane = lazy(() => import('./Database').then((m) => ({ default: m.DatabasePane })))
 import { revealIn } from '../scroll'
-import { userStore } from '../localPref'
 
 /*
- * Web and Database: two of the title-bar drop-downs (Stack.tsx), each floating over
- * the chat or pinned beside it. A drop-down that isn't on screen stays mounted and laid out, only
- * hidden: display:none would drop scroll positions, make Monaco re-measure on return and replay
- * every animation inside.
+ * Web: one of the title-bar drop-downs (Stack.tsx), floating over the chat or pinned beside it. A
+ * drop-down that isn't on screen stays mounted and laid out, only hidden: display:none would drop
+ * scroll positions, make Monaco re-measure on return and replay every animation inside.
  */
-
-/** Database: mounts the first time it is shown, then stays (keeps its SQL, results and open tree). */
-export function DbPanel(): React.JSX.Element {
-  const shown = useStore((s) => panelShown(s, 'db'))
-  const [seen, setSeen] = useState(shown)
-  useEffect(() => {
-    if (shown) setSeen(true)
-  }, [shown])
-  // a plugin can take the Database panel over (DBX); the built-in SQL Server panel stays one click away
-  const plugin = useStore((s) => s.plugins.find((p) => p.available && p.enabled && p.panel?.replaces === 'db'))
-  const [pick, setPick] = useState<'plugin' | 'builtin' | null>(() => {
-    try {
-      const v = userStore.getItem('vibe.db.engine')
-      return v === 'plugin' || v === 'builtin' ? v : null
-    } catch {
-      return null
-    }
-  })
-  const engine = plugin && pick !== 'builtin' ? 'plugin' : 'builtin'
-  const choose = (e: 'plugin' | 'builtin'): void => {
-    setPick(e)
-    try {
-      userStore.setItem('vibe.db.engine', e)
-    } catch {
-      /* private mode */
-    }
-  }
-  return (
-    <div className="center-area">
-      {seen && (
-        <div className="center-pane db-host on db-engine-host">
-          {plugin && (
-            <div className="db-engine-bar">
-              <button className={engine === 'plugin' ? 'on' : ''} onClick={() => choose('plugin')}>
-                {plugin.name}
-              </button>
-              <button className={engine === 'builtin' ? 'on' : ''} onClick={() => choose('builtin')}>
-                Classic SQL Server
-              </button>
-            </div>
-          )}
-          <div className="db-engine-body">
-            <Suspense fallback={null}>
-              {engine === 'plugin' && plugin ? (
-                <PluginPane id={plugin.id} name={plugin.name} onFallback={() => choose('builtin')} fallbackLabel="Use the classic SQL Server panel" />
-              ) : (
-                <DatabasePane />
-              )}
-            </Suspense>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 /** Web: one browser per chat, every tab kept alive so pages survive switching chats. */
 export function WebPanel(): React.JSX.Element {

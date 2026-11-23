@@ -1,8 +1,7 @@
-//! VIBE CODE — the native side: terminals, files, git, Claude's session store, SQL Server,
+//! VIBE CODE — the native side: terminals, files, git, Claude's session store,
 //! the built-in browser and the MCP server that lets each chat's Claude drive them.
 
 pub mod core;
-pub mod secure;
 
 mod appcmds;
 mod browser;
@@ -11,7 +10,6 @@ mod git;
 mod keybindings;
 mod plugins;
 mod mcp;
-mod mssql;
 mod pty;
 mod ptyd;
 mod sessions;
@@ -89,22 +87,6 @@ pub fn run() {
             plugins::plugin_uninstall,
             plugins::plugin_registry,
             plugins::plugin_registry_url,
-            // SQL Server
-            mssql::db_list,
-            mssql::db_get,
-            mssql::db_save,
-            mssql::db_save_many,
-            mssql::db_remove,
-            mssql::db_test,
-            mssql::db_build_conn,
-            mssql::db_parse_conn,
-            mssql::db_query,
-            mssql::db_cancel,
-            mssql::db_databases,
-            mssql::db_objects,
-            mssql::db_columns,
-            mssql::db_scan_project,
-            mssql::db_scan_ssms,
             // window
             windowing::win_state,
             windowing::win_minimize,
@@ -167,7 +149,6 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 pty::detach_all();
                 userdb::checkpoint();
-                mssql::cancel_all();
                 plugins::stop_all();
                 let _ = app.get_webview_window(core::MAIN);
             }

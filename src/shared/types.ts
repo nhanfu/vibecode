@@ -143,72 +143,6 @@ export interface ClaudeInfo {
   shell: string
 }
 
-/* ---------------- SQL Server (Database tab + Claude's mssql tools) ---------------- */
-
-/** A saved connection as the UI sees it — no password. */
-export interface DbConnection {
-  id: string
-  name: string
-  server: string
-  database: string
-  auth: 'sql' | 'windows'
-  user: string
-  /** Claude's queries run in a transaction that is always rolled back */
-  claudeReadOnly: boolean
-  color?: string
-}
-
-export interface DbConnectionInput {
-  id?: string
-  name: string
-  conn: string
-  claudeReadOnly: boolean
-  color?: string
-}
-
-/** A connection string found in the project or in SSMS, ready to add. */
-export interface DbFound {
-  name: string
-  conn: string
-  /** where it came from: a project file, or "SSMS 20.0" */
-  file: string
-  /** SSMS knew the server and login but had no saved password */
-  needsPassword?: boolean
-}
-
-export interface DbObject {
-  schema: string
-  name: string
-  /** U table, V view, P procedure, FN / IF / TF function */
-  type: 'U' | 'V' | 'P' | 'FN' | 'IF' | 'TF'
-}
-
-export interface DbColumn {
-  name: string
-  type: string
-  nullable: boolean
-  identity: boolean
-  pk: boolean
-  /** foreign key target: schema.table.column */
-  ref?: string
-}
-
-export interface DbResultSet {
-  columns: { name: string; type: string }[]
-  rows: unknown[][]
-  truncated: boolean
-}
-
-export interface DbQueryResult {
-  ok: boolean
-  error?: string
-  results: DbResultSet[]
-  messages: string[]
-  /** rows inserted / updated / deleted; -1 for none */
-  affected: number
-  ms: number
-}
-
 /** Web tab bookmark: a link, or a folder of them */
 export interface WebBookmark {
   title: string
@@ -285,7 +219,7 @@ export interface PluginInfo {
   description: string
   license: string
   homepage: string
-  /** a panel the plugin brings; `replaces` names a built-in one it takes over ('db') */
+  /** a panel the plugin brings (`replaces` is no longer read: there are no built-in panels left to take over) */
   panel: { title: string; icon: string; replaces?: string; folder?: boolean } | null
   /** ready to run (its program is built / installed) */
   available: boolean

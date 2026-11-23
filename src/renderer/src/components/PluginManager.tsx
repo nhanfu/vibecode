@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Download, ExternalLink, FolderOpen, RefreshCw, ScrollText } from 'lucide-react'
 import { loadPlugins } from '../actions'
-import { panelShown, showPanel, useStore, type PanelId } from '../store'
+import { panelShown, useStore } from '../store'
 import type { PluginInfo, PluginOffer } from '../../../shared/types'
 import { PluginPane } from './PluginPane'
 
@@ -189,7 +189,6 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
   const [logs, setLogs] = useState(false)
   const [more, setMore] = useState(false)
   const api = window.api.plugins
-  const replaces = p.panel?.replaces
   const canOpen = p.enabled && p.available && p.hasSidecar
   const live = p.status === 'running' || p.status === 'starting'
 
@@ -224,8 +223,8 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
           <button
             className="pm-btn primary"
             disabled={busy}
-            onClick={() => (replaces ? showPanel(replaces as PanelId) : open())}
-            title={replaces ? `Shows the ${p.panel?.title ?? replaces} panel` : 'Open its page here'}
+            onClick={open}
+            title="Open its page here"
           >
             <ExternalLink size={13} /> Open
           </button>
@@ -291,7 +290,7 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
             {p.panel && (
               <>
                 <dt>Panel</dt>
-                <dd>{replaces ? `${p.panel.title} (takes over the built-in ${replaces} panel)` : p.panel.title}</dd>
+                <dd>{p.panel.title}</dd>
               </>
             )}
             {p.mcpName && (

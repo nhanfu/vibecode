@@ -5,7 +5,7 @@
   "description": "Database client (DBX, Apache-2.0): browse schemas, run queries, ER diagrams, many drivers",
   "license": "Apache-2.0",
   "homepage": "https://github.com/t8y2/dbx",
-  "panel": { "title": "Database", "icon": "database", "replaces": "db" },
+  "panel": { "title": "Database", "icon": "database" },
   "sidecar": {
     "command": "bin/dbx-web",
     "env": {

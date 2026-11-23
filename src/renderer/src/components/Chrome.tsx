@@ -25,7 +25,6 @@ import {
   Droplet,
   Globe,
   Code2,
-  Database,
   Moon,
   Sun
 } from 'lucide-react'

@@ -62,7 +62,7 @@ const revealSide = (group: 'files' | 'git-changes'): void => {
   window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: group }))
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', web: 'Web', db: 'Database', plugins: 'Plugins', agents: 'Agent (chat)' }
+const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', web: 'Web', plugins: 'Plugins', agents: 'Agent (chat)' }
 
 /** One command per plugin that has a settings file: opens it in the editor to edit and review. */
 export function pluginCommands(plugins: PluginInfo[]): Command[] {
@@ -149,7 +149,6 @@ export const COMMANDS: Command[] = [
     // openBrowser also gives the chat its first page
     run: () => (panelShown(st(), 'web') ? togglePanel('web') : openBrowser())
   },
-  { id: 'viewDb', label: 'Show / hide Database', run: () => togglePanel('db') },
   { id: 'viewPlugins', label: 'Show / hide Plugins', run: () => togglePanel('plugins') },
   // the chat: showing it puts the cursor in it, so you can type straight away
   { id: 'viewAgents', label: 'Show / hide Agent (the chat)', run: () => toggleChatPanel() },
@@ -252,11 +251,9 @@ export const DEFAULT_KEYS: KeyRule[] = [
 
   // the title-bar drop-downs (Ctrl+B: Project, above), from a terminal too
   { key: 'ctrl+shift+w', command: 'viewWeb' },
-  { key: 'ctrl+shift+d', command: 'viewDb' },
   { key: 'ctrl+shift+a', command: 'viewAgents' },
   { key: 'ctrl+shift+x', command: 'viewPlugins' },
   { key: 'ctrl+2', command: 'viewWeb' },
-  { key: 'ctrl+3', command: 'viewDb' },
   { key: 'ctrl+4', command: 'viewAgents' }
 ]
 
@@ -347,9 +344,9 @@ const CONTEXT_HELP = [
   'hasFolder          a project folder is open',
   'fileDirty          the open file has unsaved changes',
   'reviewOpen         a file or a change is open in the popup',
-  "floating           the drop-down floating now: 'project' | 'web' | 'db' | 'plugins' | 'agents', '' if none",
-  'projectShown webShown dbShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
-  'projectPinned webPinned dbPinned pluginsPinned agentsPinned   … pinned in the stack'
+  "floating           the drop-down floating now: 'project' | 'web' | 'plugins' | 'agents', '' if none",
+  'projectShown webShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
+  'projectPinned webPinned pluginsPinned agentsPinned   … pinned in the stack'
 ]
 
 let bindings: Binding[] = []

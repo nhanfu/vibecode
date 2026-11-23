@@ -28,7 +28,7 @@ pub struct PanelSpec {
     pub title: String,
     #[serde(default)]
     pub icon: String,
-    /// a built-in panel this one takes over (`"db"`), keeping the built-in one as a fallback
+    /// no longer used (there are no built-in panels left); still read so older manifests parse
     #[serde(default)]
     pub replaces: Option<String>,
     /// the page opens on the project folder the sidebar shows (`?folder=` in its address)

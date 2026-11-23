@@ -50,5 +50,5 @@ Not ported yet (still in `src-tauri/`):
 - terminals through ptyd (`commands/ptyd.zig`, this executable run with `--ptyd`; output as `pty:data` events): `pty_spawn`, `pty_write`, `pty_resize`, `pty_kill`, `pty_page_reset`, `pty_list`, `pty_visible` (accepted, not throttled). A chat's terminal is kept by ptyd when the app closes and attached again on start; the screen is replayed from the last 1 MiB of output, not drawn by a terminal emulator. Not yet: MCP settings for Claude Code
 - browser tabs, partly (`commands/web.zig`, on the patched GTK host in `vendor/zero-native`): `web_open`, `web_place`, `web_set_active`, `web_focus`, `web_navigate`, `web_history`, `web_reload`, `web_stop`, `web_set_user_agent`, `web_nav_state`, `web_close`, and the `web:nav` event. Not yet: `web_set_dark` (kept, not applied), Claude's browser tools (DevTools: evaluate, screenshot, console), `web_suggest`, `web_visit`, `web_title`, `web_data`, `web_import_chrome` (`webdata.rs`), hiding a tab's page to save memory, pop-up windows
 - sessions (`sessions.rs`)
-- SQL Server (`mssql.rs`), Claude usage (`claude_usage`), MCP (`mcp.rs`)
+- Claude usage (`claude_usage`), MCP (`mcp.rs`)
 - global shortcut, tray, autostart (zero-native has shortcut and tray APIs, not yet wired)

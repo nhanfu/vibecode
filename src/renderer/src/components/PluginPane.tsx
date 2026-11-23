@@ -30,12 +30,12 @@ interface VscodeTab {
 
 /**
  * A plugin's panel: its sidecar's page (src-tauri/src/plugins.rs starts the sidecar on first use),
- * shown in a frame. `onFallback` offers the built-in panel the plugin replaces when it will not start.
+ * shown in a frame.
  *
  * VS Code is one server for the whole panel: each file asked for opens in a tab of its own, a frame of the
  * same address with its `payload`. Tabs stay mounted, so going back to one does not reload the editor.
  */
-export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string; name: string; onFallback?: () => void; fallbackLabel?: string }): React.JSX.Element {
+export function PluginPane({ id, name }: { id: string; name: string }): React.JSX.Element {
   // the page on screen, with the theme it was loaded for
   const [page, setPage] = useState<{ url: string; theme: string; settings?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -138,11 +138,6 @@ export function PluginPane({ id, name, onFallback, fallbackLabel }: { id: string
             <button className="btn" onClick={() => setAttempt((n) => n + 1)}>
               Retry
             </button>
-            {onFallback && (
-              <button className="btn" onClick={onFallback}>
-                {fallbackLabel ?? 'Use the built-in panel'}
-              </button>
-            )}
           </div>
         </>
       ) : (
