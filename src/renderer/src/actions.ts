@@ -1,5 +1,5 @@
 import { clearAttachments } from './attachments'
-import { PAGES_KEY, basename, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
+import { PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -845,7 +845,7 @@ export function openFile(path: string): void {
 export const HOME_URL = 'about:blank'
 
 /** Browser key for the chat you're looking at — every chat keeps its own page. */
-export const browserKey = (activeChatId: string | null): string => activeChatId ?? '_'
+export const browserKey = (activeChatId: string | null): string => (useStore.getState().browserShared ? SHARED_BROWSER_KEY : activeChatId ?? '_')
 
 const blankTab = (url = HOME_URL): WebTab => ({ id: 'w-' + uid(), url, title: '' })
 
@@ -919,6 +919,17 @@ export function moveBrowserTab(key: string, id: string, to: number): void {
     if (tabs.every((t, i) => t === b.tabs[i])) return s
     return { browsers: { ...s.browsers, [key]: { ...b, tabs } } }
   })
+}
+
+/** Ctrl+Tab / Ctrl+Shift+Tab: the next (or previous) Web tab of the chat on screen, wrapping around. */
+export function cycleWebTab(step: 1 | -1): void {
+  const key = browserKey(st().activeChatId)
+  const b = st().browsers[key]
+  const strip = (b?.tabs ?? []).filter((t) => !t.detached)
+  if (!b || strip.length === 0) return
+  const at = strip.findIndex((t) => t.id === b.active)
+  const next = strip[(at < 0 ? 0 : at + step + strip.length) % strip.length]
+  if (next) selectBrowserTab(key, next.id)
 }
 
 export function selectBrowserTab(key: string, id: string): void {
@@ -1192,4 +1203,88 @@ export async function restoreChats(): Promise<void> {
   useStore.subscribe((s, prev) => {
     if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId) saveOpenChats()
   })
+}
+
+/** The native page of each Web tab, by tab id (registered by the tab's Browser component). */
+export const pageLabels = new Map<string, string>()
+
+export function reloadBrowserTab(id: string): void {
+  const label = pageLabels.get(id)
+  if (label) window.api.browser.reload(label)
+}
+
+export function setBrowserTabMuted(key: string, id: string, muted: boolean): void {
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    if (!b) return s
+    return { browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t.id === id ? { ...t, muted } : t)) } } }
+  })
+  const label = pageLabels.get(id)
+  if (label) window.api.browser.setMuted(label, muted)
+}
+
+export function toggleBrowserTabPin(key: string, id: string): void {
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    if (!b) return s
+    const tabs = b.tabs.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t))
+    return { browsers: { ...s.browsers, [key]: { ...b, tabs: [...tabs.filter((t) => t.pinned), ...tabs.filter((t) => !t.pinned)] } } }
+  })
+}
+
+/** A new tab right after `id` in the strip: its page is `url` (blank when none). */
+export function openTabToRight(key: string, id: string, url?: string): void {
+  const strip = (st().browsers[key]?.tabs ?? []).filter((t) => !t.detached)
+  const at = strip.findIndex((t) => t.id === id)
+  newBrowserTab(key, url, false)
+  const created = st().browsers[key]?.active
+  if (created && at >= 0) moveBrowserTab(key, created, at + 1)
+}
+
+export function closeOtherBrowserTabs(key: string, id: string): void {
+  const others = (st().browsers[key]?.tabs ?? []).filter((t) => !t.detached && t.id !== id)
+  for (const t of others) closeBrowserTab(key, t.id)
+}
+
+export function closeBrowserTabsToRight(key: string, id: string): void {
+  const strip = (st().browsers[key]?.tabs ?? []).filter((t) => !t.detached)
+  const at = strip.findIndex((t) => t.id === id)
+  for (const t of strip.slice(at + 1)) closeBrowserTab(key, t.id)
+}
+
+/**
+ * Group by chat / Singleton: switching merges the tabs (nothing is dropped). Singleton gathers every chat's
+ * tabs into one set, each remembering its chat; back to Group by chat, each tab goes home to its chat again.
+ */
+export function setBrowserMode(shared: boolean): void {
+  useStore.setState((s) => {
+    if (s.browserShared === shared) return s
+    const current = s.activeChatId ?? '_'
+    const browsers: Record<string, ChatBrowser> = { ...s.browsers }
+    if (shared) {
+      const keys = Object.keys(browsers).filter((k) => k !== SHARED_BROWSER_KEY && k !== PAGES_KEY)
+      const tabs = keys.flatMap((k) => (browsers[k]?.tabs ?? []).map((t) => ({ ...t, home: t.home ?? k })))
+      const wanted = browsers[current]?.active
+      for (const k of keys) delete browsers[k]
+      if (tabs.length) browsers[SHARED_BROWSER_KEY] = { tabs, active: tabs.find((t) => t.id === wanted)?.id ?? tabs[0].id }
+    } else {
+      const merged = browsers[SHARED_BROWSER_KEY]
+      delete browsers[SHARED_BROWSER_KEY]
+      if (merged) {
+        const groups = new Map<string, WebTab[]>()
+        for (const t of merged.tabs) {
+          const home = t.home ?? current
+          const { home: _home, ...rest } = t
+          groups.set(home, [...(groups.get(home) ?? []), rest])
+        }
+        for (const [k, tabs] of groups) {
+          const existing = browsers[k]?.tabs ?? []
+          const all = [...existing, ...tabs.filter((t) => !existing.some((e) => e.id === t.id))]
+          browsers[k] = { tabs: all, active: tabs.find((t) => t.id === merged.active)?.id ?? all[0].id }
+        }
+      }
+    }
+    return { browserShared: shared, browsers }
+  })
+  saveBrowserShared(shared)
 }

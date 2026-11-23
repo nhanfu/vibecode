@@ -17,6 +17,7 @@ import {
   closeChat,
   closeTab,
   cycleChat,
+  cycleWebTab,
   defaultAgent,
   newChat,
   newShell,
@@ -108,6 +109,8 @@ export const COMMANDS: Command[] = [
     }
   },
   { id: 'reopenWebTab', label: 'Reopen closed web tab', run: () => reopenClosedWebTab() },
+  { id: 'nextWebTab', label: 'Next web tab', run: () => cycleWebTab(1) },
+  { id: 'prevWebTab', label: 'Previous web tab', run: () => cycleWebTab(-1) },
 
   { id: 'explorer', label: 'Show Explorer (files)', run: () => revealSide('files') },
   { id: 'changes', label: 'Show Source Control (changes)', run: () => revealSide('git-changes') },
@@ -209,7 +212,9 @@ export const DEFAULT_KEYS: KeyRule[] = [
   // the keyboard in a Web tab: these keys belong to the tabs there (the later rule wins)
   { key: 'ctrl+t', command: 'newWebTab', when: '!terminalFocus' },
   { key: 'ctrl+w', command: 'closeWebTab', when: 'webFocus' },
-  { key: 'ctrl+shift+t', command: 'reopenWebTab', when: 'webFocus' },
+  { key: 'ctrl+shift+t', command: 'reopenWebTab', when: '!terminalFocus' },
+  { key: 'ctrl+tab', command: 'nextWebTab', when: '!terminalFocus' },
+  { key: 'ctrl+shift+tab', command: 'prevWebTab', when: '!terminalFocus' },
 
   { key: 'ctrl+shift+e', command: 'explorer' },
   { key: 'ctrl+shift+g', command: 'changes' },

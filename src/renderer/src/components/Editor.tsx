@@ -1,9 +1,9 @@
 import { createPortal } from 'react-dom'
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SiteIcon } from './SiteIcon'
-import { Database, X, Globe, Plus } from 'lucide-react'
-import { panelShown, useStore } from '../store'
-import { HOME_URL, browserKey, closeBrowserTab, detachBrowserTab, ensureBrowser, moveBrowserTab, newBrowserTab, openBrowser, selectBrowserTab } from '../actions'
+import { Database, X, Globe, Plus, VolumeX } from 'lucide-react'
+import { panelShown, useStore, type WebTab } from '../store'
+import { HOME_URL, browserKey, closeBrowserTab, closeBrowserTabsToRight, closeOtherBrowserTabs, detachBrowserTab, ensureBrowser, moveBrowserTab, newBrowserTab, openBrowser, openTabToRight, reloadBrowserTab, selectBrowserTab, setBrowserTabMuted, toggleBrowserTabPin } from '../actions'
 import { Adopt } from './webHosts'
 import { SlidePill } from './motion'
 // heavy parts load on first use
@@ -79,6 +79,7 @@ export function WebPanel(): React.JSX.Element {
   const shown = useStore((s) => panelShown(s, 'web'))
   const key = useStore((s) => browserKey(s.activeChatId))
   const browsers = useStore((s) => s.browsers)
+  const shared = useStore((s) => s.browserShared)
   // shown (or the chat switched while it is): that chat gets its own browser, before paint (no
   // empty frame). Only created here: hovering the Web button must not open anything else.
   useLayoutEffect(() => {
@@ -86,12 +87,80 @@ export function WebPanel(): React.JSX.Element {
   }, [shown, key, browsers])
   return (
     <div className="center-area">
-      {Object.keys(browsers).map((k) => (
+      {(shared ? [key] : Object.keys(browsers)).map((k) => (
         <div key={k} className={`center-pane browser-host${k === key ? ' on' : ''}`}>
           <WebTabs chatKey={k} />
         </div>
       ))}
     </div>
+  )
+}
+
+function TabMenu({
+  chatKey,
+  id,
+  x,
+  y,
+  tabs,
+  onClose,
+  closeTab
+}: {
+  chatKey: string
+  id: string
+  x: number
+  y: number
+  tabs: WebTab[]
+  onClose: () => void
+  closeTab: (id: string) => void
+}): React.JSX.Element {
+  const at = tabs.findIndex((t) => t.id === id)
+  const tab = tabs[at]
+  const blank = !tab || tab.url === HOME_URL
+  useEffect(() => {
+    const key = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [onClose])
+  type Item = { label: string; hint?: string; act: () => void; off?: boolean } | 'sep'
+  const items: Item[] = [
+    { label: 'Reload', hint: 'Ctrl+R', act: () => reloadBrowserTab(id), off: blank },
+    { label: 'Duplicate', hint: 'Ctrl+Shift+K', act: () => openTabToRight(chatKey, id, tab?.url), off: blank },
+    { label: tab?.pinned ? 'Unpin' : 'Pin', act: () => toggleBrowserTabPin(chatKey, id) },
+    { label: tab?.muted ? 'Unmute site' : 'Mute site', act: () => setBrowserTabMuted(chatKey, id, !tab?.muted), off: blank },
+    'sep',
+    { label: 'New tab to the right', act: () => openTabToRight(chatKey, id) },
+    'sep',
+    { label: 'Close', hint: 'Ctrl+W', act: () => closeTab(id) },
+    { label: 'Close other tabs', act: () => closeOtherBrowserTabs(chatKey, id), off: tabs.length < 2 },
+    { label: 'Close tabs to the right', act: () => closeBrowserTabsToRight(chatKey, id), off: at < 0 || at >= tabs.length - 1 }
+  ]
+  return createPortal(
+    <>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onMouseDown={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }} />
+      <div className="menu ctx-menu" style={{ position: 'fixed', left: x, top: y, zIndex: 1000 }} onContextMenu={(e) => e.preventDefault()}>
+        {items.map((it, n) =>
+          it === 'sep' ? (
+            <div key={`sep${n}`} className="ctx-divider" />
+          ) : (
+            <button
+              key={it.label}
+              className="menu-item"
+              disabled={it.off}
+              onClick={() => {
+                onClose()
+                it.act()
+              }}
+            >
+              <span className="menu-item-main">{it.label}</span>
+              {it.hint && <span className="menu-item-sub ctx-hint">{it.hint}</span>}
+            </button>
+          )
+        )}
+      </div>
+    </>,
+    document.body
   )
 }
 
@@ -112,6 +181,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
   const stripRef = useRef<HTMLDivElement>(null)
   // tabs on their way out: they shrink away first, then really close
   const [closing, setClosing] = useState<Set<string>>(new Set())
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const close = (id: string): void => {
     if (closing.has(id)) return
     setClosing((c) => new Set(c).add(id))
@@ -186,9 +256,13 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
           <div
             key={t.id}
             data-tab={t.id}
-            className={`tab${t.id === b.active ? ' active' : ''}${closing.has(t.id) ? ' closing' : ''}${tear?.id === t.id ? ' tearing' : ''}`}
+            className={`tab${t.id === b.active ? ' active' : ''}${t.pinned ? ' pinned' : ''}${closing.has(t.id) ? ' closing' : ''}${tear?.id === t.id ? ' tearing' : ''}`}
             onPointerDown={(e) => startTear(e, t.id)}
             onClick={() => selectBrowserTab(chatKey, t.id)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setMenu({ id: t.id, x: e.clientX, y: e.clientY })
+            }}
             onMouseDown={(e) => {
               if (e.button === 1) {
                 e.preventDefault()
@@ -198,17 +272,20 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
             title={t.url === HOME_URL ? 'New tab' : `${t.url}\nDrag it up to the title bar to open it as its own tab`}
           >
             <SiteIcon url={t.url} />
-            <span className="tab-title">{t.title || (t.url === HOME_URL ? 'New tab' : hostOf(t.url))}</span>
-            <button
-              className="tab-close"
-              title="Close tab"
-              onClick={(e) => {
-                e.stopPropagation()
-                close(t.id)
-              }}
-            >
-              <X size={13} />
-            </button>
+            {!t.pinned && <span className="tab-title">{t.title || (t.url === HOME_URL ? 'New tab' : hostOf(t.url))}</span>}
+            {t.muted && <VolumeX size={12} className="tab-muted" />}
+            {!t.pinned && (
+              <button
+                className="tab-close"
+                title="Close tab"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  close(t.id)
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
         ))}
         <button className="icon-btn tab-strip-btn" title="New tab" onClick={() => newBrowserTab(chatKey, undefined, false)}>
@@ -216,6 +293,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
         </button>
         <div className="tab-strip-fill" />
       </div>
+      {menu && <TabMenu chatKey={chatKey} id={menu.id} x={menu.x} y={menu.y} tabs={strip} onClose={() => setMenu(null)} closeTab={close} />}
       {/* every page stays laid out (no display:none → no re-layout flash); the open one slides in */}
       <div className="browser-deck">
         {strip.map((t, i) => (

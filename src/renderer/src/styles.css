@@ -3015,7 +3015,6 @@ button.plan-chevron:hover {
   border-radius: 10px;
   background: transparent;
   z-index: 1;
-  animation: web-tab-in 0.32s var(--ios-ease);
   transition:
     color 0.2s var(--ios-ease),
     max-width 0.22s var(--ios-ease),
@@ -3048,6 +3047,15 @@ button.plan-chevron:hover {
 .web-tab-strip > .tab-pill {
   border-radius: 10px;
   box-shadow: inset 0 0 0 1px var(--w-0f);
+  transition:
+    transform 0.12s ease-out,
+    width 0.12s ease-out,
+    height 0.12s ease-out,
+    opacity 0.12s ease-out;
+}
+.web-tab-strip .tab.pinned {
+  max-width: none;
+  padding: 0 9px;
 }
 .web-tab-strip > .tab-pill::before {
   display: none;
@@ -3071,11 +3079,6 @@ button.plan-chevron:hover {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  will-change: transform, opacity;
-  transition:
-    transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 0.2s ease,
-    visibility 0s linear 0.3s;
 }
 .browser-tab-pane.left {
   transform: translateX(-28px) scale(0.985);
@@ -3089,10 +3092,6 @@ button.plan-chevron:hover {
   pointer-events: auto;
   transform: none;
   z-index: 1;
-  transition:
-    transform 0.3s cubic-bezier(0.32, 0.72, 0, 1),
-    opacity 0.2s ease,
-    visibility 0s;
 }
 @media (prefers-reduced-motion: reduce) {
   .web-tab-strip .tab,
@@ -5710,4 +5709,10 @@ button.plan-chevron:hover {
 }
 .review-spacer {
   flex: 1;
+}
+
+.web-tab-strip .tab-muted {
+  flex: none;
+  opacity: 0.7;
+  margin-left: 4px;
 }

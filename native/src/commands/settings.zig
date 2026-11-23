@@ -48,17 +48,16 @@ fn cloneSettings(a: std.mem.Allocator, value: AppSettings) !AppSettings {
 pub fn get() AppSettings {
     if (!loaded) {
         loaded = true;
-        const value = loadFromDatabase() catch loadLegacyFile() catch AppSettings{};
+        var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+        defer arena.deinit();
+        const value = loadFromDatabase(arena.allocator()) catch loadLegacyFile(arena.allocator()) catch AppSettings{};
         replaceCache(value) catch {};
     }
     return current;
 }
 
 /// The Electron build's `settings.json`, read once when the database has no settings yet.
-fn loadLegacyFile() !AppSettings {
-    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
-    defer arena.deinit();
-    const a = arena.allocator();
+fn loadLegacyFile(a: std.mem.Allocator) !AppSettings {
     var dir_buffer: [4096]u8 = undefined;
     var path_buffer: [4200]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buffer, "{s}/settings.json", .{try cmd.userData(&dir_buffer)});
@@ -69,10 +68,7 @@ fn loadLegacyFile() !AppSettings {
     return value;
 }
 
-fn loadFromDatabase() !AppSettings {
-    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
-    defer arena.deinit();
-    const a = arena.allocator();
+fn loadFromDatabase(a: std.mem.Allocator) !AppSettings {
     try userdb.ensureOpen();
     var rows = try db.query("SELECT key, value::VARCHAR FROM settings", &.{});
     defer rows.deinit();

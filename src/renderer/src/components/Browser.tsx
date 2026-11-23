@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, RotateCw, Search, Shuffle, Star, X } from 'lucid
 import type { WebSuggestion } from '../../../shared/types'
 import { BookmarkBar } from './BrowserBookmarks'
 import { useStore } from '../store'
-import { HOME_URL, setBrowserUrl } from '../actions'
+import { HOME_URL, pageLabels, setBrowserUrl } from '../actions'
 import { SlidePill } from './motion'
 
 /** transitions that never move anything (a slide or scale can move the page, so those still count) */
@@ -51,6 +51,12 @@ export function BrowserTab({
   const url = useStore((s) => s.browsers[chatKey]?.tabs.find((t) => t.id === tabId)?.url ?? HOME_URL)
   // the native page this tab owns (labels: letters, digits, - _ only)
   const [label] = useState(() => `web-${++labelSeq}-${tabId}`.replace(/[^\w-]/g, '_'))
+  useEffect(() => {
+    pageLabels.set(tabId, label)
+    return () => {
+      if (pageLabels.get(tabId) === label) pageLabels.delete(tabId)
+    }
+  }, [label, tabId])
   // first URL only: later navigation happens inside the page
   const [initial] = useState(url)
   const [address, setAddress] = useState(display(url))
@@ -78,7 +84,10 @@ export function BrowserTab({
 
   // the native page lives as long as this tab
   useEffect(() => {
-    void window.api.browser.open(label, chatKey, initial).catch(() => {})
+    const muted = useStore.getState().browsers[chatKey]?.tabs.find((t) => t.id === tabId)?.muted
+    void window.api.browser.open(label, chatKey, initial).then(() => {
+      if (muted) void window.api.browser.setMuted(label, true)
+    }).catch(() => {})
     return () => window.api.browser.close(label)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [label])

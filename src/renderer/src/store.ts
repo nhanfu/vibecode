@@ -96,6 +96,8 @@ interface State {
   browsers: Record<string, ChatBrowser>
   /** project folder (lower-cased, no trailing slash) → Claude runs it in bypass-permissions mode */
   projectBypass: Record<string, boolean>
+  /** the Browser mini-app: one set of tabs for all chats (true) or one set per chat (false) */
+  browserShared: boolean
 
   set: (p: Partial<State>) => void
   patchChat: (id: string, p: Partial<Chat>) => void
@@ -109,6 +111,10 @@ export interface WebTab {
   title: string
   /** torn off into its own title-bar button (panel `page:<id>`); not in the Web tab strip */
   detached?: boolean
+  pinned?: boolean
+  muted?: boolean
+  /** the chat a tab belongs to while the Browser is shared by all chats (it goes back there when split again) */
+  home?: string
 }
 export interface ChatBrowser {
   tabs: WebTab[]
@@ -154,18 +160,41 @@ const PINNED_KEY = 'vibe.stackPins'
 
 /** Browser key that holds the torn-off pages restored from a previous run (they belong to no chat). */
 export const PAGES_KEY = '_pages'
+export const SHARED_BROWSER_KEY = '_shared'
+const BROWSER_SHARED_STORE = 'vibe.browserShared'
 const PAGES_STORE = 'vibe.pages'
-/** The torn-off pages kept as user data: they come back, with their address, when the app starts. */
-const savedPages: WebTab[] = (() => {
+interface SavedTab {
+  id: string
+  url: string
+  title: string
+  chat?: string
+  home?: string
+  detached?: boolean
+  pinned?: boolean
+  muted?: boolean
+}
+/** The Web tabs kept as user data: each chat's tabs and the torn-off pages, with address, title and state. */
+const savedTabs: SavedTab[] = (() => {
   try {
     const v = JSON.parse(userStore.getItem(PAGES_STORE) ?? 'null')
-    if (Array.isArray(v)) return v.filter((t) => t && typeof t.id === 'string' && typeof t.url === 'string').map((t) => ({ id: t.id, url: t.url, title: String(t.title ?? ''), detached: true }))
+    if (Array.isArray(v))
+      return v
+        .filter((t) => t && typeof t.id === 'string' && typeof t.url === 'string')
+        .map((t) => ({ id: t.id, url: t.url, title: String(t.title ?? ''), chat: typeof t.chat === 'string' ? t.chat : undefined, detached: !!t.detached, pinned: !!t.pinned, muted: !!t.muted, home: typeof t.home === 'string' ? t.home : undefined }))
   } catch {
     /* storage unavailable */
   }
   return []
 })()
-const isSavedPage = (x: unknown): boolean => typeof x === 'string' && savedPages.some((t) => `page:${t.id}` === x)
+const savedBrowsers: Record<string, ChatBrowser> = {}
+for (const t of savedTabs) {
+  const key = t.chat ?? PAGES_KEY
+  const tab: WebTab = { id: t.id, url: t.url, title: t.title, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}) }
+  const b = savedBrowsers[key] ?? { tabs: [], active: tab.id }
+  b.tabs.push(tab)
+  savedBrowsers[key] = b
+}
+const isSavedPage = (x: unknown): boolean => typeof x === 'string' && savedTabs.some((t) => t.detached && `page:${t.id}` === x)
 
 function loadIds(key: string, fallback: PanelId[]): PanelId[] {
   try {
@@ -338,8 +367,9 @@ export const useStore = create<State>((set) => ({
   activeTabId: null,
   diffSideBySide: true,
 
-  browsers: savedPages.length ? ({ [PAGES_KEY]: { tabs: savedPages, active: savedPages[0].id } } as Record<string, ChatBrowser>) : {},
+  browsers: savedBrowsers,
   projectBypass: {},
+  browserShared: userStore.getItem(BROWSER_SHARED_STORE) === 'true',
 
   set: (p) => set(p),
   // a patch that changes nothing keeps the same array: the terminal title (Claude's spinner) and
@@ -364,11 +394,19 @@ export const basename = (p: string): string => p.split(/[\\/]/).filter(Boolean).
 
 export const fileUri = (p: string): string => 'file:///' + p.replace(/\\/g, '/').replace(/^\/+/, '')
 
-// keep the torn-off pages (address and title) as user data
-let savedJson = JSON.stringify(savedPages.map(({ id, url, title }) => ({ id, url, title })))
+// keep the Web tabs (address, title and state) as user data; the blank ones are not worth keeping
+const serializeTabs = (browsers: Record<string, ChatBrowser>): string =>
+  JSON.stringify(
+    Object.entries(browsers).flatMap(([key, b]) =>
+      b.tabs
+        .filter((t) => t.url !== 'about:blank' || t.detached || t.pinned || t.muted)
+        .map((t) => ({ id: t.id, url: t.url, title: t.title, chat: key, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}) }))
+    )
+  )
+let savedJson = serializeTabs(savedBrowsers)
 useStore.subscribe((s, prev) => {
   if (s.browsers === prev.browsers) return
-  const json = JSON.stringify(Object.values(s.browsers).flatMap((b) => b.tabs.filter((t) => t.detached).map(({ id, url, title }) => ({ id, url, title }))))
+  const json = serializeTabs(s.browsers)
   if (json === savedJson) return
   savedJson = json
   try {
@@ -377,3 +415,12 @@ useStore.subscribe((s, prev) => {
     /* only lost on the next run */
   }
 })
+
+/** Remembers whether the Browser mini-app shares one set of tabs among all chats. */
+export function saveBrowserShared(shared: boolean): void {
+  try {
+    userStore.setItem(BROWSER_SHARED_STORE, String(shared))
+  } catch {
+    /* only lost on the next run */
+  }
+}

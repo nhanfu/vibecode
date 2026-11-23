@@ -50,6 +50,14 @@ const migrations = [_][:0]const u8{
     \\);
     ,
     \\ALTER TABLE open_chats ADD COLUMN id VARCHAR;
+    ,
+    \\ALTER TABLE web_pages ADD COLUMN chat VARCHAR;
+    ,
+    \\ALTER TABLE web_pages ADD COLUMN pinned BOOLEAN DEFAULT FALSE;
+    ,
+    \\ALTER TABLE web_pages ADD COLUMN muted BOOLEAN DEFAULT FALSE;
+    ,
+    \\ALTER TABLE web_pages ADD COLUMN detached BOOLEAN DEFAULT FALSE;
 };
 
 var opened = false;
@@ -126,6 +134,10 @@ const WebPage = struct {
     id: []const u8,
     url: []const u8,
     title: []const u8 = "",
+    chat: ?[]const u8 = null,
+    pinned: bool = false,
+    muted: bool = false,
+    detached: bool = false,
 };
 
 /// Serialises a value the way the page reads it: optional fields that are null are left out.
@@ -179,14 +191,15 @@ fn loadChats(a: std.mem.Allocator) ![]SavedChat {
 }
 
 fn loadPages(a: std.mem.Allocator) ![]WebPage {
-    var rows = try db.query("SELECT id, url, title FROM web_pages ORDER BY position", &.{});
+    var rows = try db.query("SELECT id, url, title, chat, pinned, muted, detached FROM web_pages ORDER BY position", &.{});
     defer rows.deinit();
     var pages: std.ArrayList(WebPage) = .empty;
     for (0..rows.count()) |r| {
         const id = (try rows.text(a, 0, r)) orelse continue;
         const url = (try rows.text(a, 1, r)) orelse continue;
         const title = (try rows.text(a, 2, r)) orelse "";
-        try pages.append(a, .{ .id = id, .url = url, .title = title });
+        const chat = try rows.text(a, 3, r);
+        try pages.append(a, .{ .id = id, .url = url, .title = title, .chat = chat, .pinned = rows.boolean(4, r), .muted = rows.boolean(5, r), .detached = rows.boolean(6, r) });
     }
     return pages.items;
 }
@@ -245,8 +258,8 @@ fn savePages(pages: []const WebPage) !void {
     try db.exec("DELETE FROM web_pages");
     for (pages, 0..) |page, pos| {
         try db.run(
-            "INSERT INTO web_pages (id, url, title, position) VALUES (?, ?, ?, ?)",
-            &.{ .{ .text = page.id }, .{ .text = page.url }, .{ .text = page.title }, .{ .int = @intCast(pos) } },
+            "INSERT INTO web_pages (id, url, title, position, chat, pinned, muted, detached) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            &.{ .{ .text = page.id }, .{ .text = page.url }, .{ .text = page.title }, .{ .int = @intCast(pos) }, optionalParam(page.chat), .{ .boolean = page.pinned }, .{ .boolean = page.muted }, .{ .boolean = page.detached } },
         );
     }
     try db.commit();

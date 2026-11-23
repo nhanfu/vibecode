@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, Puzzle, Terminal, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, Layers, MoveHorizontal, PanelTop, Pin, PinOff, Puzzle, Terminal, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
@@ -20,7 +20,7 @@ import {
   type PanelId,
   type StaticPanelId
 } from '../store'
-import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, openFolder } from '../actions'
+import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, openFolder, setBrowserMode } from '../actions'
 import { SiteIcon } from './SiteIcon'
 import { Adopt, TabHosts } from './webHosts'
 import { COMMANDS } from '../shortcuts'
@@ -252,6 +252,7 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   const key = useStore((s) => (isPage(id) ? pageKey(s, id) : undefined))
   const chatKey = useStore((s) => browserKey(s.activeChatId))
   const at = order.indexOf(id)
+  const shared = useStore((s) => s.browserShared)
   const keys = keysOf(id)
 
   // kept on screen, measured before paint so it never jumps
@@ -284,7 +285,7 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
     onClose()
     f()
   }
-  type Item = { icon: React.ReactNode; label: string; hint?: string; act: () => void; off?: boolean } | 'sep'
+  type Item = { icon: React.ReactNode; label: string; hint?: string; tip?: string; act: () => void; off?: boolean } | 'sep'
   const items: Item[] = [
     pinned
       ? { icon: <PinOff size={14} />, label: 'Unpin', hint: 'Double-click', act: () => togglePin(id) }
@@ -314,6 +315,14 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
           'sep' as const,
           { icon: <X size={14} />, label: 'Close all tabs', act: () => closeAllBrowserTabs(key ?? chatKey) }
         ]
+      : []),
+    ...(id === 'web'
+      ? [
+          'sep' as const,
+          shared
+            ? { icon: <Layers size={14} />, label: 'Group by chat', tip: 'Each chat has its own Browser tabs. Switching back gives every tab to its chat again.', act: () => setBrowserMode(false) }
+            : { icon: <Layers size={14} />, label: 'Singleton', tip: 'One set of Browser tabs for all chats. Switching merges every chat\'s tabs into it.', act: () => setBrowserMode(true) }
+        ]
       : [])
   ]
 
@@ -324,7 +333,7 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
         it === 'sep' ? (
           <div key={`sep${i}`} className="ctx-divider" />
         ) : (
-          <button key={it.label} className="menu-item" disabled={it.off} onClick={run(it.act)}>
+          <button key={it.label} className="menu-item" disabled={it.off} title={it.tip} onClick={run(it.act)}>
             {it.icon}
             <span className="menu-item-main">{it.label}</span>
             {it.hint && <span className="menu-item-sub ctx-hint">{it.hint}</span>}

@@ -4,6 +4,7 @@ const zero_native = @import("zero-native");
 const commands = @import("commands/root.zig");
 const registry = @import("commands/registry.zig");
 const plugins = @import("commands/plugins.zig");
+const ptyd = @import("commands/ptyd.zig");
 
 pub const panic = std.debug.FullPanic(zero_native.debug.capturePanic);
 
@@ -48,14 +49,23 @@ const builtin_commands = [_]zero_native.BridgeCommandPolicy{
 /// so the localhost ports are a prefix match). Sidecars are not given the bridge: the bridge's origins are separate.
 const navigation_origins = commands.origins ++ [_][]const u8{"http://127.0.0.1:*"};
 
+fn wantsDaemon(args: std.process.Args) bool {
+    var it = args.iterate();
+    while (it.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--ptyd")) return true;
+    }
+    return false;
+}
+
 pub fn main(init: std.process.Init) !void {
     commands.io = init.io;
     commands.gpa = init.gpa;
+    if (wantsDaemon(init.minimal.args)) return ptyd.run();
     var app = App{ .env_map = init.environ_map };
     try runner.runWithOptions(app.app(), .{
         .app_name = "VIBE CODE",
         .window_title = "VIBE CODE",
-        .bundle_id = "vn.tinjs.vibecode",
+        .bundle_id = "vn.tinjs.vibecode.ptyd",
         .icon_path = "assets/icon.icns",
         .security = .{
             .navigation = .{ .allowed_origins = &navigation_origins },

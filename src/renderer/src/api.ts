@@ -132,6 +132,7 @@ export const api = {
     forward: (label: string): void => void invoke('web_history', { label, step: 1 }),
     reload: (label: string, hard = false): void => void invoke('web_reload', { label, hard }),
     stop: (label: string): void => void invoke('web_stop', { label }),
+    setMuted: (label: string, muted: boolean): void => void invoke('web_set_muted', { label, muted }),
     setUserAgent: (label: string, userAgent: string | null): Promise<void> => invoke('web_set_user_agent', { label, userAgent }),
     setDark: (dark: boolean): Promise<void> => invoke('web_set_dark', { dark }),
     /** the tab's latest navigation state (null before its first event) */
@@ -187,6 +188,7 @@ export const api = {
     minimize: (): void => void invoke('win_minimize'),
     badge: (png: string | null, label: string): void => void invoke('win_badge', { png, label }),
     toggleMaximize: (): void => void invoke('win_toggle_maximize'),
+    drag: (button: number, x: number, y: number): void => void invoke('win_drag', { button, x, y }),
     close: (): void => void invoke('win_close'),
     hide: (): void => void invoke('win_hide'),
     setMode: (mode: WindowMode): void => void invoke('win_set_mode', { mode }),

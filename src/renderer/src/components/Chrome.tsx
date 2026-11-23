@@ -50,9 +50,8 @@ const NO_DRAG = 'button, input, a, kbd, .menu, .search-box, .folder-switch, .win
 // maximize/restore button showed the wrong state.
 function dragWindow(e: React.MouseEvent): void {
   if (e.button !== 0 || (e.target as HTMLElement).closest(NO_DRAG)) return
-  if (useStore.getState().win?.mode === 'dropdown') return
-  if (e.detail === 2) window.api.win.toggleMaximize()
-  // dragging the window needs native window control (native/PLAN.md, step 4)
+  if (e.detail === 2) return window.api.win.toggleMaximize()
+  window.api.win.drag(e.button, e.clientX, e.clientY)
 }
 
 export function TitleBar(): React.JSX.Element {
@@ -61,8 +60,6 @@ export function TitleBar(): React.JSX.Element {
   return (
     <div className={window.api.platform === 'darwin' ? 'titlebar mac' : 'titlebar'} onMouseDown={dragWindow}>
       <div className="titlebar-left">
-        <Logo size={18} />
-        <span className="app-name">VIBE <b>CODE</b></span>
         {root && <StackBar />}
       </div>
       {root && (
@@ -73,20 +70,9 @@ export function TitleBar(): React.JSX.Element {
         </button>
       )}
       <div className="titlebar-right">
-        <button className="icon-btn sidebar-toggle" title="Project: chats and folders (Ctrl+B)" onClick={() => togglePanel('project')}>
-          <PanelLeft size={15} />
-        </button>
-        <button className="icon-btn" title="Toggle terminal (Ctrl+`)" onClick={() => toggleBottom()}>
-          <PanelBottom size={15} />
-        </button>
-        <button className="icon-btn" title="Open browser" onClick={() => openBrowser()}>
-          <Globe size={15} />
-        </button>
         <ThemeToggle />
-        <OpacityControl />
-        <ModeSwitch />
+        <WindowControls />
       </div>
-      <WindowControls />
     </div>
   )
 }
@@ -197,15 +183,6 @@ function WindowControls(): React.JSX.Element | null {
   if (!win) return null
   // macOS draws its own traffic lights (top-left) — ours would be a second set
   if (window.api.platform === 'darwin' && win.mode !== 'dropdown') return null
-  if (win.mode === 'dropdown') {
-    return (
-      <div className="win-controls">
-        <button className="win-btn" title={`Hide (${win.hotkey})`} onClick={() => window.api.win.hide()}>
-          <ChevronUp size={16} />
-        </button>
-      </div>
-    )
-  }
   return (
     <div className="win-controls">
       <button className="win-btn" title="Minimize" onClick={() => window.api.win.minimize()}>
