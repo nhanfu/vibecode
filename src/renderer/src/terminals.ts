@@ -550,12 +550,22 @@ function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: s
     composing = false
     later()
   })
+  on('paste', () => {
+    setTimeout(() => {
+      if (!composing) ta.value = ''
+    }, 0)
+  })
   on('input', (e) => {
     const ev = e as InputEvent
     log('input', ev.inputType, JSON.stringify(ev.data), ev.isComposing)
     // a key xterm handles itself (a space, a letter typed without the IME) is left to xterm: sending
     // it here too printed it twice
-    if (!imeKey && !composing && !ev.isComposing) return
+    if (!imeKey && !composing && !ev.isComposing) {
+      setTimeout(() => {
+        if (!composing && !imeKey && !timer) ta.value = ''
+      }, 0)
+      return
+    }
     // xterm's own input handling would send the text a second time
     stop(e)
     if (composing || ev.isComposing) return
