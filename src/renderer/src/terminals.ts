@@ -625,6 +625,7 @@ export function createTerm({ reuse, ...spawn }: Omit<PtySpawnOptions, 'cols' | '
     // Claude Code keeps the full transcript itself; 5k lines per chat keeps 10+ chats light
     scrollback: 5000,
     smoothScrollDuration: 125,
+    scrollSensitivity: 5,
     theme: shownTheme(),
     minimumContrastRatio: shownContrast(),
     // only see-through mode needs a transparent canvas: with it on, xterm rasterises every glyph
