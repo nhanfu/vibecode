@@ -5,7 +5,7 @@
  * event whose payload is the argument list. Terminal output is the hot path, so it streams
  * through one `Channel` per terminal instead of the global event bus.
  */
-import { invoke, listen, openFileDialog, bytesToBase64 } from './nativeBridge'
+import { invoke, listen, openFileDialog, bytesToBase64, subscribe } from './nativeBridge'
 import type {
   AgentInfo,
   AppSettings,
@@ -140,6 +140,13 @@ export const api = {
     close: (label: string): void => void invoke('web_close', { label }),
     /** the keyboard goes into the page */
     focus: (label: string): void => void invoke('web_focus', { label }),
+    focusMain: (): void => void invoke('web_focus_main'),
+    onShortcut: (cb: (id: string) => void): Off =>
+      subscribe('shortcut', (detail) => {
+        const event = Array.isArray(detail) ? detail[0] : detail
+        const id = (event as { id?: unknown } | null)?.id
+        if (typeof id === 'string') cb(id)
+      }),
     onNav: (cb: (label: string, nav: WebNav) => void): Off => on('web:nav', cb),
     /** the page's history, sent when a load finishes (base64; see web_open's session) */
     onSession: (cb: (label: string, session: string) => void): Off => on('web:session', cb),

@@ -77,6 +77,7 @@ interface State {
   floatOpen: PanelId | null
   /** the drop-down floating while the pointer is on its button or on it (wins over floatOpen) */
   peek: PanelId | null
+  fullscreen: PanelId | null
   bottomOpen: boolean
   quickOpen: boolean
   /** what the palette starts with: '' files, '>' commands (Ctrl+Shift+P) */
@@ -84,6 +85,7 @@ interface State {
 
   chats: Chat[]
   activeChatId: string | null
+  chatRow: string[]
 
   shells: ShellTab[]
   activeShellId: string | null
@@ -223,14 +225,15 @@ function loadOrder(): PanelId[] {
   return [...saved, ...PANEL_IDS.filter((p) => !saved.includes(p))]
 }
 
-type PanelState = Pick<State, 'pinned' | 'floatOpen' | 'peek'>
+type PanelState = Pick<State, 'pinned' | 'floatOpen' | 'peek' | 'fullscreen'>
 /** The drop-down floating now, if any (hovered wins over opened). */
 export const floating = (s: PanelState): PanelId | null => {
   const f = s.peek ?? s.floatOpen
   return f && !s.pinned.includes(f) ? f : null
 }
 /** On screen: pinned in the stack, or floating. */
-export const panelShown = (s: PanelState, id: PanelId): boolean => s.pinned.includes(id) || floating(s) === id
+export const panelShown = (s: PanelState, id: PanelId): boolean =>
+  s.fullscreen ? s.fullscreen === id : s.pinned.includes(id) || floating(s) === id
 
 /** State that shows a drop-down: nothing to do when it is pinned, else it floats open. For set() patches. */
 export function openPatch(id: PanelId): Partial<State> {
@@ -312,6 +315,18 @@ export function togglePin(id: PanelId): void {
   useStore.setState({ pinned, floatOpen: null, peek: null })
 }
 
+export function toggleFullscreen(id: PanelId): void {
+  if (useStore.getState().fullscreen) return useStore.setState({ fullscreen: null })
+  useStore.setState({ fullscreen: id, floatOpen: null, peek: null })
+}
+
+export function chatsShown(s: Pick<State, 'chats' | 'activeChatId' | 'chatRow'>): Chat[] {
+  const row = s.chatRow.map((id) => s.chats.find((c) => c.id === id)).filter((c): c is Chat => !!c)
+  if (row.some((c) => c.id === s.activeChatId)) return row
+  const active = s.chats.find((c) => c.id === s.activeChatId)
+  return active ? [active] : []
+}
+
 /**
  * Keeps the plugin panels in step with the plugins: one appears (at the end) when its plugin can
  * run, and one goes when it is turned off, removed or cannot run. Kept in the saved order.
@@ -364,12 +379,14 @@ export const useStore = create<State>((set) => ({
   pinned: loadIds(PINNED_KEY, ['agents']),
   floatOpen: null,
   peek: null,
+  fullscreen: null,
   bottomOpen: false,
   quickOpen: false,
   quickOpenQuery: '',
 
   chats: [],
   activeChatId: null,
+  chatRow: [],
 
   shells: [],
   activeShellId: null,

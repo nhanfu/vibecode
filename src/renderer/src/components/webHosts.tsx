@@ -40,7 +40,8 @@ export function TabHosts(): React.JSX.Element {
   const pinned = useStore((s) => s.pinned)
   const floatOpen = useStore((s) => s.floatOpen)
   const peek = useStore((s) => s.peek)
-  const panels = { pinned, floatOpen, peek }
+  const fullscreen = useStore((s) => s.fullscreen)
+  const panels = { pinned, floatOpen, peek, fullscreen }
   const webShown = panelShown(panels, 'web')
   const current = browserKey(activeChatId)
 

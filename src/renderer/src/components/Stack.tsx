@@ -446,8 +446,11 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   const pinned = useStore((s) => s.pinned)
   const order = useStore((s) => s.panelOrder)
   const browsers = useStore((s) => s.browsers)
+  const fullscreen = useStore((s) => s.fullscreen)
   // the torn-off tabs that still exist
   const pageExists = new Set<string>(Object.values(browsers).flatMap((b) => b.tabs.filter((t) => t.detached).map((t) => `page:${t.id}`)))
+  const panels: PanelId[] = [...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id)), ...order.filter(isPluginPanel)]
+  const full = fullscreen && panels.includes(fullscreen) ? fullscreen : null
   // the one that takes the room left: the chat if pinned, else the last pinned one
   const fill = pinned.includes('agents') ? 'agents' : [...order].reverse().find((p) => pinned.includes(p))
   /*
@@ -465,13 +468,14 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   return (
     <div className="workbench stack">
       <TabHosts />
-      {[...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id)), ...order.filter(isPluginPanel)].map((id) => (
+      {panels.map((id) => (
         <StackPanel
           key={id}
           id={id}
           fill={id === fill}
           afterFill={pinned.includes(id) && fillAt >= 0 && line.indexOf(id) > fillAt}
-          controls={pinned.includes(id) ? controls(id) : null}
+          controls={!full && pinned.includes(id) ? controls(id) : null}
+          full={full === null ? null : full === id ? 'self' : 'behind'}
         >
           {id === 'agents' ? (
             <AgentSplit>{children}</AgentSplit>
@@ -484,7 +488,7 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
           )}
         </StackPanel>
       ))}
-      {!fill && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
+      {!fill && !full && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
       {/* dims what is behind a floating drop-down; a click on it closes it (useFloatTracking) */}
       <div className={`stack-backdrop${shown ? ' shown' : ''}`} />
     </div>
@@ -498,12 +502,13 @@ function StackPanel(props: {
   afterFill: boolean
   /** the pinned drop-down whose left edge is this one's right edge */
   controls: PanelId | null
+  full: 'self' | 'behind' | null
   children: React.ReactNode
 }): React.JSX.Element {
-  const { id, fill, afterFill, controls, children } = props
+  const { id, fill, afterFill, controls, full, children } = props
   const meta = metaOf(id)
   const pinned = useStore((s) => s.pinned.includes(id))
-  const shown = useStore((s) => floating(s) === id)
+  const shown = useStore((s) => floating(s) === id) || full === 'self'
   const order = useStore((s) => s.panelOrder.indexOf(id))
   const [width, startResize, resetWidth] = useWidth(meta.size)
   const ref = useRef<HTMLDivElement>(null)
@@ -546,14 +551,14 @@ function StackPanel(props: {
   return (
     <div
       ref={ref}
-      className={`stack-panel ${pinned ? 'pinned' : 'floating'}${shown ? ' shown' : ''}${pinned && fill ? ' fill' : ''}`}
+      className={`stack-panel ${pinned ? 'pinned' : 'floating'}${shown ? ' shown' : ''}${pinned && fill ? ' fill' : ''}${full === 'self' ? ' fullscreen' : full === 'behind' ? ' behind' : ''}`}
       data-panel={id}
-      style={pinned ? { order, flexBasis: width, minWidth: meta.size.min } : { width, left }}
+      style={full === 'self' ? undefined : pinned ? { order, flexBasis: width, minWidth: meta.size.min } : { width, left }}
       onMouseEnter={() => !pinned && shown && peekPanel(id)}
     >
       <div className="stack-body">{children}</div>
       {/* the stretched one has no width of its own to drag; one right of it is dragged from the panel before it */}
-      {!(pinned && (fill || afterFill)) && (
+      {!full && !(pinned && (fill || afterFill)) && (
         <div className="sidebar-resize" title="Drag to resize · double-click to reset" onPointerDown={(e) => startResize(e)} onDoubleClick={resetWidth} />
       )}
       {controls && (

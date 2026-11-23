@@ -10,7 +10,7 @@
  * cursor. Ctrl+B toggles the sidebar everywhere; `{ "key": "ctrl+b", "command": "passToTerminal",
  * "when": "chatFocus" }` in keybindings.json gives it back to Claude Code (run in background).
  */
-import { closeFloat, floating, PANEL_IDS, panelShown, showPanel, togglePanel, togglePin, useStore, type StaticPanelId } from './store'
+import { closeFloat, floating, focusPanel, isPage, PANEL_IDS, pageTab, panelShown, showPanel, toggleFullscreen, togglePanel, togglePin, useStore, type PanelId, type StaticPanelId, type WebTab } from './store'
 import {
   browserKey,
   closeBrowserTab,
@@ -21,6 +21,8 @@ import {
   cycleAgentGroup,
   cycleWebTab,
   defaultAgent,
+  duplicateChat,
+  pageLabels,
   stepBrowserHistory,
   newChat,
   newShell,
@@ -118,6 +120,10 @@ export const COMMANDS: Command[] = [
   { id: 'prevAgent', label: 'Previous running agent', run: () => cycleAgent(-1) },
   { id: 'nextAgentGroup', label: 'Next agent group', run: () => cycleAgentGroup(1) },
   { id: 'prevAgentGroup', label: 'Previous agent group', run: () => cycleAgentGroup(-1) },
+  { id: 'duplicateAgent', label: 'Duplicate agent beside this one', run: () => duplicateChat() },
+  { id: 'fullscreen', label: 'Mini-app full screen', run: () => toggleFullscreen(currentMiniApp()) },
+  { id: 'miniAppPrev', label: 'Previous mini-app', run: () => cycleMiniApp(-1) },
+  { id: 'miniAppNext', label: 'Next mini-app', run: () => cycleMiniApp(1) },
   { id: 'webBack', label: 'Back in the web tab', run: () => stepBrowserHistory(-1) },
   { id: 'webForward', label: 'Forward in the web tab', run: () => stepBrowserHistory(1) },
 
@@ -215,6 +221,10 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'alt+shift+up', command: 'prevAgent' },
   { key: 'alt+down', command: 'nextAgentGroup' },
   { key: 'alt+up', command: 'prevAgentGroup' },
+  { key: 'alt+shift+d', command: 'duplicateAgent' },
+  { key: 'alt+enter', command: 'fullscreen' },
+  { key: 'alt+shift+left', command: 'miniAppPrev' },
+  { key: 'alt+shift+right', command: 'miniAppNext' },
   { key: 'ctrl+shift+l', command: 'focusChat' },
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `alt+${n}`, command: `chat${n}` })),
 
@@ -249,6 +259,56 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+3', command: 'viewDb' },
   { key: 'ctrl+4', command: 'viewAgents' }
 ]
+
+const activeWebTab = (): WebTab | undefined => {
+  const s = st()
+  const b = s.browsers[browserKey(s.activeChatId)]
+  return b?.tabs.find((t) => t.id === b.active)
+}
+
+export function currentMiniApp(): PanelId {
+  const s = st()
+  if (s.fullscreen) return s.fullscreen
+  const floated = floating(s)
+  if (floated) return floated
+  if (webHasFocus) {
+    const tab = activeWebTab()
+    return tab?.detached ? `page:${tab.id}` : 'web'
+  }
+  const here = (document.activeElement as HTMLElement | null)?.closest?.('.stack-panel')?.getAttribute('data-panel')
+  if (here) return here as PanelId
+  return s.pinned.includes('agents') ? 'agents' : ([...s.panelOrder].reverse().find((p) => s.pinned.includes(p)) ?? 'agents')
+}
+
+function focusMiniApp(id: PanelId): void {
+  window.api.browser.focusMain()
+  const s = st()
+  if (id === 'web' || isPage(id)) {
+    const tab = isPage(id) ? pageTab(s, id) : activeWebTab()
+    const label = tab ? pageLabels.get(tab.id) : undefined
+    if (label) window.api.browser.focus(label)
+    return
+  }
+  if (id === 'agents' && s.activeChatId) return focusTerm(s.activeChatId)
+  focusPanel(id)
+}
+
+export function cycleMiniApp(step: 1 | -1): void {
+  const s = st()
+  const list = s.panelOrder.filter((id) => !isPage(id) || !!pageTab(s, id))
+  if (!list.length) return
+  const i = list.indexOf(currentMiniApp())
+  const next = list[(i < 0 ? 0 : i + step + list.length) % list.length]
+  webHasFocus = false
+  if (s.fullscreen) useStore.setState({ fullscreen: next, floatOpen: null, peek: null })
+  else if (!s.pinned.includes(next)) showPanel(next)
+  focusMiniApp(next)
+}
+
+export function runNativeShortcut(id: string): void {
+  webHasFocus = true
+  byId.get(id)?.run()
+}
 
 /** The cursor is in a text field of the page (not Monaco or a terminal, which handle their own keys). */
 const inTextField = (el: HTMLElement | null): boolean =>

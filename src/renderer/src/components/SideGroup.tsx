@@ -35,12 +35,14 @@ export function SideGroup(props: {
   label: string
   count?: number
   actions?: React.ReactNode
+  always?: boolean
   children: React.ReactNode
 }): React.JSX.Element {
-  const { id, label, count, actions, children } = props
-  const [collapsed, setCollapsed] = useState(() => loadOpen() !== id)
+  const { id, label, count, actions, always, children } = props
+  const [collapsed, setCollapsed] = useState(() => !always && loadOpen() !== id)
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    if (always) return
     const onOpen = (e: Event): void => {
       setCollapsed((e as CustomEvent<string | null>).detail !== id)
     }
@@ -56,25 +58,29 @@ export function SideGroup(props: {
       window.removeEventListener(OPEN_EVENT, onOpen)
       window.removeEventListener('side-group-reveal', reveal)
     }
-  }, [id])
+  }, [id, always])
   const toggle = (): void => openGroup(collapsed ? id : null)
   return (
     <div className="side-group" ref={box}>
       <div
-        className="side-group-label collapsible"
-        role="button"
-        tabIndex={0}
-        aria-expanded={!collapsed}
-        title={collapsed ? 'Expand' : 'Collapse'}
-        onClick={toggle}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            toggle()
-          }
-        }}
+        className={always ? 'side-group-label' : 'side-group-label collapsible'}
+        role={always ? undefined : 'button'}
+        tabIndex={always ? undefined : 0}
+        aria-expanded={always ? undefined : !collapsed}
+        title={always || !collapsed ? undefined : 'Expand'}
+        onClick={always ? undefined : toggle}
+        onKeyDown={
+          always
+            ? undefined
+            : (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  toggle()
+                }
+              }
+        }
       >
-        {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+        {!always && (collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />)}
         {label}
         {count !== undefined && count > 0 && <span className="count">{count}</span>}
         <span className="agent-head-spacer" />

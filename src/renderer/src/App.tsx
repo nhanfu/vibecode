@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import { useStore } from './store'
 import { applyTheme, detectClaude, followChatSession, loadPlugins, loadSessions, openFolder, refreshGit, restoreChats, showChatBrowser } from './actions'
-import { onGlobalKey, webKeyFromNative } from './shortcuts'
+import { onGlobalKey, runNativeShortcut, webKeyFromNative } from './shortcuts'
 import { focusTerm } from './terminals'
 import { reloadIfClean } from './fileModelsLite'
 import { QuickOpen, StatusBar, TitleBar, Welcome } from './components/Chrome'
@@ -49,6 +49,7 @@ function useBoot(): void {
       window.api.sessions.onChatSession(followChatSession),
       window.api.browser.onOpen(showChatBrowser),
       window.api.browser.onKey((_label, key, shift) => webKeyFromNative(key, shift)),
+      window.api.browser.onShortcut(runNativeShortcut),
       window.api.win.onState((win) => useStore.setState({ win })),
       // drop-down just slid in → put the cursor straight into the active chat
       window.api.win.onShown(() => {

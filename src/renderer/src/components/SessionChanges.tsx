@@ -87,7 +87,7 @@ function ChangePreview({ file, at }: { file: SessionFile; at: DOMRect }): React.
  * The files the active chat's Claude edited, in this chat's transcript. Hover a file for its diff,
  * click to open it in the editor, and Rewind opens Claude's own /rewind in the chat.
  */
-export function SessionChanges({ chat }: { chat: Chat | undefined }): React.JSX.Element {
+export function SessionChanges({ chat, always }: { chat: Chat | undefined; always?: boolean }): React.JSX.Element {
   const files = useSessionFeed(chat?.sessionId, readChanges, nothingBusy)
   const [hover, setHover] = useState<{ path: string; rect: DOMRect } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -106,6 +106,7 @@ export function SessionChanges({ chat }: { chat: Chat | undefined }): React.JSX.
       id="session-changes"
       label="Changes"
       count={files.length}
+      always={always}
       actions={
         chat?.sessionId ? (
           <button

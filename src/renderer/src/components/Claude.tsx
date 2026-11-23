@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
-import { useStore, type Chat } from '../store'
+import { chatsShown, useStore, type Chat } from '../store'
 import { SlidePill, useEnterAnimation } from './motion'
 import {
   closeChat,
@@ -70,12 +70,31 @@ const PULL =
   'keep my work safe and tell me what happened.\r'
 
 export function ClaudePanel(): React.JSX.Element {
-  // only the open chat: other chats' status / title changes don't re-render this panel
-  const active = useStore((s) => s.chats.find((c) => c.id === s.activeChatId) ?? null)
-  const activeId = active?.id ?? null
+  const ids = useStore((s) => chatsShown(s).map((c) => c.id).join('\n'))
+  const activeId = useStore((s) => s.activeChatId)
+  const hasActive = useStore((s) => s.chats.some((c) => c.id === s.activeChatId))
   const claude = useStore((s) => s.claude)
   // Codex / Gemini… alone is enough to chat; the install card is for when no agent is there at all
   const anyAgent = useStore((s) => !!s.claude?.found || s.agents.some((a) => a.found))
+  const row = ids ? ids.split('\n') : []
+  return (
+    <div className="claude-panel">
+      {claude && !anyAgent && <InstallCard />}
+      {anyAgent && !hasActive && <NoChat />}
+      {row.length > 0 && (
+        <div className={`claude-row${row.length > 1 ? ' split' : ''}`}>
+          {row.map((id) => (
+            <ChatColumn key={id} id={id} current={id === activeId} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChatColumn({ id, current }: { id: string; current: boolean }): React.JSX.Element {
+  const active = useStore((s) => s.chats.find((c) => c.id === id) ?? null)
+  const activeId = active?.id ?? null
   // switching chats: the new conversation eases in
   const termFrame = useRef<HTMLDivElement>(null)
   useEnterAnimation(termFrame, activeId)
@@ -96,10 +115,12 @@ export function ClaudePanel(): React.JSX.Element {
 
   // Chats are picked from the sidebar, so there is no tab strip here — just the open chat's title row.
   return (
-    <div className="claude-panel">
-      {claude && !anyAgent && <InstallCard />}
-      {anyAgent && !active && <NoChat />}
-
+    <div
+      className={`claude-col${current ? ' current' : ''}`}
+      onPointerDownCapture={() => {
+        if (!current) selectChat(id)
+      }}
+    >
       {active && (
         <>
           <div className="chat-titlebar">

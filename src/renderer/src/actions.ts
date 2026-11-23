@@ -684,10 +684,23 @@ export function setChatPermission(id: string, mode: string): void {
   restartChat(id)
 }
 
+function rowWith(row: string[], active: string | null, id: string): string[] {
+  if (row.includes(id)) return row
+  if (active && row.includes(active)) return row.map((x) => (x === active ? id : x))
+  return [id]
+}
+
+function rowBeside(row: string[], at: string, id: string): string[] {
+  const base = row.includes(at) ? row : [at]
+  const i = base.indexOf(at)
+  return [...base.slice(0, i + 1), id, ...base.slice(i + 1).filter((x) => x !== id)]
+}
+
 export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   // the chat comes on screen: the Agent drop-down floats open unless it is pinned
-  useStore.setState({ activeChatId: id, ...openPatch('agents') })
+  const { chatRow, activeChatId } = st()
+  useStore.setState({ activeChatId: id, chatRow: rowWith(chatRow, activeChatId, id), ...openPatch('agents') })
   if (chat?.attention) st().patchChat(id, { attention: false })
   // Explorer / Changes follow the chat you're looking at.
   if (chat) {
@@ -714,6 +727,9 @@ export function closeChat(id: string): void {
     const chats = s.chats.filter((c) => c.id !== id)
     const activeChatId =
       s.activeChatId === id ? (chats[Math.min(idx, chats.length - 1)]?.id ?? null) : s.activeChatId
+    const at = s.chatRow.indexOf(id)
+    const chatRow = s.chatRow.filter((x) => x !== id)
+    if (at >= 0 && activeChatId && activeChatId !== id && !chatRow.includes(activeChatId)) chatRow.splice(at, 0, activeChatId)
     // the chat's browser page goes with it; torn-off pages are user data and stay
     const browsers = { ...s.browsers }
     const kept = (browsers[id]?.tabs ?? []).filter((t) => t.detached)
@@ -722,8 +738,19 @@ export function closeChat(id: string): void {
       const pool = browsers[PAGES_KEY]
       browsers[PAGES_KEY] = { tabs: [...(pool?.tabs ?? []), ...kept], active: pool?.active ?? kept[0].id }
     }
-    return { chats, activeChatId, browsers }
+    return { chats, activeChatId, browsers, chatRow }
   })
+}
+
+export function duplicateChat(): void {
+  const s = st()
+  const c = s.chats.find((x) => x.id === s.activeChatId)
+  if (!c) return
+  const original = c.id
+  newChat({ agent: agentDef(c.agent).id, cwd: c.cwd, title: `${c.title} copy` })
+  const id = st().activeChatId
+  if (!id || id === original) return
+  useStore.setState((x) => ({ chatRow: rowBeside(x.chatRow, original, id) }))
 }
 
 export function restartChat(id: string): void {

@@ -832,11 +832,38 @@ static void on_web_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, 
 }
 
 /* Alt+Left / Alt+Right while the page has the focus: the keys never reach the app's own page. */
+static void zero_native_emit_app_key(zero_native_gtk_window_t *win, const char *id, const char *key) {
+    zero_native_emit(win->host, (zero_native_gtk_event_t){
+        .kind = ZERO_NATIVE_GTK_EVENT_SHORTCUT,
+        .window_id = win->id,
+        .shortcut_id = id,
+        .shortcut_id_len = strlen(id),
+        .shortcut_key = key,
+        .shortcut_key_len = strlen(key),
+        .shortcut_modifiers = 0,
+    });
+}
+
 static gboolean on_web_history_key(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data) {
-    (void)controller;
     (void)keycode;
-    WebKitWebView *web_view = data;
+    zero_native_gtk_window_t *win = data;
+    WebKitWebView *web_view = WEBKIT_WEB_VIEW(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller)));
     if (!(state & GDK_ALT_MASK)) return FALSE;
+    if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) {
+        zero_native_emit_app_key(win, "fullscreen", "enter");
+        return TRUE;
+    }
+    if (state & GDK_SHIFT_MASK) {
+        if (keyval == GDK_KEY_Left) {
+            zero_native_emit_app_key(win, "miniAppPrev", "left");
+            return TRUE;
+        }
+        if (keyval == GDK_KEY_Right) {
+            zero_native_emit_app_key(win, "miniAppNext", "right");
+            return TRUE;
+        }
+        return FALSE;
+    }
     if (keyval == GDK_KEY_Left) {
         if (webkit_web_view_can_go_back(web_view)) webkit_web_view_go_back(web_view);
         return TRUE;
@@ -848,10 +875,10 @@ static gboolean on_web_history_key(GtkEventControllerKey *controller, guint keyv
     return FALSE;
 }
 
-static void zero_native_attach_history_keys(WebKitWebView *web_view) {
+static void zero_native_attach_history_keys(WebKitWebView *web_view, zero_native_gtk_window_t *win) {
     GtkEventController *keys = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
-    g_signal_connect(keys, "key-pressed", G_CALLBACK(on_web_history_key), web_view);
+    g_signal_connect(keys, "key-pressed", G_CALLBACK(on_web_history_key), win);
     gtk_widget_add_controller(GTK_WIDGET(web_view), keys);
 }
 
@@ -1349,7 +1376,7 @@ int zero_native_gtk_create_webview(zero_native_gtk_host_t *host, uint64_t window
     g_signal_connect(web_view, "decide-policy", G_CALLBACK(on_webview_decide_policy), win);
     if (browser) {
         vc_adblock_attach(web_view);
-        zero_native_attach_history_keys(web_view);
+        zero_native_attach_history_keys(web_view, win);
     }
     webkit_web_view_load_uri(web_view, url_copy);
     free(url_copy);
@@ -1731,6 +1758,13 @@ int zero_native_gtk_web_focus(zero_native_gtk_host_t *host, uint64_t window_id, 
     zero_native_gtk_webview_t *webview = zero_native_browser_tab(host, window_id, label, label_len, NULL);
     if (!webview) return 0;
     gtk_widget_grab_focus(GTK_WIDGET(webview->web_view));
+    return 1;
+}
+
+int zero_native_gtk_focus_main(zero_native_gtk_host_t *host, uint64_t window_id) {
+    zero_native_gtk_window_t *win = zero_native_find_window(host, window_id);
+    if (!win || !win->web_view) return 0;
+    gtk_widget_grab_focus(GTK_WIDGET(win->web_view));
     return 1;
 }
 

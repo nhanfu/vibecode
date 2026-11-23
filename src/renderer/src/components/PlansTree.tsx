@@ -83,7 +83,7 @@ function taskPrompt(items: PlanItem[], task: PlanItem): string {
  * The plans and tasks the user adds by hand, as a tree: drag to move (into a plan, or before/after a
  * row), arrow keys to walk it, and a Run button on each task that hands it to the default agent.
  */
-export function PlansGroup(): React.JSX.Element {
+export function PlansGroup({ always }: { always?: boolean }): React.JSX.Element {
   const [items, setItems] = useState<PlanItem[]>(loadPlans)
   const [open, setOpen] = useState<string[]>(loadOpen)
   const [sel, setSel] = useState<string | null>(null)
@@ -509,6 +509,7 @@ export function PlansGroup(): React.JSX.Element {
     <SideGroup
       id="plans"
       label="Plans & tasks"
+      always={always}
       actions={
         <>
           <button className="icon-btn tiny" title="Add a plan" onClick={() => addNear('plan')}>

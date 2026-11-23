@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Copy, FolderOpen, GitBranch, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { Activity, Bot, Check, Copy, FileDiff, Files, FolderOpen, GitBranch, ListTodo, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
 import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
@@ -83,12 +84,83 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
           />
         </div>
       )}
-      {!open && (
-        <button className="agent-rail" title="Show the agents" onClick={() => show(true)}>
-          <PanelLeftOpen size={14} />
-        </button>
-      )}
+      {!open && <AgentRail onShow={() => show(true)} />}
       <div className="agent-chat">{children}</div>
+    </div>
+  )
+}
+
+type RailId = 'project' | 'agents' | 'plans' | 'running' | 'changes' | 'git' | 'files'
+const RAIL: { id: RailId; label: string; icon: LucideIcon; group?: string }[] = [
+  { id: 'project', label: 'Project', icon: FolderOpen },
+  { id: 'agents', label: 'Agents', icon: Bot, group: 'agents' },
+  { id: 'plans', label: 'Plans & tasks', icon: ListTodo, group: 'plans' },
+  { id: 'running', label: 'Running', icon: Activity, group: 'running' },
+  { id: 'changes', label: 'Changes', icon: FileDiff, group: 'session-changes' },
+  { id: 'git', label: 'Git changes', icon: GitBranch, group: 'git-changes' },
+  { id: 'files', label: 'Files', icon: Files, group: 'files' }
+]
+
+function AgentRail({ onShow }: { onShow: () => void }): React.JSX.Element {
+  const root = useStore((s) => s.root)
+  const [hover, setHover] = useState<{ id: RailId; top: number } | null>(null)
+  const timer = useRef<number | undefined>(undefined)
+  const keep = (): void => window.clearTimeout(timer.current)
+  const enter = (id: RailId, el: HTMLElement): void => {
+    keep()
+    setHover({ id, top: el.offsetTop })
+  }
+  const leave = (): void => {
+    keep()
+    timer.current = window.setTimeout(() => setHover(null), 180)
+  }
+  const open = (r: (typeof RAIL)[number]): void => {
+    setHover(null)
+    if (r.group) window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: r.group }))
+    else onShow()
+  }
+  const items = RAIL.filter((r) => root || (r.id !== 'git' && r.id !== 'files'))
+  const flyout = hover && items.some((r) => r.id === hover.id) ? hover : null
+  return (
+    <div className="agent-rail" onMouseEnter={keep} onMouseLeave={leave}>
+      <button className="agent-rail-btn" title="Show the agents" onClick={onShow}>
+        <PanelLeftOpen size={15} />
+      </button>
+      <div className="agent-rail-sep" />
+      {items.map((r) => {
+        const Icon = r.icon
+        return (
+          <button
+            key={r.id}
+            className={`agent-rail-btn${flyout?.id === r.id ? ' on' : ''}`}
+            title={r.label}
+            onMouseEnter={(e) => enter(r.id, e.currentTarget)}
+            onClick={() => open(r)}
+          >
+            <Icon size={15} />
+          </button>
+        )
+      })}
+      {flyout && (
+        <div className="agent-flyout" style={{ top: flyout.top, maxHeight: `calc(100% - ${flyout.top + 8}px)` }}>
+          <RailBody id={flyout.id} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RailBody({ id }: { id: RailId }): React.JSX.Element {
+  const chat = useStore((s) => s.chats.find((c) => c.id === s.activeChatId))
+  return (
+    <div className="agents-panel agent-flyout-body">
+      {id === 'project' && <ProjectHead />}
+      {id === 'agents' && <AgentsGroup always />}
+      {id === 'plans' && <PlansGroup always />}
+      {id === 'running' && <RunningGroup always />}
+      {id === 'changes' && <SessionChanges chat={chat} always />}
+      {id === 'git' && <GitGroup always />}
+      {id === 'files' && <FilesGroup always />}
     </div>
   )
 }
@@ -187,7 +259,7 @@ function ChatBranch({ chat: c }: { chat: Chat }): React.JSX.Element {
  * Which project and folder the agents work in: the opened folder (name, git branch, full path) and,
  * when the chat you are in runs somewhere else under it, that folder. The hide button lives here.
  */
-function ProjectHead({ onHide }: { onHide: () => void }): React.JSX.Element {
+function ProjectHead({ onHide }: { onHide?: () => void }): React.JSX.Element {
   const root = useStore((s) => s.root)
   const branch = useStore((s) => s.git.branch)
   const chatCwd = useStore((s) => s.chats.find((c) => c.id === s.activeChatId)?.cwd)
@@ -214,26 +286,22 @@ function ProjectHead({ onHide }: { onHide: () => void }): React.JSX.Element {
           </div>
         )}
       </div>
-      <button className="icon-btn tiny" title="Hide the agents" onClick={onHide}>
-        <PanelLeftClose size={12} />
-      </button>
+      {onHide && (
+        <button className="icon-btn tiny" title="Hide the agents" onClick={onHide}>
+          <PanelLeftClose size={12} />
+        </button>
+      )}
     </div>
   )
 }
 
-/**
- * Every coding agent the app can run (installed or not, which one a plain New chat uses), and the
- * chats running now, by agent.
- */
-function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
+export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element {
   const claude = useStore((s) => s.claude)
   const found = useStore((s) => s.agents)
   const chats = useStore((s) => s.chats)
-  const activeChatId = useStore((s) => s.activeChatId)
-  const root = useStore((s) => s.root)
-  const gitChanged = useStore((s) => s.git.files.length)
   // re-render when the default changes (defaultAgent() reads it)
   useStore((s) => s.preferredAgent)
+  const root = useStore((s) => s.root)
   const fallback = defaultAgent()
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState<AgentId | null>(null)
@@ -250,92 +318,117 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
     setCopied(id)
     setTimeout(() => setCopied((c) => (c === id ? null : c)), 1200)
   }
-  const groups = agentGroups(chats)
 
+  return (
+    <SideGroup
+      id="agents"
+      label="Agents"
+      always={always}
+      actions={
+        <button className="icon-btn tiny" title="Look for installed agents again" onClick={() => void refresh()}>
+          <RefreshCw size={12} className={busy ? 'spin' : ''} />
+        </button>
+      }
+    >
+      {AGENTS.map((a) => {
+        const ok = installed(a.id)
+        const n = chatsOf(a.id).length
+        const isDefault = ok && fallback === a.id
+        return (
+          <div key={a.id} className={`agent-row${ok ? '' : ' missing'}`}>
+            <button
+              className={`icon-btn tiny agent-default${isDefault ? ' on' : ''}`}
+              title={isDefault ? 'New chats start with this agent' : ok ? 'Start new chats with this agent' : 'Not installed'}
+              disabled={!ok}
+              onClick={() => setDefaultAgent(a.id)}
+            >
+              <Star size={13} />
+            </button>
+            <div className="agent-main">
+              <span className="agent-name">{a.label}</span>
+              {ok ? (
+                <span className="agent-sub">
+                  {a.cmd}
+                  {n > 0 && ` · ${n} open`}
+                </span>
+              ) : (
+                <button className="agent-install" title="Copy the install command" onClick={() => copy(a.id, a.install)}>
+                  {copied === a.id ? <Check size={11} /> : <Copy size={11} />}
+                  <code>{a.install}</code>
+                </button>
+              )}
+            </div>
+            <button
+              className="icon-btn tiny"
+              title={!root ? 'Open a folder first' : ok ? `New ${a.label} chat in ${basename(root)}` : 'Not installed'}
+              disabled={!ok || !root}
+              onClick={() => newChatWith(a.id)}
+            >
+              <Plus size={14} />
+            </button>
+          </div>
+        )
+      })}
+    </SideGroup>
+  )
+}
+
+export function RunningGroup({ always }: { always?: boolean }): React.JSX.Element {
+  const chats = useStore((s) => s.chats)
+  const groups = agentGroups(chats)
+  return (
+    <SideGroup id="running" label="Running" count={chats.length} always={always}>
+      {groups.length === 0 && <div className="tree-empty">No chats open.</div>}
+      {groups.map((g) => (
+        <div key={g.key} className="agent-chats">
+          <div className="agent-chats-head" title={g.cwd}>
+            {agentDef(g.agent).label} · {basename(g.cwd)}
+          </div>
+          {g.chats.map((c) => (
+            <ChatBranch key={c.id} chat={c} />
+          ))}
+        </div>
+      ))}
+    </SideGroup>
+  )
+}
+
+export function GitGroup({ always }: { always?: boolean }): React.JSX.Element {
+  const gitChanged = useStore((s) => s.git.files.length)
+  return (
+    <SideGroup id="git-changes" label="Git changes" count={gitChanged} always={always}>
+      <div className="embedded-view">
+        <ChangesView embedded />
+      </div>
+    </SideGroup>
+  )
+}
+
+export function FilesGroup({ always }: { always?: boolean }): React.JSX.Element {
+  return (
+    <SideGroup id="files" label="Files" always={always}>
+      <div className="embedded-view">
+        <ExplorerView embedded />
+      </div>
+    </SideGroup>
+  )
+}
+
+function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
+  const chats = useStore((s) => s.chats)
+  const activeChatId = useStore((s) => s.activeChatId)
+  const root = useStore((s) => s.root)
   return (
     <div className="agents-panel">
       <ProjectHead onHide={onHide} />
-      <SideGroup
-        id="agents"
-        label="Agents"
-        actions={
-          <button className="icon-btn tiny" title="Look for installed agents again" onClick={() => void refresh()}>
-            <RefreshCw size={12} className={busy ? 'spin' : ''} />
-          </button>
-        }
-      >
-        {AGENTS.map((a) => {
-          const ok = installed(a.id)
-          const n = chatsOf(a.id).length
-          const isDefault = ok && fallback === a.id
-          return (
-            <div key={a.id} className={`agent-row${ok ? '' : ' missing'}`}>
-              <button
-                className={`icon-btn tiny agent-default${isDefault ? ' on' : ''}`}
-                title={isDefault ? 'New chats start with this agent' : ok ? 'Start new chats with this agent' : 'Not installed'}
-                disabled={!ok}
-                onClick={() => setDefaultAgent(a.id)}
-              >
-                <Star size={13} />
-              </button>
-              <div className="agent-main">
-                <span className="agent-name">{a.label}</span>
-                {ok ? (
-                  <span className="agent-sub">
-                    {a.cmd}
-                    {n > 0 && ` · ${n} open`}
-                  </span>
-                ) : (
-                  <button className="agent-install" title="Copy the install command" onClick={() => copy(a.id, a.install)}>
-                    {copied === a.id ? <Check size={11} /> : <Copy size={11} />}
-                    <code>{a.install}</code>
-                  </button>
-                )}
-              </div>
-              <button
-                className="icon-btn tiny"
-                title={!root ? 'Open a folder first' : ok ? `New ${a.label} chat in ${basename(root)}` : 'Not installed'}
-                disabled={!ok || !root}
-                onClick={() => newChatWith(a.id)}
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-          )
-        })}
-      </SideGroup>
-
+      <AgentsGroup />
       <PlansGroup />
-
-      <SideGroup id="running" label="Running" count={chats.length}>
-        {groups.length === 0 && <div className="tree-empty">No chats open.</div>}
-        {groups.map((g) => (
-          <div key={g.key} className="agent-chats">
-            <div className="agent-chats-head" title={g.cwd}>
-              {agentDef(g.agent).label} · {basename(g.cwd)}
-            </div>
-            {g.chats.map((c) => (
-              <ChatBranch key={c.id} chat={c} />
-            ))}
-          </div>
-        ))}
-      </SideGroup>
-
+      <RunningGroup />
       <SessionChanges chat={chats.find((c) => c.id === activeChatId)} />
-
       {root && (
         <>
-          <SideGroup id="git-changes" label="Git changes" count={gitChanged}>
-            <div className="embedded-view">
-              <ChangesView embedded />
-            </div>
-          </SideGroup>
-
-          <SideGroup id="files" label="Files">
-            <div className="embedded-view">
-              <ExplorerView embedded />
-            </div>
-          </SideGroup>
+          <GitGroup />
+          <FilesGroup />
         </>
       )}
     </div>
