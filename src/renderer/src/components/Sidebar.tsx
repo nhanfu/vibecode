@@ -661,6 +661,8 @@ const sameEntries = (a: DirEntry[] | null, b: DirEntry[]): boolean =>
 
 function DirChildren({ dir, depth, deco, openCtx }: { dir: string; depth: number; deco: Map<string, string>; openCtx: OpenCtx }): React.JSX.Element {
   const [items, setItems] = useState<DirEntry[] | null>(null)
+  const [limit, setLimit] = useState(LIST_PAGE)
+  const more = useCallback(() => setLimit((n) => n + LIST_PAGE), [])
   // the Refresh button bumps fsTick; file events only reach the folders they touch
   const tick = useStore((s) => s.fsTick)
   const changed = useDirChanges(dir)
@@ -677,9 +679,10 @@ function DirChildren({ dir, depth, deco, openCtx }: { dir: string; depth: number
   if (!items) return <div className="tree-loading" style={{ paddingLeft: 12 + depth * 12 }} />
   return (
     <>
-      {items.map((it) => (
+      {items.slice(0, limit).map((it) => (
         <TreeNode key={it.path} item={it} depth={depth} deco={deco} openCtx={openCtx} />
       ))}
+      {items.length > limit && <LoadMore key={limit} onVisible={more} />}
     </>
   )
 }
@@ -729,7 +732,6 @@ const statusName: Record<string, string> = {
 export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Element {
   const git = useStore((s) => s.git)
   const root = useStore((s) => s.root)!
-  const activeTabId = useStore((s) => s.activeTabId)
   const totals = git.files.reduce((a, f) => ({ add: a.add + f.added, del: a.del + f.deleted }), { add: 0, del: 0 })
 
   if (!git.isRepo) {
@@ -776,41 +778,76 @@ export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Ele
             <p>Working tree clean. Changes Claude makes will show up here instantly.</p>
           </div>
         )}
-        {git.files.map((f) => {
-          const name = f.rel.split('/').pop()!
-          const dir = f.rel.slice(0, -name.length - 1)
-          const st = f.status === '?' ? 'U' : f.status
-          const active = activeTabId === 'd:' + f.abs.toLowerCase()
-          return (
-            <div key={f.rel} className={`change-row${active ? ' active' : ''}`} onClick={() => openDiff(f.abs, f.rel)} title={`${statusName[f.status]} — ${f.rel}`}>
-              <FileIcon name={name} />
-              <span className={`change-name${f.status === 'D' ? ' deleted' : ''}`}>{name}</span>
-              <span className="change-dir">{dir}</span>
-              <span className="change-stats">
-                {f.added > 0 && <span className="add">+{f.added}</span>}
-                {f.deleted > 0 && <span className="del">−{f.deleted}</span>}
-              </span>
-              {f.status !== 'D' && (
-                <button
-                  className="icon-btn change-open"
-                  title="Open file"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openFile(f.abs)
-                  }}
-                >
-                  <ExternalLink size={13} />
-                </button>
-              )}
-              <span className={`change-badge git-${st}`}>{st}</span>
-            </div>
-          )
-        })}
-        <HistoryList />
+        <ChangeList key={git.root ?? root} files={git.files} />
+        <HistoryList key={git.root ?? root} />
       </div>
     </>
   )
 }
+
+/** Rows shown before the next one is loaded when the list end scrolls into view. */
+const LIST_PAGE = 40
+
+/** Sits under a list; when it scrolls into view, `onVisible` runs (a new one is mounted per page, so it re-checks). */
+function LoadMore({ onVisible }: { onVisible: () => void }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) onVisible()
+    })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [onVisible])
+  return <div ref={ref} style={{ height: 1 }} />
+}
+
+/** Changed files, a page at a time. */
+function ChangeList({ files }: { files: GitFile[] }): React.JSX.Element {
+  const [limit, setLimit] = useState(LIST_PAGE)
+  const more = useCallback(() => setLimit((n) => n + LIST_PAGE), [])
+  return (
+    <>
+      {files.slice(0, limit).map((f) => (
+        <ChangeRow key={f.rel} f={f} />
+      ))}
+      {files.length > limit && <LoadMore key={limit} onVisible={more} />}
+    </>
+  )
+}
+
+const ChangeRow = memo(function ChangeRow({ f }: { f: GitFile }): React.JSX.Element {
+  // a boolean: re-renders only when this file starts / stops being the open diff
+  const active = useStore((s) => s.activeTabId === 'd:' + f.abs.toLowerCase())
+  const name = f.rel.split('/').pop()!
+  const dir = f.rel.slice(0, -name.length - 1)
+  const st = f.status === '?' ? 'U' : f.status
+  return (
+    <div className={`change-row${active ? ' active' : ''}`} onClick={() => openDiff(f.abs, f.rel)} title={`${statusName[f.status]} — ${f.rel}`}>
+      <FileIcon name={name} />
+      <span className={`change-name${f.status === 'D' ? ' deleted' : ''}`}>{name}</span>
+      <span className="change-dir">{dir}</span>
+      <span className="change-stats">
+        {f.added > 0 && <span className="add">+{f.added}</span>}
+        {f.deleted > 0 && <span className="del">−{f.deleted}</span>}
+      </span>
+      {f.status !== 'D' && (
+        <button
+          className="icon-btn change-open"
+          title="Open file"
+          onClick={(e) => {
+            e.stopPropagation()
+            openFile(f.abs)
+          }}
+        >
+          <ExternalLink size={13} />
+        </button>
+      )}
+      <span className={`change-badge git-${st}`}>{st}</span>
+    </div>
+  )
+})
 
 /** The current branch; click to switch to another one (remote-only branches get a local copy). */
 function BranchPicker({ root, branch }: { root: string; branch: string }): React.JSX.Element {
@@ -921,6 +958,8 @@ function HistoryList(): React.JSX.Element | null {
   const [open, setOpen] = useState<string | null>(null)
   // a commit / pull / checkout moves HEAD or a ref even when the working tree status stays the same
   const [refs, setRefs] = useState(0)
+  const [shown, setShown] = useState(LIST_PAGE)
+  const more = useCallback(() => setShown((n) => n + LIST_PAGE), [])
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
     const onChange = (): void => {
@@ -949,9 +988,10 @@ function HistoryList(): React.JSX.Element | null {
     <>
       <SectionHeader title={`History${commits.length ? ` · ${commits.length}` : ''}`} />
       {commits.length === 0 && <div className="history-empty">No commits yet.</div>}
-      {commits.map((c) => (
+      {commits.slice(0, shown).map((c) => (
         <CommitRow key={c.hash} commit={c} gitRoot={gitRoot} open={open === c.hash} toggle={() => setOpen((o) => (o === c.hash ? null : c.hash))} />
       ))}
+      {commits.length > shown && <LoadMore key={shown} onVisible={more} />}
     </>
   )
 }
