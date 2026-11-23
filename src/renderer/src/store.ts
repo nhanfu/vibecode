@@ -115,6 +115,8 @@ export interface WebTab {
   muted?: boolean
   /** the chat a tab belongs to while the Browser is shared by all chats (it goes back there when split again) */
   home?: string
+  /** the page's history as the native side saved it (base64): brought back when the tab opens again */
+  session?: string
 }
 export interface ChatBrowser {
   tabs: WebTab[]
@@ -130,7 +132,7 @@ export interface ChatBrowser {
 export type StaticPanelId = 'project' | 'web' | 'db' | 'plugins' | 'agents'
 /** A web tab torn off the Web drop-down: its own button and panel, for as long as the tab lives. */
 export type PagePanelId = `page:${string}`
-/** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and can run. */
+/** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and its service runs. */
 export type PluginPanelId = `plugin:${string}`
 export type PanelId = StaticPanelId | PagePanelId | PluginPanelId
 export const PANEL_IDS: StaticPanelId[] = ['project', 'web', 'db', 'plugins', 'agents']
@@ -139,6 +141,8 @@ export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith
 export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`
 /** The plugins that get a title-bar panel of their own: on, able to run, with a page, and not taking over a built-in panel. */
 export const panelPlugins = (plugins: PluginInfo[]): PluginInfo[] => plugins.filter((p) => p.enabled && p.available && p.hasSidecar && p.panel && !p.panel.replaces)
+/** Its service runs (or is starting): the one state in which its title-bar panel stays. */
+export const serviceLive = (p: PluginInfo): boolean => p.status === 'running' || p.status === 'starting'
 export const pageTabId = (id: PagePanelId): string => id.slice(5)
 /** The torn-off tab behind a page panel, with the browser key (chat) it belongs to. */
 export function pageTab(s: Pick<State, 'browsers'>, id: PagePanelId): WebTab | undefined {
@@ -172,6 +176,7 @@ interface SavedTab {
   detached?: boolean
   pinned?: boolean
   muted?: boolean
+  session?: string
 }
 /** The Web tabs kept as user data: each chat's tabs and the torn-off pages, with address, title and state. */
 const savedTabs: SavedTab[] = (() => {
@@ -180,7 +185,7 @@ const savedTabs: SavedTab[] = (() => {
     if (Array.isArray(v))
       return v
         .filter((t) => t && typeof t.id === 'string' && typeof t.url === 'string')
-        .map((t) => ({ id: t.id, url: t.url, title: String(t.title ?? ''), chat: typeof t.chat === 'string' ? t.chat : undefined, detached: !!t.detached, pinned: !!t.pinned, muted: !!t.muted, home: typeof t.home === 'string' ? t.home : undefined }))
+        .map((t) => ({ id: t.id, url: t.url, title: String(t.title ?? ''), chat: typeof t.chat === 'string' ? t.chat : undefined, detached: !!t.detached, pinned: !!t.pinned, muted: !!t.muted, home: typeof t.home === 'string' ? t.home : undefined, session: typeof t.session === 'string' ? t.session : undefined }))
   } catch {
     /* storage unavailable */
   }
@@ -189,7 +194,7 @@ const savedTabs: SavedTab[] = (() => {
 const savedBrowsers: Record<string, ChatBrowser> = {}
 for (const t of savedTabs) {
   const key = t.chat ?? PAGES_KEY
-  const tab: WebTab = { id: t.id, url: t.url, title: t.title, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}) }
+  const tab: WebTab = { id: t.id, url: t.url, title: t.title, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}), ...(t.session ? { session: t.session } : {}) }
   const b = savedBrowsers[key] ?? { tabs: [], active: tab.id }
   b.tabs.push(tab)
   savedBrowsers[key] = b
@@ -262,6 +267,12 @@ export function leavePanel(): void {
 /** Show a drop-down: float it open, or (pinned) leave it where it is. */
 export function showPanel(id: PanelId): void {
   stopPeekTimer()
+  const s = useStore.getState()
+  if (isPluginPanel(id) && !s.panelOrder.includes(id)) {
+    const order = [...s.panelOrder, id]
+    saveIds(ORDER_KEY, order)
+    useStore.setState({ panelOrder: order })
+  }
   useStore.setState(openPatch(id))
 }
 
@@ -400,7 +411,7 @@ const serializeTabs = (browsers: Record<string, ChatBrowser>): string =>
     Object.entries(browsers).flatMap(([key, b]) =>
       b.tabs
         .filter((t) => t.url !== 'about:blank' || t.detached || t.pinned || t.muted)
-        .map((t) => ({ id: t.id, url: t.url, title: t.title, chat: key, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}) }))
+        .map((t) => ({ id: t.id, url: t.url, title: t.title, chat: key, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}), ...(t.session ? { session: t.session } : {}) }))
     )
   )
 let savedJson = serializeTabs(savedBrowsers)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, FolderOpen, GitBranch, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
-import { closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
+import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import type { SubAgent } from '../../../shared/types'
 import { writeToTerm } from '../terminals'
@@ -250,7 +250,7 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
     setCopied(id)
     setTimeout(() => setCopied((c) => (c === id ? null : c)), 1200)
   }
-  const running = AGENTS.filter((a) => chatsOf(a.id).length > 0)
+  const groups = agentGroups(chats)
 
   return (
     <div className="agents-panel">
@@ -308,11 +308,13 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
       <PlansGroup />
 
       <SideGroup id="running" label="Running" count={chats.length}>
-        {running.length === 0 && <div className="tree-empty">No chats open.</div>}
-        {running.map((a) => (
-          <div key={a.id} className="agent-chats">
-            <div className="agent-chats-head">{a.label}</div>
-            {chatsOf(a.id).map((c) => (
+        {groups.length === 0 && <div className="tree-empty">No chats open.</div>}
+        {groups.map((g) => (
+          <div key={g.key} className="agent-chats">
+            <div className="agent-chats-head" title={g.cwd}>
+              {agentDef(g.agent).label} · {basename(g.cwd)}
+            </div>
+            {g.chats.map((c) => (
               <ChatBranch key={c.id} chat={c} />
             ))}
           </div>

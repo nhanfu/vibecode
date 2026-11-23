@@ -9,6 +9,7 @@
 const std = @import("std");
 const zn = @import("zero-native");
 const cmd = @import("root.zig");
+const adblock = @import("../adblock/adblock.zig");
 
 extern "c" fn zero_native_gtk_web_history(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, step: c_int) c_int;
 extern "c" fn zero_native_gtk_web_reload(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, hard: c_int) c_int;
@@ -19,6 +20,7 @@ extern "c" fn zero_native_gtk_web_focus(host: *anyopaque, window_id: u64, label:
 extern "c" fn zero_native_gtk_web_set_dark_library(host: *anyopaque, source: [*]const u8, len: usize) c_int;
 extern "c" fn zero_native_gtk_web_set_dark(host: *anyopaque, window_id: u64, dark: c_int) c_int;
 extern "c" fn zero_native_gtk_web_user_agent(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, agent: [*]const u8, agent_len: usize) c_int;
+extern "c" fn zero_native_gtk_web_session_restore(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, data: [*]const u8, data_len: usize) c_int;
 
 const main_window: zn.platform.WindowId = 1;
 
@@ -58,7 +60,21 @@ fn tabKnown(label: []const u8) bool {
     return tabs.contains(label);
 }
 
-const OpenArgs = struct { label: []const u8, chatId: []const u8, url: []const u8, userAgent: ?[]const u8 = null };
+const OpenArgs = struct { label: []const u8, chatId: []const u8, url: []const u8, userAgent: ?[]const u8 = null, session: ?[]const u8 = null };
+
+var ad_started = false;
+
+/// Compiles the EasyList filter once, into the app's data folder (about 2 s, in the background).
+/// Tabs opened before that load without it.
+fn startAdBlock() void {
+    if (ad_started) return;
+    ad_started = true;
+    var dir_buffer: [4096]u8 = undefined;
+    const base = cmd.userData(&dir_buffer) catch return;
+    var z: [4096]u8 = undefined;
+    const dir = std.fmt.bufPrintZ(&z, "{s}", .{base}) catch return;
+    adblock.vc_adblock_start(dir.ptr);
+}
 
 pub fn open(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
@@ -67,6 +83,7 @@ pub fn open(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     const args = try cmd.args(OpenArgs, a, invocation);
     if (tabKnown(args.label)) return cmd.json(output, null);
     if (!allowedUrl(args.url)) return cmd.fail(output, "this address cannot be opened");
+    startAdBlock();
 
     const h0 = try host();
     if (!library_sent) {
@@ -74,8 +91,12 @@ pub fn open(invocation: cmd.Invocation, output: []u8) ![]const u8 {
         library_sent = true;
     }
     const svc = try services();
-    try svc.createWebView(.{ .window_id = main_window, .label = args.label, .url = args.url, .frame = zn.geometry.RectF.init(0, 0, 1, 1) });
+    // a tab brought back after a restart starts blank and takes its saved history, not the address alone
+    const has_session = if (args.session) |s| s.len > 0 else false;
+    try svc.createWebView(.{ .window_id = main_window, .label = args.label, .url = if (has_session) "about:blank" else args.url, .frame = zn.geometry.RectF.init(0, 0, 1, 1) });
     const h = try host();
+    const restored = has_session and zero_native_gtk_web_session_restore(h, main_window, args.label.ptr, args.label.len, args.session.?.ptr, args.session.?.len) != 0;
+    if (has_session and !restored) try svc.navigateWebView(main_window, args.label, args.url);
     _ = zero_native_gtk_web_visible(h, main_window, args.label.ptr, args.label.len, 0);
 
     const key = try cmd.gpa.dupe(u8, args.label);
@@ -226,6 +247,15 @@ export fn zero_native_web_nav(window_id: u64, label: [*:0]const u8, url: [*:0]co
     defer a.deinit();
     const json = std.json.Stringify.valueAlloc(a.allocator(), .{ label_text, .{ .url = nav.url, .title = nav.title, .back = nav.back, .fwd = nav.fwd, .loading = nav.loading } }, .{}) catch return;
     cmd.emit("web:nav", json);
+}
+
+/// The page's history and state (base64), sent when a load finishes: kept by the app for the next start.
+export fn zero_native_web_session(window_id: u64, label: [*:0]const u8, data: [*:0]const u8) callconv(.c) void {
+    _ = window_id;
+    var a = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer a.deinit();
+    const json = std.json.Stringify.valueAlloc(a.allocator(), .{ std.mem.span(label), std.mem.span(data) }, .{}) catch return;
+    cmd.emit("web:session", json);
 }
 
 pub fn setMuted(invocation: cmd.Invocation, output: []u8) ![]const u8 {

@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, RotateCw, Search, Shuffle, Star, X } from 'lucid
 import type { WebSuggestion } from '../../../shared/types'
 import { BookmarkBar } from './BrowserBookmarks'
 import { useStore } from '../store'
-import { HOME_URL, pageLabels, setBrowserUrl } from '../actions'
+import { HOME_URL, pageLabels, setBrowserSession, setBrowserUrl } from '../actions'
 import { SlidePill } from './motion'
 
 /** transitions that never move anything (a slide or scale can move the page, so those still count) */
@@ -84,8 +84,9 @@ export function BrowserTab({
 
   // the native page lives as long as this tab
   useEffect(() => {
-    const muted = useStore.getState().browsers[chatKey]?.tabs.find((t) => t.id === tabId)?.muted
-    void window.api.browser.open(label, chatKey, initial).then(() => {
+    const saved = useStore.getState().browsers[chatKey]?.tabs.find((t) => t.id === tabId)
+    const muted = saved?.muted
+    void window.api.browser.open(label, chatKey, initial, undefined, saved?.session).then(() => {
       if (muted) void window.api.browser.setMuted(label, true)
     }).catch(() => {})
     return () => window.api.browser.close(label)
@@ -115,6 +116,15 @@ export function BrowserTab({
         if (document.activeElement !== addressRef.current) setAddress(display(n.url))
         shown.current = n.url
         setBrowserUrl(chatKey, n.url, tabId, n.title || undefined)
+      }),
+    [label, chatKey, tabId]
+  )
+
+  // the page's history after each finished load, kept with the tab (see web_open's session)
+  useEffect(
+    () =>
+      window.api.browser.onSession((l, session) => {
+        if (l === label) setBrowserSession(chatKey, tabId, session)
       }),
     [label, chatKey, tabId]
   )
