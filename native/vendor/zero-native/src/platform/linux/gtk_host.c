@@ -7,6 +7,8 @@
 #include <stdio.h>
 
 extern void zero_native_web_nav(uint64_t window_id, const char *label, const char *url, const char *title, int loading, int can_back, int can_forward);
+extern void zero_native_web_session(uint64_t window_id, const char *label, const char *data);
+extern void vc_adblock_attach(void *view);
 
 #define ZERO_NATIVE_MAX_WINDOWS 16
 #define ZERO_NATIVE_MAX_WEBVIEWS 16
@@ -732,7 +734,7 @@ static gboolean on_decide_policy(WebKitWebView *web_view, WebKitPolicyDecision *
 
 static char *zn_dark_library = NULL;
 static int zn_web_dark = 0;
-static const char *ZN_DARK_ON = "if (window.DarkReader) DarkReader.enable({}, /(^|\\.)google\\./.test(location.hostname) ? { ignoreImageAnalysis: ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*=\"Google\"]', 'svg[aria-label*=\"Google\"]'], css: 'svg[aria-label=\"Google\"] path{fill:#e8eaed !important}' } : undefined);";
+static const char *ZN_DARK_ON = "if (window.DarkReader) DarkReader.enable({}, { ignoreImageAnalysis: ['svg', 'image', 'img[src$=\".svg\" i]', 'img[src*=\".svg?\" i]'].concat(/(^|\\.)google\\./.test(location.hostname) ? ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*=\"Google\"]', 'svg[aria-label*=\"Google\"]'] : []), css: /(^|\\.)google\\./.test(location.hostname) ? 'svg[aria-label=\"Google\"] path{fill:#e8eaed !important}' : undefined });";
 static const char *ZN_DARK_OFF = "if (window.DarkReader) DarkReader.disable();";
 
 int zero_native_gtk_web_set_dark_library(zero_native_gtk_host_t *host, const char *source, size_t len) {
@@ -770,17 +772,87 @@ static int zero_native_is_browser_label(const char *label) {
     return label && strncmp(label, "web-", 4) == 0;
 }
 
-static void zero_native_emit_web_nav(WebKitWebView *web_view, zero_native_gtk_window_t *win) {
+static void zero_native_emit_web_nav_state(WebKitWebView *web_view, zero_native_gtk_window_t *win, int loading) {
     const char *label = g_object_get_data(G_OBJECT(web_view), "zn-label");
     if (!label) return;
     const char *uri = webkit_web_view_get_uri(web_view);
     const char *title = webkit_web_view_get_title(web_view);
-    zero_native_web_nav(win->id, label, uri ? uri : "", title ? title : "", webkit_web_view_is_loading(web_view) ? 1 : 0, webkit_web_view_can_go_back(web_view) ? 1 : 0, webkit_web_view_can_go_forward(web_view) ? 1 : 0);
+    zero_native_web_nav(win->id, label, uri ? uri : "", title ? title : "", loading, webkit_web_view_can_go_back(web_view) ? 1 : 0, webkit_web_view_can_go_forward(web_view) ? 1 : 0);
+}
+
+static void zero_native_emit_web_nav(WebKitWebView *web_view, zero_native_gtk_window_t *win) {
+    zero_native_emit_web_nav_state(web_view, win, webkit_web_view_is_loading(web_view) ? 1 : 0);
+}
+
+/* WebKit keeps a page "loading" until every subresource finishes (trackers, slow embeds), so the
+   spinner can run long after the content is shown. After this delay the spinner is switched off. */
+typedef struct {
+    zero_native_gtk_window_t *win;
+    char *label;
+} zero_native_stuck_t;
+
+static gboolean on_web_loading_stuck(gpointer data) {
+    zero_native_stuck_t *stuck = data;
+    zero_native_gtk_webview_t *webview = zero_native_find_webview(stuck->win, stuck->label);
+    if (webview && webview->web_view && webkit_web_view_is_loading(webview->web_view)) zero_native_emit_web_nav_state(webview->web_view, stuck->win, 0);
+    free(stuck->label);
+    free(stuck);
+    return G_SOURCE_REMOVE;
+}
+
+/* The page's history and state, as base64, so the app can bring them back after a restart. */
+static void zero_native_emit_web_session(WebKitWebView *web_view, zero_native_gtk_window_t *win) {
+    const char *label = g_object_get_data(G_OBJECT(web_view), "zn-label");
+    if (!label) return;
+    WebKitWebViewSessionState *state = webkit_web_view_get_session_state(web_view);
+    if (!state) return;
+    GBytes *bytes = webkit_web_view_session_state_serialize(state);
+    if (bytes) {
+        gsize size = 0;
+        const guint8 *data = g_bytes_get_data(bytes, &size);
+        gchar *encoded = g_base64_encode(data, size);
+        zero_native_web_session(win->id, label, encoded);
+        g_free(encoded);
+        g_bytes_unref(bytes);
+    }
+    webkit_web_view_session_state_unref(state);
 }
 
 static void on_web_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, gpointer data) {
-    if (event == WEBKIT_LOAD_FINISHED && zero_native_browser_of(data, web_view)) zero_native_apply_dark(web_view);
+    zero_native_gtk_webview_t *browser = zero_native_browser_of(data, web_view);
+    if (browser && (event == WEBKIT_LOAD_COMMITTED || event == WEBKIT_LOAD_FINISHED)) zero_native_apply_dark(web_view);
+    if (browser && event == WEBKIT_LOAD_FINISHED) zero_native_emit_web_session(web_view, data);
+    if (browser && event == WEBKIT_LOAD_COMMITTED) {
+        zero_native_stuck_t *stuck = g_new0(zero_native_stuck_t, 1);
+        stuck->win = data;
+        stuck->label = g_strdup(browser->label);
+        g_timeout_add_seconds(3, on_web_loading_stuck, stuck);
+    }
     zero_native_emit_web_nav(web_view, data);
+}
+
+/* Alt+Left / Alt+Right while the page has the focus: the keys never reach the app's own page. */
+static gboolean on_web_history_key(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data) {
+    (void)controller;
+    (void)keycode;
+    WebKitWebView *web_view = data;
+    if (!(state & GDK_ALT_MASK)) return FALSE;
+    if (keyval == GDK_KEY_Left) {
+        if (webkit_web_view_can_go_back(web_view)) webkit_web_view_go_back(web_view);
+        return TRUE;
+    }
+    if (keyval == GDK_KEY_Right) {
+        if (webkit_web_view_can_go_forward(web_view)) webkit_web_view_go_forward(web_view);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void zero_native_attach_history_keys(WebKitWebView *web_view) {
+    GtkEventController *keys = gtk_event_controller_key_new();
+    gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
+    g_signal_connect(keys, "key-pressed", G_CALLBACK(on_web_history_key), web_view);
+    gtk_widget_add_controller(GTK_WIDGET(web_view), keys);
 }
 
 static void on_web_property_changed(WebKitWebView *web_view, GParamSpec *pspec, gpointer data) {
@@ -1275,6 +1347,10 @@ int zero_native_gtk_create_webview(zero_native_gtk_host_t *host, uint64_t window
     }
     zero_native_reorder_webviews(win);
     g_signal_connect(web_view, "decide-policy", G_CALLBACK(on_webview_decide_policy), win);
+    if (browser) {
+        vc_adblock_attach(web_view);
+        zero_native_attach_history_keys(web_view);
+    }
     webkit_web_view_load_uri(web_view, url_copy);
     free(url_copy);
     return 1;
@@ -1593,6 +1669,27 @@ static zero_native_gtk_webview_t *zero_native_browser_tab(zero_native_gtk_host_t
     if (!webview || !webview->browser || !webview->web_view) return NULL;
     if (out_win) *out_win = win;
     return webview;
+}
+
+/* Brings back a page's history saved by zero_native_emit_web_session. Call before the page is loaded. */
+int zero_native_gtk_web_session_restore(zero_native_gtk_host_t *host, uint64_t window_id, const char *label, size_t label_len, const char *data, size_t data_len) {
+    zero_native_gtk_webview_t *webview = zero_native_browser_tab(host, window_id, label, label_len, NULL);
+    if (!webview || !data || data_len == 0) return 0;
+    gchar *encoded = g_strndup(data, data_len);
+    gsize size = 0;
+    guchar *raw = g_base64_decode(encoded, &size);
+    g_free(encoded);
+    if (!raw || size == 0) {
+        g_free(raw);
+        return 0;
+    }
+    GBytes *bytes = g_bytes_new_take(raw, size);
+    WebKitWebViewSessionState *state = webkit_web_view_session_state_new(bytes);
+    g_bytes_unref(bytes);
+    if (!state) return 0;
+    webkit_web_view_restore_session_state(webview->web_view, state);
+    webkit_web_view_session_state_unref(state);
+    return 1;
 }
 
 int zero_native_gtk_web_history(zero_native_gtk_host_t *host, uint64_t window_id, const char *label, size_t label_len, int step) {

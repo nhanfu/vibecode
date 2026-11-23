@@ -932,6 +932,17 @@ export function cycleWebTab(step: 1 | -1): void {
   if (next) selectBrowserTab(key, next.id)
 }
 
+/** Alt+Left / Alt+Right: back or forward in the Web tab on screen (when the page itself does not have the focus). */
+export function stepBrowserHistory(step: 1 | -1): void {
+  const key = browserKey(st().activeChatId)
+  const b = st().browsers[key]
+  const tab = b?.tabs.find((t) => t.id === b.active)
+  const label = tab ? pageLabels.get(tab.id) : undefined
+  if (!label) return
+  if (step < 0) window.api.browser.back(label)
+  else window.api.browser.forward(label)
+}
+
 export function selectBrowserTab(key: string, id: string): void {
   useStore.setState((s) => {
     const b = s.browsers[key]
@@ -1060,6 +1071,15 @@ export function showChatBrowser(chatId: string): void {
     if (s.browsers[chatId]) return s
     const t = blankTab()
     return { browsers: { ...s.browsers, [chatId]: { tabs: [t], active: t.id } } }
+  })
+}
+
+/** Keep a tab's page history (base64, from the native side) so it comes back after a restart. */
+export function setBrowserSession(key: string, tabId: string, session: string): void {
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    if (!b) return s
+    return { browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t.id === tabId ? { ...t, session } : t)) } } }
   })
 }
 
@@ -1287,4 +1307,41 @@ export function setBrowserMode(shared: boolean): void {
     return { browserShared: shared, browsers }
   })
   saveBrowserShared(shared)
+}
+
+/** Open chats grouped by AI tool and worktree folder (one group per pair), in the order they were opened. */
+export interface AgentGroup {
+  key: string
+  agent: AgentId
+  cwd: string
+  chats: Chat[]
+}
+export function agentGroups(chats: Chat[]): AgentGroup[] {
+  const groups = new Map<string, AgentGroup>()
+  for (const c of chats) {
+    const agent = agentDef(c.agent).id
+    const key = `${agent}\n${c.cwd}`
+    const g = groups.get(key) ?? { key, agent, cwd: c.cwd, chats: [] }
+    g.chats.push(c)
+    groups.set(key, g)
+  }
+  return [...groups.values()]
+}
+
+/** Alt+Shift+Up / Alt+Shift+Down: the previous or next open agent, in the order the agents panel shows them. */
+export function cycleAgent(step: 1 | -1): void {
+  const list = agentGroups(st().chats).flatMap((g) => g.chats)
+  if (!list.length) return
+  const i = list.findIndex((c) => c.id === st().activeChatId)
+  selectChat(list[(i < 0 ? 0 : i + step + list.length) % list.length].id)
+}
+
+/** Alt+Up / Alt+Down: the first agent of the previous or next group (AI tool + worktree). */
+export function cycleAgentGroup(step: 1 | -1): void {
+  const groups = agentGroups(st().chats)
+  if (!groups.length) return
+  const active = st().activeChatId
+  const at = groups.findIndex((g) => g.chats.some((c) => c.id === active))
+  const next = groups[(at < 0 ? 0 : at + step + groups.length) % groups.length]
+  if (next.chats[0]) selectChat(next.chats[0].id)
 }

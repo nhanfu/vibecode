@@ -121,7 +121,7 @@ export const api = {
   },
   browser: {
     /** create (hidden) the native page for one Web tab */
-    open: (label: string, chatId: string, url: string, userAgent?: string): Promise<void> => invoke('web_open', { label, chatId, url, userAgent }),
+    open: (label: string, chatId: string, url: string, userAgent?: string, session?: string): Promise<void> => invoke('web_open', { label, chatId, url, userAgent, session }),
     /** where the page sits (CSS px in the window) and its zoom; `visible` false parks it (and lets it sleep) */
     place: (label: string, r: { x: number; y: number; w: number; h: number }, zoom: number, visible: boolean): void =>
       void invoke('web_place', { label, x: r.x, y: r.y, w: r.w, h: r.h, zoom, visible }),
@@ -141,6 +141,8 @@ export const api = {
     /** the keyboard goes into the page */
     focus: (label: string): void => void invoke('web_focus', { label }),
     onNav: (cb: (label: string, nav: WebNav) => void): Off => on('web:nav', cb),
+    /** the page's history, sent when a load finishes (base64; see web_open's session) */
+    onSession: (cb: (label: string, session: string) => void): Off => on('web:session', cb),
     /** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed while the page has the keyboard: key is 't' or 'w' */
     onKey: (cb: (label: string, key: string, shift: boolean) => void): Off => on('web:key', cb),
     /** a chat's browser tools were used: make sure its Web tab exists (and show it) */
