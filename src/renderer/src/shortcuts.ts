@@ -87,6 +87,7 @@ export const COMMANDS: Command[] = [
   { id: 'line', label: 'Go to line…', run: () => window.dispatchEvent(new Event('go-to-line')) },
   { id: 'reloadApp', label: 'Reload app', run: () => window.location.reload() },
   { id: 'openFolder', label: 'Open folder…', run: () => void openFolder(null, { autoChat: false }) },
+  { id: 'openFolderTerminal', label: 'Open folder and start a chat in it', run: () => void openFolder(null, { autoChat: true }) },
 
   { id: 'newChat', label: 'New chat', run: () => void (defaultAgent() && newChat()) },
   { id: 'nextChat', label: 'Next chat', run: () => cycleChat(1) },
@@ -209,6 +210,7 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'f1', command: 'palette' },
   { key: 'ctrl+p', command: 'quickOpen', when: 'hasFolder' },
   { key: 'ctrl+shift+o', command: 'symbol' },
+  { key: 'ctrl+shift+o', command: 'openFolderTerminal', when: 'agentsFocus || chatFocus' },
   // Monaco opens its own "go to line" when it has the cursor
   { key: 'ctrl+g', command: 'line', when: '!terminalFocus && !editorFocus && !textInputFocus' },
   { key: 'ctrl+o', command: 'openFolder', when: '!terminalFocus && !textInputFocus' },
@@ -327,6 +329,7 @@ function context(): Context {
     textInputFocus: field,
     inputFocus: editor || field,
     hasFolder: !!s.root,
+    agentsFocus: agentsPointer || !!el?.closest?.('.agents-panel, .agent-side, .agent-flyout'),
     fileDirty: !!activeFile()?.dirty,
     reviewOpen: s.tabs.length > 0,
     floating: floating(s) ?? '',
@@ -342,6 +345,7 @@ const CONTEXT_HELP = [
   'textInputFocus     … in a text box (address bar, search, filter…)',
   'inputFocus         editorFocus || textInputFocus',
   'hasFolder          a project folder is open',
+  'agentsFocus        the cursor is in the agent sidebar',
   'fileDirty          the open file has unsaved changes',
   'reviewOpen         a file or a change is open in the popup',
   "floating           the drop-down floating now: 'project' | 'web' | 'plugins' | 'agents', '' if none",
@@ -423,8 +427,11 @@ let pending: string | null = null
 
 /** The page (a native view, outside the document) has the keyboard: set when its keys arrive, cleared by a click elsewhere. */
 let webHasFocus = false
+let agentsPointer = false
 document.addEventListener('pointerdown', (e) => {
-  webHasFocus = !!(e.target as HTMLElement | null)?.closest?.('.browser-tab')
+  const target = e.target as HTMLElement | null
+  webHasFocus = !!target?.closest?.('.browser-tab')
+  agentsPointer = !!target?.closest?.('.agents-panel, .agent-side, .agent-flyout')
 }, true)
 
 /** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed in a Web page: run them as if they came from the window. */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Activity, Bot, Check, Copy, FileDiff, Files, FolderOpen, GitBranch, ListTodo, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
-import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
+import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, openFolder, restartChat, selectChat, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import type { SubAgent } from '../../../shared/types'
 import { writeToTerm } from '../terminals'
@@ -286,6 +286,9 @@ function ProjectHead({ onHide }: { onHide?: () => void }): React.JSX.Element {
           </div>
         )}
       </div>
+      <button className="icon-btn tiny" title="Open folder (Ctrl+Shift+O)" onClick={() => void openFolder(null, { autoChat: true })}>
+        <FolderOpen size={12} />
+      </button>
       {onHide && (
         <button className="icon-btn tiny" title="Hide the agents" onClick={onHide}>
           <PanelLeftClose size={12} />

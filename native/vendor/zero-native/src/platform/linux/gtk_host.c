@@ -2,6 +2,7 @@
 
 #include <gtk/gtk.h>
 #include <webkit/webkit.h>
+#include <jsc/jsc.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -758,12 +759,30 @@ static void zero_native_apply_dark(WebKitWebView *web_view) {
     webkit_web_view_evaluate_javascript(web_view, zn_web_dark ? ZN_DARK_ON : ZN_DARK_OFF, -1, NULL, NULL, NULL, NULL, NULL);
 }
 
+/* Every document of a Web tab (each page, each link followed) starts with Dark Reader already on when the
+   app is in dark mode: the flag is part of the user script that runs before the page's own scripts. */
+static void zero_native_install_dark_script(WebKitWebView *web_view) {
+    if (!zn_dark_library) return;
+    WebKitUserContentManager *manager = webkit_web_view_get_user_content_manager(web_view);
+    WebKitUserScript *old = g_object_get_data(G_OBJECT(web_view), "zn-dark-script");
+    if (old) webkit_user_content_manager_remove_script(manager, old);
+    gchar *flag = g_strdup_printf("window.__vcDark = %s;\n", zn_web_dark ? "true" : "false");
+    gchar *source = g_strconcat(flag, zn_dark_library, "\nif (window.__vcDark) {", ZN_DARK_ON, "}", NULL);
+    WebKitUserScript *script = webkit_user_script_new(source, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME, WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, NULL, NULL);
+    webkit_user_content_manager_add_script(manager, script);
+    g_object_set_data_full(G_OBJECT(web_view), "zn-dark-script", script, g_object_unref);
+    g_free(flag);
+    g_free(source);
+}
+
 int zero_native_gtk_web_set_dark(zero_native_gtk_host_t *host, uint64_t window_id, int dark) {
     zn_web_dark = dark != 0;
     zero_native_gtk_window_t *win = zero_native_find_window(host, window_id);
     if (!win) return 0;
     for (int i = 0; i < win->webview_count; i++) {
-        if (win->webviews[i].browser && win->webviews[i].web_view) zero_native_apply_dark(win->webviews[i].web_view);
+        if (!win->webviews[i].browser || !win->webviews[i].web_view) continue;
+        zero_native_install_dark_script(win->webviews[i].web_view);
+        zero_native_apply_dark(win->webviews[i].web_view);
     }
     return 1;
 }
@@ -818,9 +837,35 @@ static void zero_native_emit_web_session(WebKitWebView *web_view, zero_native_gt
     webkit_web_view_session_state_unref(state);
 }
 
+/* DEBUG: prints the dark state of the page to the app log. */
+static void on_dark_probe(GObject *source, GAsyncResult *result, gpointer data) {
+    (void)data;
+    GError *error = NULL;
+    JSCValue *value = webkit_web_view_evaluate_javascript_finish(WEBKIT_WEB_VIEW(source), result, &error);
+    if (value) {
+        char *text = jsc_value_to_string(value);
+        fprintf(stderr, "[dark-probe] %s\n", text);
+        g_free(text);
+        g_object_unref(value);
+    }
+    if (error) {
+        fprintf(stderr, "[dark-probe] error: %s\n", error->message);
+        g_error_free(error);
+    }
+}
+
+static void zero_native_probe_dark(WebKitWebView *web_view, const char *when) {
+    fprintf(stderr, "[dark-probe] %s flag=%d\n", when, zn_web_dark);
+    webkit_web_view_evaluate_javascript(web_view,
+        "JSON.stringify({u: location.href.slice(0, 120), flag: window.__vcDark, dr: !!window.DarkReader, styles: document.querySelectorAll('.darkreader').length, bg: getComputedStyle(document.body || document.documentElement).backgroundColor, ready: document.readyState})",
+        -1, NULL, NULL, NULL, on_dark_probe, NULL);
+}
+
 static void on_web_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, gpointer data) {
     zero_native_gtk_webview_t *browser = zero_native_browser_of(data, web_view);
     if (browser && (event == WEBKIT_LOAD_COMMITTED || event == WEBKIT_LOAD_FINISHED)) zero_native_apply_dark(web_view);
+    if (browser && event == WEBKIT_LOAD_FINISHED) zero_native_probe_dark(web_view, "finished");
+    if (browser && event == WEBKIT_LOAD_COMMITTED) zero_native_probe_dark(web_view, "committed");
     if (browser && event == WEBKIT_LOAD_FINISHED) zero_native_emit_web_session(web_view, data);
     if (browser && event == WEBKIT_LOAD_COMMITTED) {
         zero_native_stuck_t *stuck = g_new0(zero_native_stuck_t, 1);
@@ -1342,11 +1387,7 @@ int zero_native_gtk_create_webview(zero_native_gtk_host_t *host, uint64_t window
         frame_widget = scroller;
         g_object_set_data(G_OBJECT(web_view), "zn-browser", GINT_TO_POINTER(1));
         g_object_set_data_full(G_OBJECT(web_view), "zn-label", g_strdup(label_copy), g_free);
-        if (zn_dark_library) {
-            WebKitUserScript *library = webkit_user_script_new(zn_dark_library, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME, WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, NULL, NULL);
-            webkit_user_content_manager_add_script(webkit_web_view_get_user_content_manager(web_view), library);
-            webkit_user_script_unref(library);
-        }
+        zero_native_install_dark_script(web_view);
         g_signal_connect(web_view, "load-changed", G_CALLBACK(on_web_load_changed), win);
         g_signal_connect(web_view, "notify::title", G_CALLBACK(on_web_property_changed), win);
         g_signal_connect(web_view, "notify::uri", G_CALLBACK(on_web_property_changed), win);
