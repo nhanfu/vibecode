@@ -1,23 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Activity, Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
-import { basename, useStore, type Chat } from '../store'
-import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, openFolder, restartChat, selectChat, setDefaultAgent } from '../actions'
+import { Bot, Check, Clock, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
+import { basename, useStore } from '../store'
+import { defaultAgent, detectClaude, newChatWith, openFolder, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
-import type { SubAgent } from '../../../shared/types'
-import { writeToTerm } from '../terminals'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
-import { StatusDot } from './icons'
-import { useSessionFeed } from './sessionFeed'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
-import { ChangesView } from './Sidebar'
+import { ChangesView, ChatsView, NewProjectButton } from './Sidebar'
 import { ExplorerNav } from './ExplorerNav'
-import { load, save } from '../localPref'
 
-/** sub-agents removed from the list (the transcript keeps them) */
-const HIDDEN_SUB_KEY = 'vibe.hiddenSubAgents'
 /** what counts as "on the rail": its icons, the flyout, and the popups beside the flyout */
 const RAIL_PARTS = '.agent-rail, .agent-flyout, .explorer-pop, .plan-pop, .menu, .ctx-menu, .overlay'
 
@@ -52,8 +45,17 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
     }
     const waiting = takeRailRequest()
     if (waiting) apply(waiting)
+    const onClose = (e: Event): void => {
+      const id = (e as CustomEvent<RailId | undefined>).detail
+      setHover((h) => (id === undefined || h === id ? null : h))
+      setPinned((p) => (id === undefined || p === id ? null : p))
+    }
     window.addEventListener('rail-open', onRequest)
-    return () => window.removeEventListener('rail-open', onRequest)
+    window.addEventListener('rail-close', onClose)
+    return () => {
+      window.removeEventListener('rail-open', onRequest)
+      window.removeEventListener('rail-close', onClose)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -116,7 +118,6 @@ const RAIL: { id: RailId; label: string; icon: LucideIcon; cmd: string }[] = [
   { id: 'project', label: 'Project', icon: FolderOpen, cmd: 'railProject' },
   { id: 'agents', label: 'Agents', icon: Bot, cmd: 'railAgents' },
   { id: 'plans', label: 'Plans & tasks', icon: ListTodo, cmd: 'railPlans' },
-  { id: 'running', label: 'Running', icon: Activity, cmd: 'railRunning' },
   { id: 'git', label: 'Git changes', icon: GitBranch, cmd: 'railGit' },
   { id: 'files', label: 'Files', icon: Files, cmd: 'explorerFocus' }
 ]
@@ -165,150 +166,52 @@ function AgentRail({
       })}
       {flyoutOpen && shown && (
         <div className="agent-flyout" style={{ top, maxHeight: `calc(100% - ${top + 8}px)` }}>
-          <RailBody id={shown} />
+          <RailBody id={shown} pinned={pinned === shown} />
         </div>
       )}
     </div>
   )
 }
 
-function RailBody({ id }: { id: RailId }): React.JSX.Element {
-  return (
-    <div className="agents-panel agent-flyout-body">
-      {id === 'project' && <ProjectHead />}
-      {id === 'agents' && <AgentsGroup always />}
-      {id === 'plans' && <PlansGroup always />}
-      {id === 'running' && <RunningGroup always />}
-      {id === 'git' && <GitGroup always />}
-      {id === 'files' && <FilesGroup always />}
-    </div>
-  )
-}
-
-const readSubAgents = (sessionId: string): Promise<SubAgent[]> =>
-  typeof window.api.sessions.subagents === 'function' ? window.api.sessions.subagents(sessionId) : Promise.resolve([])
-const anyRunningSub = (list: SubAgent[]): boolean => list.some((a) => a.status === 'running')
-
-function loadHidden(): string[] {
-  return load(HIDDEN_SUB_KEY, (v) => {
-    const list: unknown = JSON.parse(v)
-    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : []
-  }, [])
-}
-
 /**
- * A sub-agent one chat started, one level under that chat. Stop sends Esc to the chat: Claude Code
- * has no way to stop one sub-agent alone, so this stops the chat's whole turn. Remove only hides it
- * from this list.
+ * The Project flyout: New project at the top, then the folders recently opened, then the chats of every
+ * project. The open folder is shown in the status bar. `pinned`: opened by a click or a hotkey, so the
+ * cursor goes to its filter; a hover leaves focus where it is.
  */
-function SubAgentRow({ agent, onStop, onRemove }: { agent: SubAgent; onStop: () => void; onRemove: () => void }): React.JSX.Element {
-  const dot = agent.status === 'running' ? 'working' : agent.status === 'failed' ? 'exited' : 'idle'
-  return (
-    <div className="sub-agent-row" title={`${agent.kind}\n${agent.description}`}>
-      <StatusDot status={dot} />
-      <span className="sub-agent-kind">{agent.kind}</span>
-      <span className="sub-agent-desc">{agent.description}</span>
-      {agent.status === 'running' && (
-        <button
-          className="icon-btn tiny agent-chat-act always"
-          title="Stop: Esc stops this chat's whole turn, sub-agents included"
-          onClick={onStop}
-        >
-          <Square size={10} fill="currentColor" />
-        </button>
-      )}
-      <button className="icon-btn tiny agent-chat-act" title="Remove from the list (the transcript keeps it)" onClick={onRemove}>
-        <Trash2 size={12} />
-      </button>
-    </div>
-  )
-}
-
-/** A chat under its agent in the Running tree, with the sub-agents it started under it. */
-function ChatBranch({ chat: c }: { chat: Chat }): React.JSX.Element {
-  const activeChatId = useStore((s) => s.activeChatId)
-  const subs = useSessionFeed(c.sessionId, readSubAgents, anyRunningSub)
-  const [hidden, setHidden] = useState<string[]>(loadHidden)
-  const remove = (id: string): void => {
-    // read again: another chat may have hidden some since this one loaded
-    const next = [...new Set([...loadHidden(), id])]
-    setHidden(next)
-    save(HIDDEN_SUB_KEY, JSON.stringify(next))
-  }
+function ProjectBody({ pinned }: { pinned: boolean }): React.JSX.Element {
+  const root = useStore((s) => s.root)
+  const recent = useStore((s) => s.recent)
   return (
     <>
-      <div
-        className={`sess-row${c.id === activeChatId ? ' active' : ''}`}
-        onClick={() => selectChat(c.id)}
-        title={`${c.title}\n${c.cwd}`}
-      >
-        <StatusDot status={c.status} attention={c.attention} />
-        <span className="sess-title">{c.title}</span>
-        <span className="sess-time">{basename(c.cwd)}</span>
-        <button
-          className="icon-btn tiny agent-chat-act"
-          title="Restart"
-          onClick={(e) => {
-            e.stopPropagation()
-            restartChat(c.id)
-          }}
-        >
-          <RotateCcw size={12} />
-        </button>
-        <button
-          className="icon-btn tiny agent-chat-act"
-          title="Close"
-          onClick={(e) => {
-            e.stopPropagation()
-            closeChat(c.id)
-          }}
-        >
-          <X size={12} />
-        </button>
+      <div className="sidebar-head">
+        <NewProjectButton />
       </div>
-      {subs
-        .filter((a) => !hidden.includes(a.id))
-        .map((a) => (
-          <SubAgentRow key={a.id} agent={a} onStop={() => writeToTerm(c.id, '\x1b')} onRemove={() => remove(a.id)} />
-        ))}
+      {recent.some((r) => r !== root) && (
+        <div className="recent-folders">
+          <div className="menu-sep">Recent folders</div>
+          {recent
+            .filter((r) => r !== root)
+            .map((r) => (
+              <button key={r} className="menu-item" title={r} onClick={() => void openFolder(r)}>
+                <Clock size={14} />
+                <span className="menu-item-main">{basename(r)}</span>
+              </button>
+            ))}
+        </div>
+      )}
+      <ChatsView opened={pinned} />
     </>
   )
 }
 
-/**
- * Which project and folder the agents work in: the opened folder (name, git branch, full path) and,
- * when the chat you are in runs somewhere else under it, that folder.
- */
-function ProjectHead(): React.JSX.Element {
-  const root = useStore((s) => s.root)
-  const branch = useStore((s) => s.git.branch)
-  const chatCwd = useStore((s) => s.chats.find((c) => c.id === s.activeChatId)?.cwd)
-  const norm = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '')
-  const elsewhere = root && chatCwd && norm(chatCwd).toLowerCase() !== norm(root).toLowerCase() ? chatCwd : null
-  const rel = elsewhere && root && norm(elsewhere).toLowerCase().startsWith(norm(root).toLowerCase() + '/') ? norm(elsewhere).slice(norm(root).length + 1) : elsewhere
+function RailBody({ id, pinned }: { id: RailId; pinned: boolean }): React.JSX.Element {
   return (
-    <div className="project-head" title={root ?? undefined}>
-      <FolderOpen size={14} className="project-icon" />
-      <div className="project-main">
-        <div className="project-name">
-          <span>{root ? basename(root) : 'No folder open'}</span>
-          {branch && (
-            <span className="project-branch" title="Git branch">
-              <GitBranch size={10} />
-              {branch}
-            </span>
-          )}
-        </div>
-        <div className="project-path">{root ?? 'Open a folder to start chats'}</div>
-        {rel && (
-          <div className="project-path chat" title={elsewhere ?? undefined}>
-            chat in {rel}
-          </div>
-        )}
-      </div>
-      <button className="icon-btn tiny" title="Open folder (Ctrl+Shift+O)" onClick={() => void openFolder(null, { autoChat: true })}>
-        <FolderOpen size={12} />
-      </button>
+    <div className="agents-panel agent-flyout-body">
+      {id === 'project' && <ProjectBody pinned={pinned} />}
+      {id === 'agents' && <AgentsGroup always />}
+      {id === 'plans' && <PlansGroup always />}
+      {id === 'git' && <GitGroup always />}
+      {id === 'files' && <FilesGroup always />}
     </div>
   )
 }
@@ -387,26 +290,6 @@ export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element
           </div>
         )
       })}
-    </SideGroup>
-  )
-}
-
-export function RunningGroup({ always }: { always?: boolean }): React.JSX.Element {
-  const chats = useStore((s) => s.chats)
-  const groups = agentGroups(chats)
-  return (
-    <SideGroup id="running" label="Running" count={chats.length} always={always}>
-      {groups.length === 0 && <div className="tree-empty">No chats open.</div>}
-      {groups.map((g) => (
-        <div key={g.key} className="agent-chats">
-          <div className="agent-chats-head" title={g.cwd}>
-            {agentDef(g.agent).label} · {basename(g.cwd)}
-          </div>
-          {g.chats.map((c) => (
-            <ChatBranch key={c.id} chat={c} />
-          ))}
-        </div>
-      ))}
     </SideGroup>
   )
 }

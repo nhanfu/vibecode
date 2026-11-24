@@ -3,7 +3,7 @@
  * parts of the app all ask for a group through openRail. A request made while the rail is not on
  * screen waits for it (AgentSplit takes it when it mounts).
  */
-export type RailId = 'project' | 'agents' | 'plans' | 'running' | 'git' | 'files'
+export type RailId = 'project' | 'agents' | 'plans' | 'git' | 'files'
 
 /** toggle: a group that is already open closes; open: it opens (and stays open) */
 export type RailMode = 'toggle' | 'open'
@@ -25,4 +25,9 @@ export function takeRailRequest(): RailRequest | null {
   const req = pending
   pending = null
   return req
+}
+
+/** Closes the flyout of one group (or whichever is open, with no id). */
+export function closeRail(id?: RailId): void {
+  window.dispatchEvent(new CustomEvent<RailId | undefined>('rail-close', { detail: id }))
 }

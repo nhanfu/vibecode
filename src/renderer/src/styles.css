@@ -5428,3 +5428,19 @@ button.plan-chevron:hover {
   opacity: 0.7;
   margin-left: 4px;
 }
+
+/* the New project button: at the top of the Project flyout, right-aligned, icon only */
+.sidebar-head {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.new-project {
+  color: var(--accent);
+}
+
+/* the Project flyout's list of recently opened folders, above the chats */
+.recent-folders {
+  padding: 0 6px 4px;
+}

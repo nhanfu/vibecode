@@ -838,9 +838,11 @@ function showInPopup(tab: EditorTab): void {
  * A file for the popup beside the Files explorer: always in the app (never VS Code), and not in the
  * overlay. Returns the tab's id, or null when the shown file's unsaved edits were not discarded.
  */
-export function openInlineFile(path: string): string | null {
+export function openInlineFile(path: string, preview = false): string | null {
   const id = 'f:' + path.toLowerCase()
   const shown = st().tabs[0]
+  // a hover preview never takes the place of a file with unsaved edits, and never asks about them
+  if (preview && shown?.kind === 'file' && shown.id !== id && hasUnsaved(shown.path)) return null
   if (shown && shown.id !== id && !closeTab(shown.id)) return null
   const tab: EditorTab = { id, kind: 'file', path, title: basename(path), dirty: false }
   useStore.setState({ tabs: [tab], activeTabId: id, inlineTab: id })
@@ -1026,16 +1028,26 @@ export function closeBrowserTab(key: string, id: string): void {
   })
 }
 
-/** Close every tab (torn-off pages included), leaving a single blank one. */
+/**
+ * Close every tab of this chat, leaving a single blank one. Torn-off pages are title-bar buttons
+ * shared by all chats, so the torn-off pages of the other chats go too; their ordinary tabs stay.
+ */
 export function closeAllBrowserTabs(key: string): void {
   useStore.setState((s) => {
-    const pool = key === PAGES_KEY ? undefined : s.browsers[PAGES_KEY]
     const b = s.browsers[key]
     if (!b) return s
-    const pages = new Set([...b.tabs, ...(pool?.tabs ?? [])].map((t) => `page:${t.id}`))
+    const torn = Object.values(s.browsers).flatMap((x) => x.tabs.filter((t) => t.detached))
+    const pages = new Set([...b.tabs, ...torn].map((t) => `page:${t.id}`))
     const blank = blankTab()
     const browsers = { ...s.browsers, [key]: { tabs: [blank], active: blank.id } }
-    if (pool) delete browsers[PAGES_KEY]
+    if (key !== PAGES_KEY) delete browsers[PAGES_KEY]
+    for (const [k, other] of Object.entries(browsers)) {
+      if (k === key) continue
+      const kept = other.tabs.filter((t) => !t.detached)
+      if (kept.length === other.tabs.length) continue
+      const tabs = kept.length ? kept : [blankTab()]
+      browsers[k] = { tabs, active: tabs.some((t) => t.id === other.active) ? other.active : tabs[0].id }
+    }
     return {
       browsers,
       panelOrder: s.panelOrder.filter((p) => !pages.has(p)),

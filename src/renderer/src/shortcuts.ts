@@ -64,7 +64,7 @@ const railCmd = (id: RailId, mode: RailMode = 'toggle'): void => {
   openRail(id, mode)
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', web: 'Web', plugins: 'Plugins', agents: 'Agent (chat)' }
+const PANEL_LABELS: Record<StaticPanelId, string> = { web: 'Web', plugins: 'Plugins', agents: 'Agent (chat)' }
 
 /** One command per plugin that has a settings file: opens it in the editor to edit and review. */
 export function pluginCommands(plugins: PluginInfo[]): Command[] {
@@ -140,22 +140,18 @@ export const COMMANDS: Command[] = [
   { id: 'railProject', label: 'Agent sidebar: show / hide Project', run: () => railCmd('project') },
   { id: 'railAgents', label: 'Agent sidebar: show / hide Agents', run: () => railCmd('agents') },
   { id: 'railPlans', label: 'Agent sidebar: show / hide Plans & tasks', run: () => railCmd('plans') },
-  { id: 'railRunning', label: 'Agent sidebar: show / hide Running', run: () => railCmd('running') },
   { id: 'railGit', label: 'Agent sidebar: show / hide Git changes', run: () => railCmd('git') },
   {
     id: 'chats',
     label: 'Show chats (Project)',
-    run: () => {
-      useStore.setState({ sidebarView: 'chats' })
-      showPanel('project')
-    }
+    run: () => railCmd('project', 'open')
   },
   { id: 'terminal', label: 'Toggle terminal', run: () => toggleBottom() },
   { id: 'panel', label: 'Toggle bottom panel', run: () => toggleBottom() },
   { id: 'newTerminal', label: 'New terminal', run: () => newShell() },
 
   // the title-bar drop-downs: float open / close; pinned ones get the cursor instead (store.ts togglePanel)
-  { id: 'sidebar', label: 'Show / hide Project (chats and folders)', run: () => togglePanel('project') },
+  { id: 'sidebar', label: 'Show / hide Project (chats and folders)', run: () => railCmd('project') },
   {
     id: 'viewWeb',
     label: 'Show / hide Web',
@@ -262,7 +258,6 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+alt+o', command: 'railProject' },
   { key: 'ctrl+alt+a', command: 'railAgents' },
   { key: 'ctrl+alt+p', command: 'railPlans' },
-  { key: 'ctrl+alt+r', command: 'railRunning' },
   { key: 'ctrl+alt+g', command: 'railGit' },
   // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
   { key: 'ctrl+shift+c', command: 'chats', when: '!terminalFocus' },
@@ -368,9 +363,9 @@ const CONTEXT_HELP = [
   'agentsFocus        the cursor is in the agent sidebar',
   'fileDirty          the open file has unsaved changes',
   'reviewOpen         a file or a change is open in the popup',
-  "floating           the drop-down floating now: 'project' | 'web' | 'plugins' | 'agents', '' if none",
-  'projectShown webShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
-  'projectPinned webPinned pluginsPinned agentsPinned   … pinned in the stack'
+  "floating           the drop-down floating now: 'web' | 'plugins' | 'agents', '' if none",
+  'webShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
+  'webPinned pluginsPinned agentsPinned   … pinned in the stack'
 ]
 
 let bindings: Binding[] = []

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ChevronRight, ChevronsDownUp, RefreshCw } from 'lucide-react'
 import { basename, useStore } from '../store'
 import { closeTab, openInlineFile } from '../actions'
+import { hasUnsaved } from '../fileModelsLite'
 import { FileIcon, FolderIcon } from './icons'
 import { sameEntries, useDirChanges, useGitDecorations } from './Sidebar'
 import { InlineFile } from './Review'
@@ -73,16 +74,32 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
     }
   }
 
-  /** Hover on a folder row: its popup opens, unless it is already open or a file popup holds that place. */
+  /** A file popup with unsaved edits holds its place: a hover does not replace it. */
+  const held = (c: Col | undefined): boolean => {
+    if (c?.kind !== 'file') return false
+    const tab = useStore.getState().tabs.find((t) => t.id === c.tabId)
+    return !!tab && tab.kind === 'file' && hasUnsaved(tab.path)
+  }
+
+  /** Hover on a folder row: its popup opens, unless it is already open or a file with unsaved edits holds that place. */
   const hoverOpen = (i: number, e: DirEntry): void => {
     const next = latest.current.cols[i + 1]
-    if (next?.kind === 'file' || (next?.kind === 'dir' && next.dir === e.path)) return
+    if (next?.kind === 'dir' && next.dir === e.path) return
+    if (held(next)) return
     openChild(i, e, false)
   }
 
+  /** Hover on a file row: its preview opens beside the list (a click on it keeps it open). */
+  const hoverPreview = (i: number, e: DirEntry): void => {
+    const next = latest.current.cols[i + 1]
+    if (next?.kind === 'file' && next.tabId === 'f:' + e.path.toLowerCase()) return
+    if (held(next)) return
+    openFileRow(i, e, true)
+  }
+
   /** A file from column i, in a popup beside it: its tab is shown there, not in the overlay. */
-  const openFileRow = (i: number, e: DirEntry): void => {
-    const tabId = openInlineFile(e.path)
+  const openFileRow = (i: number, e: DirEntry, preview = false): void => {
+    const tabId = openInlineFile(e.path, preview)
     if (!tabId) return
     setCols((cs) =>
       capPopups([
@@ -153,8 +170,9 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
     }
   })
 
-  // a popup stays on screen even when the list it opens from has scrolled past the window's edge
-  const popTop = Math.max(8, Math.min(box.top, window.innerHeight - 200))
+  // every popup runs from its top edge to the bottom of the window, so a row always has a popup beside it
+  // to move into; a list scrolled low still leaves them a usable height
+  const popTop = Math.max(8, Math.min(box.top, window.innerHeight - 360))
   const widths = cols.slice(1).map((c) => (c.kind === 'file' ? FILE_W : POP_W))
   const lefts = widths.map((_, k) => box.right + GAP + widths.slice(0, k).reduce((sum, w) => sum + w + GAP, 0))
   const maxHeight = window.innerHeight - popTop - 8
@@ -174,6 +192,7 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
       onOpen: (e, focus) => openChild(i, e, focus),
       onFile: (e) => openFileRow(i, e),
       onHover: (e) => hoverOpen(i, e),
+      onPreview: (e) => hoverPreview(i, e),
       onBack: () => back(i)
     }
   }
@@ -200,8 +219,7 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
                 left: lefts[k],
                 top: popTop,
                 width: widths[k],
-                maxHeight,
-                ...(c.kind === 'file' ? { height: maxHeight } : {})
+                height: maxHeight
               }}
             >
               {c.kind === 'file' ? <InlineFile tabId={c.tabId} /> : <ExplorerCol {...colProps(k + 1)} />}
@@ -227,12 +245,13 @@ interface ColProps {
   onOpen: (e: DirEntry, focus: boolean) => void
   onFile: (e: DirEntry) => void
   onHover: (e: DirEntry) => void
+  onPreview: (e: DirEntry) => void
   onBack: () => void
   root?: boolean
 }
 
 function ExplorerCol(p: ColProps): React.JSX.Element {
-  const { dir, cursor, openDir, deco, onCursor, onOpen, onFile, onHover, onBack, root } = p
+  const { dir, cursor, openDir, deco, onCursor, onOpen, onFile, onHover, onPreview, onBack, root } = p
   const [items, setItems] = useState<DirEntry[] | null>(null)
   const [limit, setLimit] = useState(PAGE)
   const list = useRef<HTMLDivElement>(null)
@@ -325,7 +344,7 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
               className={`tree-row${isCur ? ' cursor' : ''}${open ? ' open' : ''}${status ? ` git-${status === '?' ? 'U' : status}` : ''}`}
               style={{ paddingLeft: 10 }}
               title={it.path}
-              onMouseEnter={it.isDir ? () => onHover(it) : undefined}
+              onMouseEnter={it.isDir ? () => onHover(it) : () => onPreview(it)}
               onClick={() => (it.isDir ? onOpen(it, true) : (onCursor(it, true), onFile(it)))}
             >
               {it.isDir ? <ChevronRight size={13} className={`chev${open ? ' open' : ''}`} /> : <span className="chev-spacer" />}

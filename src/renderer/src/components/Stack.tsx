@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, Layers, MoveHorizontal, PanelTop, Pin, PinOff, Puzzle, Terminal, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Code2, Database, FolderOpen, Globe, Layers, MoveHorizontal, PanelTop, Pin, PinOff, Power, Puzzle, Terminal, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
@@ -20,11 +20,10 @@ import {
   type PanelId,
   type StaticPanelId
 } from '../store'
-import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, openFolder, setBrowserMode } from '../actions'
+import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, loadPlugins, openFolder, setBrowserMode } from '../actions'
 import { SiteIcon } from './SiteIcon'
 import { Adopt, TabHosts } from './webHosts'
 import { COMMANDS } from '../shortcuts'
-import { Sidebar } from './Sidebar'
 import { WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
@@ -57,7 +56,6 @@ interface FloatSize {
 }
 
 const PANELS: Record<StaticPanelId, PanelMeta> = {
-  project: { label: 'Project', icon: FolderOpen, command: 'sidebar', size: { key: 'vibe.sidebarWidth', initial: () => 300, min: 220 } },
   web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
   plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
   agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
@@ -149,20 +147,11 @@ function StackButton(props: {
   const running = useStore((s) => (id === 'agents' ? s.chats.filter((c) => c.status === 'working').length : 0))
   // Agent: named after the agent of the chat you are in ("Claude Code", "Codex"…)
   const agent = useStore((s) => (id === 'agents' ? agentDef(s.chats.find((c) => c.id === s.activeChatId)?.agent).label : ''))
-  const [menu, setMenu] = useState(false)
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
   const clickTimer = useRef<number | undefined>(undefined)
   // a drag ends with a click on the button: that one is not a click
   const dragged = useRef(false)
 
-  useEffect(() => {
-    if (!menu) return
-    const close = (e: MouseEvent): void => {
-      if (!(e.target instanceof Element && e.target.closest('.stack-menu'))) setMenu(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [menu])
 
   const press = (e: React.PointerEvent<HTMLButtonElement>): void => {
     if (e.button !== 0) return
@@ -199,25 +188,20 @@ function StackButton(props: {
     }
     window.clearTimeout(clickTimer.current)
     if (e.detail >= 2) {
-      setMenu(false)
       togglePin(id)
       return
     }
     // wait: this may be the first half of a double-click
-    clickTimer.current = window.setTimeout(() => {
-      if (id === 'project') setMenu((m) => !m)
-      else togglePanel(id)
-    }, CLICK_WAIT)
+    clickTimer.current = window.setTimeout(() => togglePanel(id), CLICK_WAIT)
   }
 
   const Icon = meta.icon
-  const label = id === 'project' && root ? basename(root) : id === 'agents' && agent ? agent : page ? page.title || page.url.replace(/^https?:\/\//, '') || meta.label : meta.label
+  const label = id === 'agents' && agent ? agent : page ? page.title || page.url.replace(/^https?:\/\//, '') || meta.label : meta.label
   const keys = keysOf(id)
-  const what = id === 'project' ? 'click for folders' : 'click to open'
+  const what = 'click to open'
   const openMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
     window.clearTimeout(clickTimer.current)
-    setMenu(false)
     setCtx({ x: e.clientX, y: e.clientY })
   }
   return (
@@ -235,7 +219,6 @@ function StackButton(props: {
         {page ? <SiteIcon url={page.url} size={14} /> : <Icon size={13} />}
         {running > 0 && <span className="center-count">{running}</span>}
       </button>
-      {menu && <FolderMenu close={() => setMenu(false)} />}
       {ctx && <StackMenu id={id} x={ctx.x} y={ctx.y} onClose={() => setCtx(null)} />}
     </div>
   )
@@ -253,6 +236,8 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   const at = order.indexOf(id)
   const shared = useStore((s) => s.browserShared)
   const keys = keysOf(id)
+  const pluginId = id.startsWith('plugin:') ? id.slice('plugin:'.length) : null
+  const pluginRunning = useStore((s) => (pluginId ? s.plugins.find((p) => p.id === pluginId)?.status === 'running' : false))
 
   // kept on screen, measured before paint so it never jumps
   useLayoutEffect(() => {
@@ -309,6 +294,18 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
           { icon: <X size={14} />, label: 'Close this page', act: () => closeBrowserTab(key, id.slice(5)) }
         ]
       : []),
+    ...(pluginId
+      ? [
+          'sep' as const,
+          {
+            icon: <Power size={14} />,
+            label: 'Stop process',
+            tip: 'Stops this plugin’s server. Start it again from Plugins.',
+            off: !pluginRunning,
+            act: () => void window.api.plugins.stop(pluginId).then(loadPlugins, () => {})
+          }
+        ]
+      : []),
     ...(id === 'web' || isPage(id)
       ? [
           'sep' as const,
@@ -343,44 +340,6 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
     document.body
   )
 }
-
-/** The project button's menu: open another folder. */
-function FolderMenu({ close }: { close: () => void }): React.JSX.Element {
-  const root = useStore((s) => s.root)
-  const recent = useStore((s) => s.recent)
-  return (
-    <div className="menu stack-menu">
-      <button
-        className="menu-item"
-        onClick={() => {
-          close()
-          openFolder()
-        }}
-      >
-        <FolderOpen size={14} /> Open folder…
-      </button>
-      {recent.length > 1 && <div className="menu-sep">Recent</div>}
-      {recent
-        .filter((r) => r !== root)
-        .map((r) => (
-          <button
-            key={r}
-            className="menu-item"
-            onClick={() => {
-              close()
-              openFolder(r)
-            }}
-          >
-            <Clock size={14} />
-            <span className="menu-item-main">{basename(r)}</span>
-            <span className="menu-item-sub">{r}</span>
-          </button>
-        ))}
-    </div>
-  )
-}
-
-/* ---------------- the stack ---------------- */
 
 /** What counts as "on the floating drop-down": it, the title-bar buttons, and menus / dialogs opened from it. */
 const FLOAT_PARTS =
@@ -574,8 +533,6 @@ function StackPanel(props: {
 
 function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.Element {
   switch (id) {
-    case 'project':
-      return <Sidebar />
     case 'web':
       return <WebPanel />
     case 'plugins':

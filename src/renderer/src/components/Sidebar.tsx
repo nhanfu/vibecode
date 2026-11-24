@@ -22,7 +22,8 @@ import {
   Link2,
   Search
 } from 'lucide-react'
-import { basename, closeFloat, useStore, type Chat } from '../store'
+import { basename, useStore, type Chat } from '../store'
+import { closeRail } from '../rail'
 import { closeChat, loadSessions, openFolder, newChat, newChatIn, openCommitDiff, openDiff, openFile, openSession, refreshGit, renameChat, selectChat } from '../actions'
 import { FileIcon, FolderIcon, StatusDot, statusLabel } from './icons'
 import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, GitFile, ProjectGroup, SessionInfo } from '../../../shared/types'
@@ -30,15 +31,6 @@ import { agentDef } from '../../../shared/agents'
 import { NewChatMenu } from './AgentMenu'
 import { focusTerm } from '../terminals'
 import { userStore } from '../localPref'
-
-export function Sidebar(): React.JSX.Element {
-  // files and git changes live in the Source code tab; the sidebar is just the chats
-  return (
-    <div className="sidebar">
-      <ChatsView />
-    </div>
-  )
-}
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }): React.JSX.Element {
   return (
@@ -61,26 +53,29 @@ function useTick(ms: number): void {
 
 const normKey = (p: string): string => p.toLowerCase().replace(/[\\/]+$/, '')
 
-function ChatsView(): React.JSX.Element {
-  useTick(30000)
-  // New chat lives on the + of each project (and Ctrl+Shift+N), so the list starts right away
+/** The chats of every project, with the folder's own tree beside them in the agent sidebar's Project flyout. */
+/** Pick (or make) a folder and start a chat in it. Icon only: the icon says what it does, the title says it in words. */
+export function NewProjectButton(): React.JSX.Element {
   const disabled = !useStore((s) => !!s.claude?.found || s.agents.some((a) => a.found))
   return (
-    <>
-      <div className="scroll">
-        <ProjectsTree />
-      </div>
-      <div className="sidebar-foot">
-        <button
-          className="btn btn-primary btn-block"
-          disabled={disabled}
-          title="Pick (or make) a folder and start a chat in it"
-          onClick={() => openFolder(null, { autoChat: true })}
-        >
-          <FolderPlus size={15} /> New project
-        </button>
-      </div>
-    </>
+    <button
+      className="icon-btn new-project"
+      disabled={disabled}
+      title="New project: pick or make a folder and start a chat in it"
+      aria-label="New project"
+      onClick={() => openFolder(null, { autoChat: true })}
+    >
+      <FolderPlus size={15} />
+    </button>
+  )
+}
+
+export function ChatsView({ opened }: { opened: boolean }): React.JSX.Element {
+  useTick(30000)
+  return (
+    <div className="scroll">
+      <ProjectsTree opened={opened} />
+    </div>
   )
 }
 
@@ -160,7 +155,7 @@ function recentItems(projects: ProjectGroup[], chats: Chat[]): RecentItem[] {
 }
 
 /** Every project + conversation from Claude Code's store — the same list the Claude app shows. */
-function ProjectsTree(): React.JSX.Element {
+function ProjectsTree({ opened }: { opened: boolean }): React.JSX.Element {
   const projects = useStore((s) => s.projects)
   const root = useStore((s) => s.root)
   const chats = useStore((s) => s.chats)
@@ -171,8 +166,6 @@ function ProjectsTree(): React.JSX.Element {
   const [q, setQ] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  /** opened by Ctrl+B or a click (not just hovered, not pinned in the stack) */
-  const opened = useStore((s) => s.floatOpen === 'project' && !s.pinned.includes('project'))
   /** the row the arrow keys are on (marked with data-kbd: React leaves that attribute alone) */
   const kbd = useRef<HTMLElement | null>(null)
 
@@ -201,8 +194,7 @@ function ProjectsTree(): React.JSX.Element {
   }
   const close = (): void => {
     mark(null)
-    // floating: it closes; pinned in the stack: it stays, the cursor goes back to the chat
-    closeFloat()
+    closeRail('project')
     backToChat()
   }
 
