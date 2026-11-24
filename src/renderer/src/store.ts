@@ -78,6 +78,8 @@ interface State {
   /** the drop-down floating while the pointer is on its button or on it (wins over floatOpen) */
   peek: PanelId | null
   fullscreen: PanelId | null
+  /** the file tab shown in a popup beside the Files explorer, not in the overlay (null: none) */
+  inlineTab: string | null
   bottomOpen: boolean
   quickOpen: boolean
   /** what the palette starts with: '' files, '>' commands (Ctrl+Shift+P) */
@@ -380,6 +382,7 @@ export const useStore = create<State>((set) => ({
   floatOpen: null,
   peek: null,
   fullscreen: null,
+  inlineTab: null,
   bottomOpen: false,
   quickOpen: false,
   quickOpenQuery: '',

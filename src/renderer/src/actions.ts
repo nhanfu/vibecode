@@ -831,7 +831,20 @@ const vscodeReady = (): boolean => panelPlugins(st().plugins).some((p) => p.id =
 function showInPopup(tab: EditorTab): void {
   const shown = st().tabs[0]
   if (shown && shown.id !== tab.id && !closeTab(shown.id)) return
-  useStore.setState({ tabs: [tab], activeTabId: tab.id })
+  useStore.setState({ tabs: [tab], activeTabId: tab.id, inlineTab: null })
+}
+
+/**
+ * A file for the popup beside the Files explorer: always in the app (never VS Code), and not in the
+ * overlay. Returns the tab's id, or null when the shown file's unsaved edits were not discarded.
+ */
+export function openInlineFile(path: string): string | null {
+  const id = 'f:' + path.toLowerCase()
+  const shown = st().tabs[0]
+  if (shown && shown.id !== id && !closeTab(shown.id)) return null
+  const tab: EditorTab = { id, kind: 'file', path, title: basename(path), dirty: false }
+  useStore.setState({ tabs: [tab], activeTabId: id, inlineTab: id })
+  return id
 }
 
 function showInVSCode(open: { file?: string; diff?: { left: string; right: string } }): void {
@@ -1146,7 +1159,7 @@ export function closeTab(id: string): boolean {
   }
   useStore.setState((s) => {
     const tabs = s.tabs.filter((t) => t.id !== id)
-    return { tabs, activeTabId: s.activeTabId === id ? (tabs[0]?.id ?? null) : s.activeTabId }
+    return { tabs, activeTabId: s.activeTabId === id ? (tabs[0]?.id ?? null) : s.activeTabId, inlineTab: s.inlineTab === id ? null : s.inlineTab }
   })
   return true
 }

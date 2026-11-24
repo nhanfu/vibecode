@@ -3041,21 +3041,48 @@ button.plan-chevron:hover {
   border-radius: 4px;
   object-fit: contain;
 }
+/* web tabs: a fixed, icon-only width; the title stays in the tooltip, so loading pages never widen the strip */
 .web-tab-strip .tab {
-  max-width: 200px;
+  width: 34px;
+  max-width: 34px;
   margin: 5px 2px;
-  padding: 0 6px 0 11px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
   border: 0;
   border-radius: 10px;
   background: transparent;
   z-index: 1;
   transition:
     color 0.2s var(--ios-ease),
-    max-width 0.22s var(--ios-ease),
-    padding 0.22s var(--ios-ease),
+    background 0.12s,
     opacity 0.18s ease;
 }
+.web-tab-strip .tab-title,
+.web-tab-strip .tab-muted {
+  display: none;
+}
+.web-tab-strip .tab .tab-close {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+.web-tab-strip .tab:hover .tab-close,
+.web-tab-strip .tab.active .tab-close {
+  opacity: 0;
+}
+.web-tab-strip .tab:hover .tab-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+.web-tab-strip .tab:hover .site-icon {
+  opacity: 0;
+}
 .web-tab-strip .tab.closing {
+  width: 0;
   max-width: 0;
   margin-left: 0;
   margin-right: 0;
@@ -3067,13 +3094,13 @@ button.plan-chevron:hover {
 }
 @keyframes web-tab-in {
   from {
+    width: 0;
     max-width: 0;
     opacity: 0;
-    padding-left: 0;
-    padding-right: 0;
   }
   to {
-    max-width: 200px;
+    width: 34px;
+    max-width: 34px;
     opacity: 1;
   }
 }
@@ -3088,8 +3115,7 @@ button.plan-chevron:hover {
     opacity 0.12s ease-out;
 }
 .web-tab-strip .tab.pinned {
-  max-width: none;
-  padding: 0 9px;
+  padding: 0;
 }
 .web-tab-strip > .tab-pill::before {
   display: none;
@@ -4729,6 +4755,8 @@ button.plan-chevron:hover {
 /* the list hidden: a thin rail on the left brings it back */
 .agent-rail {
   position: relative;
+  /* above the editor overlay (z 100): the explorer stays usable while a file is open for editing */
+  z-index: 101;
   flex: none;
   width: 36px;
   display: flex;
@@ -5334,7 +5362,7 @@ button.plan-chevron:hover {
 }
 .explorer-pop {
   position: fixed;
-  z-index: 41;
+  z-index: 102;
   display: flex;
   flex-direction: column;
   padding-top: 6px;
@@ -5346,6 +5374,14 @@ button.plan-chevron:hover {
 }
 .explorer-pop .explorer-col {
   flex: 1;
+}
+/* a file in a popup beside the explorer: the editor fills the popup */
+.explorer-pop.explorer-file {
+  padding-top: 0;
+}
+.explorer-file .editor-body {
+  flex: 1;
+  min-height: 0;
 }
 
 /* Reviewing and editing one file or change in a popup (Review.tsx), when VS Code is not there to do it */

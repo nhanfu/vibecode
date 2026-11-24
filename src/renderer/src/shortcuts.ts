@@ -141,7 +141,6 @@ export const COMMANDS: Command[] = [
   { id: 'railAgents', label: 'Agent sidebar: show / hide Agents', run: () => railCmd('agents') },
   { id: 'railPlans', label: 'Agent sidebar: show / hide Plans & tasks', run: () => railCmd('plans') },
   { id: 'railRunning', label: 'Agent sidebar: show / hide Running', run: () => railCmd('running') },
-  { id: 'railChanges', label: 'Agent sidebar: show / hide Changes (this session)', run: () => railCmd('changes') },
   { id: 'railGit', label: 'Agent sidebar: show / hide Git changes', run: () => railCmd('git') },
   {
     id: 'chats',
@@ -264,7 +263,6 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+alt+a', command: 'railAgents' },
   { key: 'ctrl+alt+p', command: 'railPlans' },
   { key: 'ctrl+alt+r', command: 'railRunning' },
-  { key: 'ctrl+alt+c', command: 'railChanges' },
   { key: 'ctrl+alt+g', command: 'railGit' },
   // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
   { key: 'ctrl+shift+c', command: 'chats', when: '!terminalFocus' },

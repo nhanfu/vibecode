@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Activity, Bot, Check, Copy, FileDiff, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
+import { Activity, Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
 import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, openFolder, restartChat, selectChat, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
@@ -12,7 +12,6 @@ import { StatusDot } from './icons'
 import { useSessionFeed } from './sessionFeed'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
-import { SessionChanges } from './SessionChanges'
 import { ChangesView } from './Sidebar'
 import { ExplorerNav } from './ExplorerNav'
 import { load, save } from '../localPref'
@@ -32,6 +31,13 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
   const [pinned, setPinned] = useState<RailId | null>(null)
   const [hover, setHover] = useState<RailId | null>(null)
   const shown = hover ?? pinned
+  // read by the window listeners below, which are set up once per hover or pin
+  const hoverRef = useRef<RailId | null>(null)
+  const pinnedRef = useRef<RailId | null>(null)
+  hoverRef.current = hover
+  pinnedRef.current = pinned
+  // a file open in the Files popup keeps its flyout: leaving or clicking elsewhere would close the file
+  const fileOpen = (id: RailId | null): boolean => id === 'files' && useStore.getState().inlineTab !== null
 
   const apply = (req: RailRequest): void => {
     setHover(null)
@@ -59,6 +65,7 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
       window.clearTimeout(timer)
       const t = e.target
       if (t instanceof Element && t.closest(RAIL_PARTS)) return
+      if (fileOpen(hoverRef.current)) return
       timer = window.setTimeout(() => setHover(null), 180)
     }
     window.addEventListener('pointermove', move, true)
@@ -75,6 +82,7 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
     const down = (e: MouseEvent): void => {
       const t = e.target
       if (t instanceof Element && t.closest(RAIL_PARTS)) return
+      if (fileOpen(pinnedRef.current)) return
       setPinned(null)
     }
     const key = (e: KeyboardEvent): void => {
@@ -109,7 +117,6 @@ const RAIL: { id: RailId; label: string; icon: LucideIcon; cmd: string }[] = [
   { id: 'agents', label: 'Agents', icon: Bot, cmd: 'railAgents' },
   { id: 'plans', label: 'Plans & tasks', icon: ListTodo, cmd: 'railPlans' },
   { id: 'running', label: 'Running', icon: Activity, cmd: 'railRunning' },
-  { id: 'changes', label: 'Changes', icon: FileDiff, cmd: 'railChanges' },
   { id: 'git', label: 'Git changes', icon: GitBranch, cmd: 'railGit' },
   { id: 'files', label: 'Files', icon: Files, cmd: 'explorerFocus' }
 ]
@@ -166,14 +173,12 @@ function AgentRail({
 }
 
 function RailBody({ id }: { id: RailId }): React.JSX.Element {
-  const chat = useStore((s) => s.chats.find((c) => c.id === s.activeChatId))
   return (
     <div className="agents-panel agent-flyout-body">
       {id === 'project' && <ProjectHead />}
       {id === 'agents' && <AgentsGroup always />}
       {id === 'plans' && <PlansGroup always />}
       {id === 'running' && <RunningGroup always />}
-      {id === 'changes' && <SessionChanges chat={chat} always />}
       {id === 'git' && <GitGroup always />}
       {id === 'files' && <FilesGroup always />}
     </div>
