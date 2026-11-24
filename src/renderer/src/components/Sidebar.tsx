@@ -491,7 +491,7 @@ export function shortAgo(t: number): string {
 
 /* ================================ Explorer ================================ */
 
-function useGitDecorations(): Map<string, GitFile['status']> {
+export function useGitDecorations(): Map<string, GitFile['status']> {
   // only paths + statuses matter here; +/- counts change on every edit Claude makes, and a new map
   // re-rendered the whole tree each time
   const sig = useStore((s) => s.git.files.map((f) => f.status + f.abs).join('\n'))
@@ -636,7 +636,7 @@ const parentOf = (p: string): string => {
 }
 
 /** Re-renders when a file event touches something directly inside `dir` (not on every change anywhere). */
-function useDirChanges(dir: string): number {
+export function useDirChanges(dir: string): number {
   const [n, setN] = useState(0)
   useEffect(() => {
     const key = normDir(dir)
@@ -656,7 +656,7 @@ function useDirChanges(dir: string): number {
   return n
 }
 
-const sameEntries = (a: DirEntry[] | null, b: DirEntry[]): boolean =>
+export const sameEntries = (a: DirEntry[] | null, b: DirEntry[]): boolean =>
   !!a && a.length === b.length && a.every((x, i) => x.path === b[i].path && x.isDir === b[i].isDir && x.name === b[i].name)
 
 function DirChildren({ dir, depth, deco, openCtx }: { dir: string; depth: number; deco: Map<string, string>; openCtx: OpenCtx }): React.JSX.Element {

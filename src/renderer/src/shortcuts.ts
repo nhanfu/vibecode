@@ -36,6 +36,8 @@ import {
   toggleTheme
 } from './actions'
 import { focusTerm } from './terminals'
+import { explorerCtrlE } from './explorerFocus'
+import { openRail, type RailId, type RailMode } from './rail'
 import { saveFile } from './fileModelsLite'
 import type { PluginInfo } from '../../shared/types'
 import { buildBindings, keysFor, pressOf, resolve, type Binding, type Context, type KeyRule } from './keybindings'
@@ -56,10 +58,10 @@ const activeFile = (): { path: string; dirty: boolean } | null => {
   return t?.kind === 'file' ? { path: t.path, dirty: t.dirty } : null
 }
 
-/** Files and Git changes are groups of the agent sidebar: show the chat's panel, open the group. */
-const revealSide = (group: 'files' | 'git-changes'): void => {
+/** The agent sidebar's groups: show the chat's panel, then open the group's flyout on the rail. */
+const railCmd = (id: RailId, mode: RailMode = 'toggle'): void => {
   showPanel('agents')
-  window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: group }))
+  openRail(id, mode)
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
 const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', web: 'Web', plugins: 'Plugins', agents: 'Agent (chat)' }
@@ -128,8 +130,19 @@ export const COMMANDS: Command[] = [
   { id: 'webBack', label: 'Back in the web tab', run: () => stepBrowserHistory(-1) },
   { id: 'webForward', label: 'Forward in the web tab', run: () => stepBrowserHistory(1) },
 
-  { id: 'explorer', label: 'Show Explorer (files)', run: () => revealSide('files') },
-  { id: 'changes', label: 'Show Source Control (changes)', run: () => revealSide('git-changes') },
+  { id: 'explorer', label: 'Show Explorer (files)', run: () => railCmd('files', 'open') },
+  {
+    id: 'explorerFocus',
+    label: 'Focus Files in the agent sidebar (again: open the folder under the cursor)',
+    run: () => explorerCtrlE(() => railCmd('files', 'open'))
+  },
+  { id: 'changes', label: 'Show Source Control (changes)', run: () => railCmd('git', 'open') },
+  { id: 'railProject', label: 'Agent sidebar: show / hide Project', run: () => railCmd('project') },
+  { id: 'railAgents', label: 'Agent sidebar: show / hide Agents', run: () => railCmd('agents') },
+  { id: 'railPlans', label: 'Agent sidebar: show / hide Plans & tasks', run: () => railCmd('plans') },
+  { id: 'railRunning', label: 'Agent sidebar: show / hide Running', run: () => railCmd('running') },
+  { id: 'railChanges', label: 'Agent sidebar: show / hide Changes (this session)', run: () => railCmd('changes') },
+  { id: 'railGit', label: 'Agent sidebar: show / hide Git changes', run: () => railCmd('git') },
   {
     id: 'chats',
     label: 'Show chats (Project)',
@@ -243,7 +256,16 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'alt+right', command: 'webForward', when: '!terminalFocus' },
 
   { key: 'ctrl+shift+e', command: 'explorer' },
+  // no terminalFocus guard: in a chat it takes Claude Code's Ctrl+E (end of line); keybindings.json can give it back
+  { key: 'ctrl+e', command: 'explorerFocus' },
   { key: 'ctrl+shift+g', command: 'changes' },
+  // the agent sidebar's icons: each one toggles its flyout (ctrl+alt keys avoid the terminal's and the editor's)
+  { key: 'ctrl+alt+o', command: 'railProject' },
+  { key: 'ctrl+alt+a', command: 'railAgents' },
+  { key: 'ctrl+alt+p', command: 'railPlans' },
+  { key: 'ctrl+alt+r', command: 'railRunning' },
+  { key: 'ctrl+alt+c', command: 'railChanges' },
+  { key: 'ctrl+alt+g', command: 'railGit' },
   // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
   { key: 'ctrl+shift+c', command: 'chats', when: '!terminalFocus' },
   { key: 'ctrl+b', command: 'sidebar' },
@@ -329,7 +351,7 @@ function context(): Context {
     textInputFocus: field,
     inputFocus: editor || field,
     hasFolder: !!s.root,
-    agentsFocus: agentsPointer || !!el?.closest?.('.agents-panel, .agent-side, .agent-flyout'),
+    agentsFocus: agentsPointer || !!el?.closest?.('.agents-panel, .agent-rail, .agent-flyout, .explorer-nav'),
     fileDirty: !!activeFile()?.dirty,
     reviewOpen: s.tabs.length > 0,
     floating: floating(s) ?? '',
@@ -431,7 +453,7 @@ let agentsPointer = false
 document.addEventListener('pointerdown', (e) => {
   const target = e.target as HTMLElement | null
   webHasFocus = !!target?.closest?.('.browser-tab')
-  agentsPointer = !!target?.closest?.('.agents-panel, .agent-side, .agent-flyout')
+  agentsPointer = !!target?.closest?.('.agents-panel, .agent-rail, .agent-flyout, .explorer-nav')
 }, true)
 
 /** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed in a Web page: run them as if they came from the window. */

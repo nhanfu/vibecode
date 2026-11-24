@@ -1,149 +1,164 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Activity, Bot, Check, Copy, FileDiff, Files, FolderOpen, GitBranch, ListTodo, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
+import { Activity, Bot, Check, Copy, FileDiff, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
 import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, openFolder, restartChat, selectChat, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import type { SubAgent } from '../../../shared/types'
 import { writeToTerm } from '../terminals'
+import { COMMANDS } from '../shortcuts'
+import { takeRailRequest, type RailId, type RailRequest } from '../rail'
 import { StatusDot } from './icons'
 import { useSessionFeed } from './sessionFeed'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
 import { SessionChanges } from './SessionChanges'
-import { ChangesView, ExplorerView } from './Sidebar'
+import { ChangesView } from './Sidebar'
+import { ExplorerNav } from './ExplorerNav'
 import { load, save } from '../localPref'
 
-const SIDE_W_KEY = 'vibe.agentSideWidth'
-const SIDE_OPEN_KEY = 'vibe.agentSideOpen'
-const SIDE_W = 230
 /** sub-agents removed from the list (the transcript keeps them) */
 const HIDDEN_SUB_KEY = 'vibe.hiddenSubAgents'
+/** what counts as "on the rail": its icons, the flyout, and the popups beside the flyout */
+const RAIL_PARTS = '.agent-rail, .agent-flyout, .explorer-pop, .plan-pop, .menu, .ctx-menu, .overlay'
 
 /**
- * The Agent drop-down: the agents on the left, the chat (`children`) on the right. The list can be
- * hidden (a thin rail brings it back) and resized from its right edge; both are remembered. The
- * chat stays the same element whatever the list does, so its terminals are never rebuilt.
+ * The Agent drop-down: a rail of icons on the left, the chat (`children`) on the right. Each icon
+ * opens its group as a flyout beside the rail: while the pointer is on an icon, the flyout follows
+ * it; a click or a hotkey keeps it open until you click elsewhere, press Esc, or pick the icon again.
+ * The chat stays the same element whatever the rail does, so its terminals are never rebuilt.
  */
 export function AgentSplit({ children }: { children: React.ReactNode }): React.JSX.Element {
-  const [open, setOpen] = useState(() => load(SIDE_OPEN_KEY, (v) => v !== '0', true))
-  const [width, setWidth] = useState(() => load(SIDE_W_KEY, (v) => Number(v) || SIDE_W, SIDE_W))
-  const show = (on: boolean): void => {
-    setOpen(on)
-    save(SIDE_OPEN_KEY, on ? '1' : '0')
+  const [pinned, setPinned] = useState<RailId | null>(null)
+  const [hover, setHover] = useState<RailId | null>(null)
+  const shown = hover ?? pinned
+
+  const apply = (req: RailRequest): void => {
+    setHover(null)
+    setPinned((p) => (req.mode === 'toggle' && p === req.id ? null : req.id))
   }
-  // Show Explorer / Show Source Control: the sidebar has to be open for its group to show. A closed
-  // sidebar has no groups to hear the request, so it is made again once they exist.
-  const openNow = useRef(open)
-  openNow.current = open
+
+  // hotkeys and other parts of the app; a request made before this mounted waits for it
   useEffect(() => {
-    const reveal = (e: Event): void => {
-      if (openNow.current) return
-      show(true)
-      setTimeout(() => window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: (e as CustomEvent<string>).detail })), 60)
+    const onRequest = (e: Event): void => {
+      takeRailRequest()
+      apply((e as CustomEvent<RailRequest>).detail)
     }
-    window.addEventListener('side-group-reveal', reveal)
-    return () => window.removeEventListener('side-group-reveal', reveal)
+    const waiting = takeRailRequest()
+    if (waiting) apply(waiting)
+    window.addEventListener('rail-open', onRequest)
+    return () => window.removeEventListener('rail-open', onRequest)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const resize = (e: React.PointerEvent<HTMLDivElement>): void => {
-    e.preventDefault()
-    const handle = e.currentTarget
-    handle.setPointerCapture(e.pointerId)
-    handle.classList.add('dragging')
-    const left = handle.parentElement!.getBoundingClientRect().left
-    let w = width
-    const move = (ev: PointerEvent): void => {
-      w = Math.round(Math.min(480, Math.max(170, ev.clientX - left)))
-      setWidth(w)
+
+  // a hovered icon's flyout closes once the pointer is off the rail and its popups
+  useEffect(() => {
+    if (hover === null) return
+    let timer = 0
+    const move = (e: PointerEvent): void => {
+      window.clearTimeout(timer)
+      const t = e.target
+      if (t instanceof Element && t.closest(RAIL_PARTS)) return
+      timer = window.setTimeout(() => setHover(null), 180)
     }
-    const up = (): void => {
-      handle.classList.remove('dragging')
-      handle.removeEventListener('pointermove', move)
-      handle.removeEventListener('pointerup', up)
-      handle.removeEventListener('pointercancel', up)
-      save(SIDE_W_KEY, String(w))
+    window.addEventListener('pointermove', move, true)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('pointermove', move, true)
     }
-    handle.addEventListener('pointermove', move)
-    handle.addEventListener('pointerup', up)
-    handle.addEventListener('pointercancel', up)
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hover !== null])
+
+  // a pinned flyout closes on a click elsewhere, and on Esc (not while typing in a popup or the chat)
+  useEffect(() => {
+    if (pinned === null) return
+    const down = (e: MouseEvent): void => {
+      const t = e.target
+      if (t instanceof Element && t.closest(RAIL_PARTS)) return
+      setPinned(null)
+    }
+    const key = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || document.activeElement?.closest('.explorer-nav, .xterm')) return
+      setPinned(null)
+    }
+    window.addEventListener('mousedown', down, true)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.removeEventListener('mousedown', down, true)
+      window.removeEventListener('keydown', key)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinned !== null])
+
   return (
     <div className="agent-split">
-      {open && (
-        <div className="agent-side" style={{ width }}>
-          <AgentsList onHide={() => show(false)} />
-          <div
-            className="sidebar-resize"
-            title="Drag to resize · double-click to reset"
-            onPointerDown={resize}
-            onDoubleClick={() => {
-              setWidth(SIDE_W)
-              save(SIDE_W_KEY, null)
-            }}
-          />
-        </div>
-      )}
-      {!open && <AgentRail onShow={() => show(true)} />}
+      <AgentRail
+        shown={shown}
+        pinned={pinned}
+        onHover={setHover}
+        onPick={(id) => apply({ id, mode: 'toggle' })}
+      />
       <div className="agent-chat">{children}</div>
     </div>
   )
 }
 
-type RailId = 'project' | 'agents' | 'plans' | 'running' | 'changes' | 'git' | 'files'
-const RAIL: { id: RailId; label: string; icon: LucideIcon; group?: string }[] = [
-  { id: 'project', label: 'Project', icon: FolderOpen },
-  { id: 'agents', label: 'Agents', icon: Bot, group: 'agents' },
-  { id: 'plans', label: 'Plans & tasks', icon: ListTodo, group: 'plans' },
-  { id: 'running', label: 'Running', icon: Activity, group: 'running' },
-  { id: 'changes', label: 'Changes', icon: FileDiff, group: 'session-changes' },
-  { id: 'git', label: 'Git changes', icon: GitBranch, group: 'git-changes' },
-  { id: 'files', label: 'Files', icon: Files, group: 'files' }
+/** One icon per group. `cmd` is the command that opens it, so the tooltip can show its hotkey. */
+const RAIL: { id: RailId; label: string; icon: LucideIcon; cmd: string }[] = [
+  { id: 'project', label: 'Project', icon: FolderOpen, cmd: 'railProject' },
+  { id: 'agents', label: 'Agents', icon: Bot, cmd: 'railAgents' },
+  { id: 'plans', label: 'Plans & tasks', icon: ListTodo, cmd: 'railPlans' },
+  { id: 'running', label: 'Running', icon: Activity, cmd: 'railRunning' },
+  { id: 'changes', label: 'Changes', icon: FileDiff, cmd: 'railChanges' },
+  { id: 'git', label: 'Git changes', icon: GitBranch, cmd: 'railGit' },
+  { id: 'files', label: 'Files', icon: Files, cmd: 'explorerFocus' }
 ]
 
-function AgentRail({ onShow }: { onShow: () => void }): React.JSX.Element {
+function AgentRail({
+  shown,
+  pinned,
+  onHover,
+  onPick
+}: {
+  shown: RailId | null
+  pinned: RailId | null
+  onHover: (id: RailId) => void
+  onPick: (id: RailId) => void
+}): React.JSX.Element {
   const root = useStore((s) => s.root)
-  const [hover, setHover] = useState<{ id: RailId; top: number } | null>(null)
-  const timer = useRef<number | undefined>(undefined)
-  const keep = (): void => window.clearTimeout(timer.current)
-  const enter = (id: RailId, el: HTMLElement): void => {
-    keep()
-    setHover({ id, top: el.offsetTop })
-  }
-  const leave = (): void => {
-    keep()
-    timer.current = window.setTimeout(() => setHover(null), 180)
-  }
-  const open = (r: (typeof RAIL)[number]): void => {
-    setHover(null)
-    if (r.group) window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: r.group }))
-    else onShow()
-  }
+  const railRef = useRef<HTMLDivElement>(null)
+  const [top, setTop] = useState(0)
   const items = RAIL.filter((r) => root || (r.id !== 'git' && r.id !== 'files'))
-  const flyout = hover && items.some((r) => r.id === hover.id) ? hover : null
+  const flyoutOpen = shown !== null && items.some((r) => r.id === shown)
+
+  // the flyout hangs from its icon
+  useLayoutEffect(() => {
+    if (!shown) return
+    const btn = railRef.current?.querySelector<HTMLElement>(`[data-rail="${shown}"]`)
+    if (btn && btn.offsetTop !== top) setTop(btn.offsetTop)
+  }, [shown, top])
+
   return (
-    <div className="agent-rail" onMouseEnter={keep} onMouseLeave={leave}>
-      <button className="agent-rail-btn" title="Show the agents" onClick={onShow}>
-        <PanelLeftOpen size={15} />
-      </button>
-      <div className="agent-rail-sep" />
+    <div className="agent-rail" ref={railRef}>
       {items.map((r) => {
         const Icon = r.icon
+        const keys = COMMANDS.find((c) => c.id === r.cmd)?.keys
         return (
           <button
             key={r.id}
-            className={`agent-rail-btn${flyout?.id === r.id ? ' on' : ''}`}
-            title={r.label}
-            onMouseEnter={(e) => enter(r.id, e.currentTarget)}
-            onClick={() => open(r)}
+            data-rail={r.id}
+            className={`agent-rail-btn${shown === r.id ? ' on' : ''}${pinned === r.id ? ' pinned' : ''}`}
+            title={keys ? `${r.label}  (${keys})` : r.label}
+            onMouseEnter={() => onHover(r.id)}
+            onClick={() => onPick(r.id)}
           >
             <Icon size={15} />
           </button>
         )
       })}
-      {flyout && (
-        <div className="agent-flyout" style={{ top: flyout.top, maxHeight: `calc(100% - ${flyout.top + 8}px)` }}>
-          <RailBody id={flyout.id} />
+      {flyoutOpen && shown && (
+        <div className="agent-flyout" style={{ top, maxHeight: `calc(100% - ${top + 8}px)` }}>
+          <RailBody id={shown} />
         </div>
       )}
     </div>
@@ -257,9 +272,9 @@ function ChatBranch({ chat: c }: { chat: Chat }): React.JSX.Element {
 
 /**
  * Which project and folder the agents work in: the opened folder (name, git branch, full path) and,
- * when the chat you are in runs somewhere else under it, that folder. The hide button lives here.
+ * when the chat you are in runs somewhere else under it, that folder.
  */
-function ProjectHead({ onHide }: { onHide?: () => void }): React.JSX.Element {
+function ProjectHead(): React.JSX.Element {
   const root = useStore((s) => s.root)
   const branch = useStore((s) => s.git.branch)
   const chatCwd = useStore((s) => s.chats.find((c) => c.id === s.activeChatId)?.cwd)
@@ -289,11 +304,6 @@ function ProjectHead({ onHide }: { onHide?: () => void }): React.JSX.Element {
       <button className="icon-btn tiny" title="Open folder (Ctrl+Shift+O)" onClick={() => void openFolder(null, { autoChat: true })}>
         <FolderOpen size={12} />
       </button>
-      {onHide && (
-        <button className="icon-btn tiny" title="Hide the agents" onClick={onHide}>
-          <PanelLeftClose size={12} />
-        </button>
-      )}
     </div>
   )
 }
@@ -408,32 +418,10 @@ export function GitGroup({ always }: { always?: boolean }): React.JSX.Element {
 }
 
 export function FilesGroup({ always }: { always?: boolean }): React.JSX.Element {
-  return (
-    <SideGroup id="files" label="Files" always={always}>
-      <div className="embedded-view">
-        <ExplorerView embedded />
-      </div>
-    </SideGroup>
-  )
-}
-
-function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
-  const chats = useStore((s) => s.chats)
-  const activeChatId = useStore((s) => s.activeChatId)
   const root = useStore((s) => s.root)
   return (
-    <div className="agents-panel">
-      <ProjectHead onHide={onHide} />
-      <AgentsGroup />
-      <PlansGroup />
-      <RunningGroup />
-      <SessionChanges chat={chats.find((c) => c.id === activeChatId)} />
-      {root && (
-        <>
-          <GitGroup />
-          <FilesGroup />
-        </>
-      )}
-    </div>
+    <SideGroup id="files" label="Files" always={always}>
+      {root && <ExplorerNav key={root} root={root} />}
+    </SideGroup>
   )
 }

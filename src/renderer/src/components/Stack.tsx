@@ -384,7 +384,7 @@ function FolderMenu({ close }: { close: () => void }): React.JSX.Element {
 
 /** What counts as "on the floating drop-down": it, the title-bar buttons, and menus / dialogs opened from it. */
 const FLOAT_PARTS =
-  '.stack-panel.floating, .stack-bar, .menu, .ctx-menu, .overlay, .context-view, .monaco-menu-container, .image-lightbox, .bm-menu, .browser-sugg, .term-image-hover, .plan-pop'
+  '.stack-panel.floating, .stack-bar, .menu, .ctx-menu, .overlay, .context-view, .monaco-menu-container, .image-lightbox, .bm-menu, .browser-sugg, .term-image-hover, .plan-pop, .explorer-pop'
 
 /**
  * A hovered drop-down follows the pointer: it hides a moment after the pointer moves onto the rest

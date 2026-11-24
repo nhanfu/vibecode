@@ -37,6 +37,7 @@ import { FileIcon, Logo } from './icons'
 import type { UsageLimit } from '../../../shared/types'
 import { revealIn } from '../scroll'
 import { COMMANDS, pluginCommands, type Command } from '../shortcuts'
+import { openRail } from '../rail'
 import { MODELS, Picker } from './Claude'
 
 /* ================================ Title bar ================================ */
@@ -328,7 +329,7 @@ export function StatusBar(): React.JSX.Element {
             title="Show the changes in the agent sidebar"
             onClick={() => {
               showPanel('agents')
-              window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: 'git-changes' }))
+              openRail('git', 'open')
             }}
           >
             <GitBranch size={12} /> {git.branch}

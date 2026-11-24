@@ -438,7 +438,7 @@ export function PlansGroup({ always }: { always?: boolean }): React.JSX.Element 
 
   const popItem = pop ? byId(pop.id) : undefined
   const popPlans = popItem ? ancestors(items, popItem).map((p) => p.title).join(' › ') : ''
-  const sideRight = treeRef.current?.closest('.agent-side')?.getBoundingClientRect().right ?? 240
+  const sideRight = treeRef.current?.closest('.agent-flyout')?.getBoundingClientRect().right ?? 240
   const popover = popItem && pop && (
     <div
       ref={popRef}
