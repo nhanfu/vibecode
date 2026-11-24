@@ -70,11 +70,11 @@ export function NewProjectButton(): React.JSX.Element {
   )
 }
 
-export function ChatsView({ opened }: { opened: boolean }): React.JSX.Element {
+export function ChatsView(): React.JSX.Element {
   useTick(30000)
   return (
     <div className="scroll">
-      <ProjectsTree opened={opened} action={<NewProjectButton />} />
+      <ProjectsTree action={<NewProjectButton />} />
     </div>
   )
 }
@@ -101,7 +101,7 @@ function loadHidden(): Set<string> {
 const PAGE = 8
 
 /** Every project + conversation from Claude Code's store — the same list the Claude app shows. */
-function ProjectsTree({ opened, action }: { opened: boolean; action?: React.ReactNode }): React.JSX.Element {
+function ProjectsTree({ action }: { action?: React.ReactNode }): React.JSX.Element {
   const projects = useStore((s) => s.projects)
   const root = useStore((s) => s.root)
   const chats = useStore((s) => s.chats)
@@ -144,23 +144,24 @@ function ProjectsTree({ opened, action }: { opened: boolean; action?: React.Reac
     backToChat()
   }
 
-  // Opened (Ctrl+B, the title-bar button): the cursor goes to the filter, to type or arrow down.
-  // Closed while the cursor was in here: it goes back to the chat, not into a hidden box.
-  // (Peeking with the pointer over the project button leaves the cursor where it was; pinned in the
-  // stack, Ctrl+B puts it in the filter too: store.ts focusPanel.)
+  // Opened (the Project icon, Ctrl+B, the status-bar count): the cursor goes to the filter, to type or
+  // arrow down. The flyout closes with the cursor still in it: the cursor goes back to the chat, not
+  // into a box that is gone. (useLayoutEffect: the list is still in the page when its cleanup runs.)
   useEffect(() => {
-    if (opened) {
-      const t = setTimeout(() => {
-        inputRef.current?.focus()
-        inputRef.current?.select()
-      }, 0)
-      return () => clearTimeout(t)
+    const t = setTimeout(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
+  useLayoutEffect(() => {
+    const el = rootRef.current
+    return () => {
+      mark(null)
+      if (el?.contains(document.activeElement)) backToChat()
     }
-    mark(null)
-    const hidden = rootRef.current?.closest('.stack-panel.floating:not(.shown)')
-    if (hidden?.contains(document.activeElement)) backToChat()
-    return undefined
-  }, [opened])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /**
    * ↑ ↓ move along the rows, Enter opens the row (a chat: and closes the sidebar), → ← open and

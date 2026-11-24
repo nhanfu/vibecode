@@ -181,7 +181,7 @@ const WARM_MAX = 1
 
 /* Terminal font size: Ctrl + / Ctrl − / Ctrl 0 in any terminal, shared by all, remembered. */
 const FONT_KEY = 'tinjs.termFontSize'
-const FONT_DEFAULT = 12
+const FONT_DEFAULT = 14
 const FONT_MIN = 9
 const FONT_MAX = 22
 let fontSize = ((): number => {

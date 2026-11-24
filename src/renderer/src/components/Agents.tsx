@@ -166,25 +166,22 @@ function AgentRail({
       })}
       {flyoutOpen && shown && (
         <div className="agent-flyout" style={{ top, maxHeight: `calc(100% - ${top + 8}px)` }}>
-          <RailBody id={shown} pinned={pinned === shown} />
+          <RailBody id={shown} />
         </div>
       )}
     </div>
   )
 }
 
-/**
- * The Project flyout: the filter with New project beside it, then the chats of every project.
- * `pinned`: opened by a click or a hotkey, so the cursor goes to its filter; a hover leaves focus where it is.
- */
-function ProjectBody({ pinned }: { pinned: boolean }): React.JSX.Element {
-  return <ChatsView opened={pinned} />
+/** The Project flyout: the filter with New project beside it, then the chats of every project. Opening it puts the cursor in the filter. */
+function ProjectBody(): React.JSX.Element {
+  return <ChatsView />
 }
 
-function RailBody({ id, pinned }: { id: RailId; pinned: boolean }): React.JSX.Element {
+function RailBody({ id }: { id: RailId }): React.JSX.Element {
   return (
     <div className="agents-panel agent-flyout-body">
-      {id === 'project' && <ProjectBody pinned={pinned} />}
+      {id === 'project' && <ProjectBody />}
       {id === 'agents' && <AgentsGroup always />}
       {id === 'plans' && <PlansGroup always />}
       {id === 'git' && <GitGroup always />}
