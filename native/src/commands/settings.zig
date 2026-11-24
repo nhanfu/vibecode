@@ -98,7 +98,7 @@ pub fn update(patch: std.json.ObjectMap) !AppSettings {
 
     const next = std.json.parseFromValueLeaky(AppSettings, a, .{ .object = merged }, .{ .ignore_unknown_fields = true }) catch return get();
     try replaceCache(next);
-    try persist(a, current);
+    persist(a, current) catch {};
     return current;
 }
 

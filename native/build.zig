@@ -283,6 +283,7 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
             },
         }
         app_mod.linkSystemLibrary("c", .{});
+        app_mod.linkSystemLibrary("sqlite3", .{});
         if (web_engine == .chromium) app_mod.linkSystemLibrary("stdc++", .{});
     } else if (platform == .windows) {
         switch (web_engine) {
