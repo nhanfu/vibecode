@@ -3041,13 +3041,12 @@ button.plan-chevron:hover {
   border-radius: 4px;
   object-fit: contain;
 }
-/* web tabs: a fixed, icon-only width; the title stays in the tooltip, so loading pages never widen the strip */
 .web-tab-strip .tab {
-  width: 34px;
-  max-width: 34px;
+  width: 52px;
+  max-width: 52px;
   margin: 5px 2px;
-  padding: 0;
-  justify-content: center;
+  padding: 0 0 0 10px;
+  justify-content: flex-start;
   gap: 0;
   border: 0;
   border-radius: 10px;
@@ -3064,10 +3063,12 @@ button.plan-chevron:hover {
 }
 .web-tab-strip .tab .tab-close {
   position: absolute;
-  inset: 0;
-  margin: auto;
-  width: 24px;
-  height: 24px;
+  top: 0;
+  bottom: 0;
+  right: 5px;
+  margin: auto 0;
+  width: 20px;
+  height: 20px;
   pointer-events: none;
 }
 .web-tab-strip .tab:hover .tab-close,
@@ -3077,9 +3078,6 @@ button.plan-chevron:hover {
 .web-tab-strip .tab:hover .tab-close {
   opacity: 1;
   pointer-events: auto;
-}
-.web-tab-strip .tab:hover .site-icon {
-  opacity: 0;
 }
 .web-tab-strip .tab.closing {
   width: 0;
@@ -3099,8 +3097,8 @@ button.plan-chevron:hover {
     opacity: 0;
   }
   to {
-    width: 34px;
-    max-width: 34px;
+    width: 52px;
+    max-width: 52px;
     opacity: 1;
   }
 }

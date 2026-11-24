@@ -211,6 +211,9 @@ static void zero_native_reorder_webviews(zero_native_gtk_window_t *win) {
 
 static void zero_native_clear_webview(zero_native_gtk_window_t *win, zero_native_gtk_webview_t *webview) {
     if (!webview) return;
+    if (webview->web_view) {
+        webkit_web_view_load_uri(webview->web_view, "about:blank");
+    }
     if (webview->web_view && win && win->stack_root) {
         gtk_overlay_remove_overlay(GTK_OVERLAY(win->stack_root), webview->frame ? webview->frame : GTK_WIDGET(webview->web_view));
     }

@@ -169,7 +169,7 @@ const PINNED_KEY = 'vibe.stackPins'
 /** Browser key that holds the torn-off pages restored from a previous run (they belong to no chat). */
 export const PAGES_KEY = '_pages'
 export const SHARED_BROWSER_KEY = '_shared'
-const BROWSER_SHARED_STORE = 'vibe.browserShared'
+const BROWSER_SHARED_STORE = 'vibe.browserShared.v2'
 const PAGES_STORE = 'vibe.pages'
 interface SavedTab {
   id: string
@@ -400,7 +400,7 @@ export const useStore = create<State>((set) => ({
 
   browsers: savedBrowsers,
   projectBypass: {},
-  browserShared: userStore.getItem(BROWSER_SHARED_STORE) === 'true',
+  browserShared: userStore.getItem(BROWSER_SHARED_STORE) !== 'false',
 
   set: (p) => set(p),
   // a patch that changes nothing keeps the same array: the terminal title (Claude's spinner) and
