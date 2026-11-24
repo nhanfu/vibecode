@@ -88,43 +88,77 @@ const DRAG_START = 5
 /** A click waits this long for a second one (a double-click pins instead). */
 const CLICK_WAIT = 220
 
+/** A title-bar button's place on screen when a drag began. */
+type Spot = { id: string; left: number; width: number }
+
 export function StackBar(): React.JSX.Element {
   const order = useStore((s) => s.panelOrder)
   const barRef = useRef<HTMLDivElement>(null)
-  // the button being dragged, and where it would land (index in the order without it)
-  const [drag, setDrag] = useState<{ id: PanelId; to: number } | null>(null)
+  // the button being dragged: where it would land (index among the others), the pointer, and the drag's start
+  const [drag, setDrag] = useState<{ id: PanelId; to: number; x: number; y: number; spots: Spot[] } | null>(null)
+  // read by the pointer handlers, which were created before the state changed
+  const dragRef = useRef<{ id: PanelId; spots: Spot[] } | null>(null)
 
-  /** Where a button dropped at `x` lands: before the first other button whose middle is right of x. */
-  const dropIndex = (id: PanelId, x: number): number => {
-    const others = [...(barRef.current?.querySelectorAll<HTMLElement>('.stack-btn') ?? [])].filter((b) => b.dataset.panel !== id)
-    const i = others.findIndex((b) => {
+  /** Measured before any button moves: the drag starts from these places. */
+  const measure = (): Spot[] =>
+    [...(barRef.current?.querySelectorAll<HTMLElement>('.stack-btn') ?? [])].map((b) => {
       const r = b.getBoundingClientRect()
-      return x < r.left + r.width / 2
+      return { id: b.dataset.panel ?? '', left: r.left, width: r.width }
     })
+
+  /** Where a button released at `x` lands among the others: before the first one whose middle is right of x. */
+  const slotAt = (spots: Spot[], id: PanelId, x: number): number => {
+    const others = spots.filter((s) => s.id !== id)
+    const i = others.findIndex((s) => x < s.left + s.width / 2)
     return i < 0 ? others.length : i
+  }
+
+  const dropAt = (id: PanelId, x: number): number => slotAt(dragRef.current?.spots ?? measure(), id, x)
+
+  const step = drag ? (drag.spots.length > 1 ? drag.spots[1].left - drag.spots[0].left : drag.spots[0]?.width ?? 0) : 0
+
+  /** How far a button moves while another is dragged: it takes the slot it would have after the drop. */
+  const shiftOf = (id: PanelId): number => {
+    if (!drag) return 0
+    const others = order.filter((p) => p !== drag.id)
+    const from = order.indexOf(id)
+    const wi = others.indexOf(id)
+    const to = id === drag.id ? drag.to : wi < drag.to ? wi : wi + 1
+    return (to - from) * step
   }
 
   return (
     <div className={`stack-bar${drag ? ' dragging' : ''}`} ref={barRef} onMouseDown={(e) => e.stopPropagation()}>
-      {order.map((id) => {
-        const without = order.filter((p) => p !== id)
-        // the drop mark goes before the button that will follow the dragged one
-        const markBefore = drag && drag.id !== id && without[drag.to] === id
-        const markAfter = drag && drag.id !== id && drag.to === without.length && without[without.length - 1] === id
-        return (
-          <StackButton
-            key={id}
-            id={id}
-            dragging={drag?.id === id}
-            mark={markBefore ? 'before' : markAfter ? 'after' : null}
-            onDrag={(x) => setDrag({ id, to: dropIndex(id, x) })}
-            onDrop={(x) => {
-              setDrag(null)
-              if (x !== null) movePanel(id, dropIndex(id, x))
-            }}
-          />
-        )
-      })}
+      {order.map((id) => (
+        <StackButton
+          key={id}
+          id={id}
+          dragging={drag?.id === id}
+          shift={shiftOf(id)}
+          moving={drag !== null}
+          onDrag={(x, y) => {
+            if (dragRef.current?.id !== id) dragRef.current = { id, spots: measure() }
+            const spots = dragRef.current.spots
+            setDrag({ id, to: slotAt(spots, id, x), x, y, spots })
+          }}
+          onDrop={(x) => {
+            const to = x === null ? null : dropAt(id, x)
+            dragRef.current = null
+            setDrag(null)
+            if (to !== null) movePanel(id, to)
+          }}
+        />
+      ))}
+      {drag &&
+        createPortal(
+          <div className="stack-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden>
+            {(() => {
+              const Icon = metaOf(drag.id).icon
+              return <Icon size={13} />
+            })()}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
@@ -132,13 +166,16 @@ export function StackBar(): React.JSX.Element {
 function StackButton(props: {
   id: PanelId
   dragging: boolean
-  mark: 'before' | 'after' | null
-  /** the pointer moved to x while dragging this button */
-  onDrag: (x: number) => void
+  /** px it moves to make room (or to take the dragged button's slot) */
+  shift: number
+  /** a drag is on: moves animate */
+  moving: boolean
+  /** the pointer moved to (x, y) while dragging this button */
+  onDrag: (x: number, y: number) => void
   /** released at x (null: cancelled) */
   onDrop: (x: number | null) => void
 }): React.JSX.Element {
-  const { id, dragging, mark, onDrag, onDrop } = props
+  const { id, dragging, shift, moving, onDrag, onDrop } = props
   const meta = metaOf(id)
   const root = useStore((s) => s.root)
   const page = useStore((s) => (isPage(id) ? pageTab(s, id) : undefined))
@@ -168,7 +205,7 @@ function StackButton(props: {
         window.clearTimeout(clickTimer.current)
         closeFloat()
       }
-      onDrag(ev.clientX)
+      onDrag(ev.clientX, ev.clientY)
     }
     const end = (ev: PointerEvent): void => {
       btn.removeEventListener('pointermove', move)
@@ -205,7 +242,7 @@ function StackButton(props: {
     setCtx({ x: e.clientX, y: e.clientY })
   }
   return (
-    <div className={`stack-btn-wrap${mark ? ` mark-${mark}` : ''}`}>
+    <div className="stack-btn-wrap" style={{ transform: shift ? `translateX(${shift}px)` : undefined, transition: moving ? 'transform 0.18s ease' : 'none' }}>
       <button
         className={`stack-btn${shown ? ' on' : ''}${pinned ? ' pinned' : ''}${dragging ? ' dragging' : ''}`}
         data-panel={id}

@@ -4526,8 +4526,29 @@ button.plan-chevron:hover {
 .stack-bar.dragging .stack-btn {
   cursor: grabbing;
 }
+/* the button being dragged leaves an empty dashed slot where it was; the icon itself follows the pointer */
 .stack-btn.dragging {
-  opacity: 0.45;
+  border: 1px dashed var(--w-0c);
+  background: var(--w-06);
+  color: transparent;
+}
+.stack-btn.dragging > * {
+  visibility: hidden;
+}
+.stack-ghost {
+  position: fixed;
+  z-index: 1000;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border-radius: 7px;
+  color: var(--accent-2);
+  background: var(--bg-2);
+  border: 1px solid var(--w-0c);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
 }
 .stack-btn-wrap.mark-before::before,
 .stack-btn-wrap.mark-after::after {
