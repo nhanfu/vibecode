@@ -74,7 +74,7 @@ export function ChatsView({ opened }: { opened: boolean }): React.JSX.Element {
   useTick(30000)
   return (
     <div className="scroll">
-      <ProjectsTree opened={opened} />
+      <ProjectsTree opened={opened} action={<NewProjectButton />} />
     </div>
   )
 }
@@ -100,62 +100,8 @@ function loadHidden(): Set<string> {
 
 const PAGE = 8
 
-const RECENT_MAX = 5
-
-interface RecentItem {
-  key: string
-  title: string
-  project: string
-  updated: number
-  /** open in this window */
-  chat?: Chat
-  /** in Claude's history (resumable) */
-  session?: SessionInfo
-}
-
-/** A row of Recent; plain props, so it skips re-rendering while nothing about it changed. */
-const RecentRow = memo(function RecentRow(props: {
-  title: string
-  project: string
-  updated: number
-  chatId?: string
-  status?: Chat['status']
-  attention?: boolean
-  session?: SessionInfo
-  active: boolean
-}): React.JSX.Element {
-  const { title, project, updated, chatId, status, attention, session, active } = props
-  return (
-    <div
-      className={`sess-row${active ? ' active' : ''}`}
-      onClick={() => (chatId ? selectChat(chatId) : session && void openSession(session))}
-      title={`${title}\n${project} · ${new Date(updated).toLocaleString()}`}
-    >
-      {status ? <StatusDot status={status} attention={attention} /> : <span className="sess-bullet" />}
-      <span className="sess-title">{title}</span>
-      <span className="sess-time">{shortAgo(updated)}</span>
-    </div>
-  )
-})
-
-/** The newest chats of every project: open ones not in the history yet, then the history. */
-function recentItems(projects: ProjectGroup[], chats: Chat[]): RecentItem[] {
-  const live = new Map(chats.filter((c) => c.sessionId).map((c) => [c.sessionId!, c]))
-  const history: RecentItem[] = projects.flatMap((g) =>
-    g.sessions.map((s) => {
-      const chat = live.get(s.id)
-      return { key: s.id, title: chat?.pinnedTitle ? chat.title : s.title || chat?.title || 'Chat', project: g.name, updated: s.updated, chat, session: s }
-    })
-  )
-  const known = new Set(history.map((r) => r.key))
-  const fresh: RecentItem[] = chats
-    .filter((c) => !c.sessionId || !known.has(c.sessionId))
-    .map((c) => ({ key: c.id, title: c.title, project: basename(c.cwd), updated: c.createdAt, chat: c }))
-  return [...fresh, ...history].sort((a, b) => b.updated - a.updated).slice(0, RECENT_MAX)
-}
-
 /** Every project + conversation from Claude Code's store — the same list the Claude app shows. */
-function ProjectsTree({ opened }: { opened: boolean }): React.JSX.Element {
+function ProjectsTree({ opened, action }: { opened: boolean; action?: React.ReactNode }): React.JSX.Element {
   const projects = useStore((s) => s.projects)
   const root = useStore((s) => s.root)
   const chats = useStore((s) => s.chats)
@@ -312,7 +258,6 @@ function ProjectsTree({ opened }: { opened: boolean }): React.JSX.Element {
   }
   const shownProjects = allProjects.filter((g) => !hidden.has(g.key))
   const needle = q.trim().toLowerCase()
-  const recent = useMemo(() => recentItems(projects.filter((g) => !hidden.has(g.key)), chats), [projects, chats, hidden])
   const agentRows = (g: ProjectGroup): typeof agentChats =>
     agentChats.filter(
       (c) => slashKey(c.cwd) === slashKey(g.key) && (!needle || g.name.toLowerCase().includes(needle) || c.title.toLowerCase().includes(needle))
@@ -337,6 +282,22 @@ function ProjectsTree({ opened }: { opened: boolean }): React.JSX.Element {
   return (
     <div className="side-group" ref={rootRef} onKeyDown={onKey}>
       <SlidePill selector=".sess-row.active" className="sess-pill" />
+      {/* the filter on top, the add button on its right; both stay put while the list scrolls */}
+      <div className="tree-filter-row">
+        <div className="tree-filter">
+          <Search size={12} />
+          <input
+            ref={inputRef}
+            placeholder="Filter chats…  ↑↓ Enter"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value)
+              mark(null)
+            }}
+          />
+        </div>
+        {action}
+      </div>
       <div className="side-group-label">
         Projects
         <span className="sync-pill" title="Read live from ~/.claude/projects — the same store the Claude app uses">
@@ -346,41 +307,6 @@ function ProjectsTree({ opened }: { opened: boolean }): React.JSX.Element {
           <RefreshCw size={12} />
         </button>
       </div>
-      <div className="tree-filter">
-        <Search size={12} />
-        <input
-          ref={inputRef}
-          placeholder="Filter chats…  ↑↓ Enter"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value)
-            mark(null)
-          }}
-        />
-      </div>
-
-      {/* the 5 newest chats across every project */}
-      {!needle && recent.length > 0 && (
-        <div className="proj recent-group">
-          <div className="proj-row recent-head">
-            <span className="proj-name">Recent</span>
-          </div>
-          {recent.map((it) => (
-            <RecentRow
-              key={it.key}
-              title={it.title}
-              project={it.project}
-              updated={it.updated}
-              chatId={it.chat?.id}
-              status={it.chat?.status}
-              attention={it.chat?.attention}
-              session={it.session}
-              active={!!it.chat && it.chat.id === activeChatId}
-            />
-          ))}
-        </div>
-      )}
-      <div className="agent-groups-sep" />
 
       {visible.length === 0 && <div className="tree-empty">{projects.length ? 'No matching chats' : 'No Claude Code history found yet.'}</div>}
 

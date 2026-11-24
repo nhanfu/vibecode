@@ -5429,18 +5429,24 @@ button.plan-chevron:hover {
   margin-left: 4px;
 }
 
-/* the New project button: at the top of the Project flyout, right-aligned, icon only */
-.sidebar-head {
+/* the filter row at the top of the chats tree: the filter, and New project on its right (icon only) */
+.tree-filter-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
-  justify-content: flex-end;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0 0;
+  background: var(--bg-1);
+}
+.tree-filter-row .tree-filter {
+  flex: 1;
+  min-width: 0;
+  margin-right: 0;
 }
 .new-project {
+  flex: none;
+  margin-right: 8px;
   color: var(--accent);
-}
-
-/* the Project flyout's list of recently opened folders, above the chats */
-.recent-folders {
-  padding: 0 6px 4px;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Bot, Check, Clock, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
+import { Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
 import { basename, useStore } from '../store'
 import { defaultAgent, detectClaude, newChatWith, openFolder, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
@@ -8,7 +8,7 @@ import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
-import { ChangesView, ChatsView, NewProjectButton } from './Sidebar'
+import { ChangesView, ChatsView } from './Sidebar'
 import { ExplorerNav } from './ExplorerNav'
 
 /** what counts as "on the rail": its icons, the flyout, and the popups beside the flyout */
@@ -174,34 +174,11 @@ function AgentRail({
 }
 
 /**
- * The Project flyout: New project at the top, then the folders recently opened, then the chats of every
- * project. The open folder is shown in the status bar. `pinned`: opened by a click or a hotkey, so the
- * cursor goes to its filter; a hover leaves focus where it is.
+ * The Project flyout: the filter with New project beside it, then the chats of every project.
+ * `pinned`: opened by a click or a hotkey, so the cursor goes to its filter; a hover leaves focus where it is.
  */
 function ProjectBody({ pinned }: { pinned: boolean }): React.JSX.Element {
-  const root = useStore((s) => s.root)
-  const recent = useStore((s) => s.recent)
-  return (
-    <>
-      <div className="sidebar-head">
-        <NewProjectButton />
-      </div>
-      {recent.some((r) => r !== root) && (
-        <div className="recent-folders">
-          <div className="menu-sep">Recent folders</div>
-          {recent
-            .filter((r) => r !== root)
-            .map((r) => (
-              <button key={r} className="menu-item" title={r} onClick={() => void openFolder(r)}>
-                <Clock size={14} />
-                <span className="menu-item-main">{basename(r)}</span>
-              </button>
-            ))}
-        </div>
-      )}
-      <ChatsView opened={pinned} />
-    </>
-  )
+  return <ChatsView opened={pinned} />
 }
 
 function RailBody({ id, pinned }: { id: RailId; pinned: boolean }): React.JSX.Element {
