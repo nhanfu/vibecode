@@ -1426,6 +1426,7 @@ kbd {
 }
 .claude-split.col.tall > .claude-cell {
   flex: 0 0 50vh;
+  margin-right: 14px;
 }
 .chat-grip {
   display: inline-flex;
