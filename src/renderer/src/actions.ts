@@ -733,6 +733,8 @@ export function selectChat(id: string): void {
 }
 
 let hoverTimer: number | undefined
+/** How long the pointer rests on a chat before it takes focus: long enough that passing over does not switch. */
+const HOVER_DWELL_MS = 80
 
 /** Hovering a chat makes it the active one, after a short dwell so passing over it does not switch. */
 export function hoverChat(id: string): void {
@@ -759,7 +761,7 @@ export function hoverFocus(id: string, settle: (id: string) => void = hoverChat)
   return {
     onMouseEnter: () => {
       window.clearTimeout(hoverTimer)
-      hoverTimer = window.setTimeout(() => settle(id), 200)
+      hoverTimer = window.setTimeout(() => settle(id), HOVER_DWELL_MS)
     },
     onMouseLeave: () => window.clearTimeout(hoverTimer),
   }
