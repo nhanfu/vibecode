@@ -5505,7 +5505,7 @@ button.plan-chevron:hover {
 
 /* Keyboard shortcuts editor (Ctrl+K Ctrl+S): a command list with its keys, VS Code style */
 .kb-editor {
-  width: min(760px, 92vw);
+  width: min(1040px, 94vw);
   max-height: 70vh;
   display: flex;
   flex-direction: column;
@@ -5530,7 +5530,7 @@ button.plan-chevron:hover {
 .kb-head,
 .kb-row {
   display: grid;
-  grid-template-columns: 1fr 200px 64px;
+  grid-template-columns: minmax(180px, 1.3fr) 150px minmax(120px, 1fr) 80px 128px;
   align-items: center;
   gap: 8px;
   padding: 0 14px;
@@ -5568,6 +5568,39 @@ button.plan-chevron:hover {
   padding: 1px 6px;
   border: 1px solid var(--border-strong);
   border-radius: 4px;
+}
+.kb-sort {
+  all: unset;
+  cursor: pointer;
+  color: inherit;
+}
+.kb-sort:hover {
+  color: var(--text);
+}
+.kb-name small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.kb-when code {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: text;
+}
+.kb-when input {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--text);
+  outline: none;
+}
+.kb-source {
+  font-size: 12px;
+  color: var(--text-dim);
 }
 .kb-keys em {
   color: var(--text-faint);
