@@ -1440,9 +1440,6 @@ kbd {
 .claude-split.col > .claude-cell:first-child {
   border-top: 0;
 }
-.claude-row.split .claude-col.current .chat-titlebar {
-  box-shadow: inset 0 2px 0 var(--accent);
-}
 .claude-header {
   height: 38px;
   flex: none;
