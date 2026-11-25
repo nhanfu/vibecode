@@ -1363,43 +1363,6 @@ kbd {
   background: var(--bg-term);
   min-width: 0;
 }
-.claude-body {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-}
-.layout-minimap {
-  position: relative;
-  flex: none;
-  width: 76px;
-  border-left: 1px solid var(--border);
-  background: var(--bg-1);
-  overflow: hidden;
-  cursor: pointer;
-}
-.lm-box {
-  position: absolute;
-  box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  background: var(--bg-hover);
-  cursor: pointer;
-}
-.lm-box.s-working {
-  box-shadow: inset 3px 0 0 var(--blue);
-}
-.lm-box.on {
-  border-color: var(--accent);
-}
-.lm-view {
-  position: absolute;
-  left: 0;
-  right: 0;
-  background: var(--accent);
-  opacity: 0.15;
-  pointer-events: none;
-}
 .claude-row {
   flex: 1;
   min-height: 0;

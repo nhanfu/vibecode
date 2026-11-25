@@ -20,13 +20,6 @@ export function mapLeaves<A, B>(n: Tree<A>, f: (leaf: A) => Tree<B> | null): Tre
   return { dir: n.dir, kids }
 }
 
-export function rowCount(n: Layout | null): number {
-  if (n === null) return 0
-  if (!isSplit(n)) return 1
-  const counts = n.kids.map((k) => rowCount(k))
-  return n.dir === 'col' ? counts.reduce((a, b) => a + b, 0) : Math.max(...counts)
-}
-
 export function layoutIds(n: Layout | null): string[] {
   const out: string[] = []
   if (n === null) return out
