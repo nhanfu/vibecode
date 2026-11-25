@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { basename, useStore, type Chat } from '../store'
 import { closeRail } from '../rail'
-import { closeChat, loadSessions, openFolder, newChat, newChatIn, openCommitDiff, openDiff, openFile, openSession, refreshGit, renameChat, selectChat } from '../actions'
+import { closeChat, hoverFocus, loadSessions, openFolder, newChat, newChatIn, openCommitDiff, openDiff, openFile, openSession, refreshGit, renameChat, selectChat } from '../actions'
 import { FileIcon, FolderIcon, StatusDot, statusLabel } from './icons'
 import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, GitFile, ProjectGroup, SessionInfo } from '../../../shared/types'
 import { agentDef } from '../../../shared/agents'
@@ -347,6 +347,7 @@ function ProjectsTree({ action }: { action?: React.ReactNode }): React.JSX.Eleme
                 key={c.id}
                 className={`sess-row${c.id === activeChatId ? ' active' : ''}`}
                 onClick={() => selectChat(c.id)}
+                {...hoverFocus(c.id)}
                 title={`${c.title}\n${agentDef(c.agent).label} · ${c.cwd}`}
               >
                 <StatusDot status={c.status} attention={c.attention} />

@@ -732,6 +732,28 @@ export function selectChat(id: string): void {
   setTimeout(() => focusTerm(id), 0)
 }
 
+let hoverTimer: number | undefined
+
+/** Hovering a chat makes it the active one, after a short dwell so passing over it does not switch. */
+export function hoverChat(id: string): void {
+  const chat = st().chats.find((c) => c.id === id)
+  if (!chat || st().activeChatId === id) return
+  const { chatLayouts, activeChatId } = st()
+  const chatLayoutsNext = withLayout(chatLayouts, chat.cwd, layoutWith(chatLayouts[layoutKey(chat.cwd)] ?? null, id, activeChatId))
+  useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext })
+}
+
+/** Mouse handlers for a chat row: hover focuses it, leaving before the dwell cancels. */
+export function hoverFocus(id: string): { onMouseEnter: () => void; onMouseLeave: () => void } {
+  return {
+    onMouseEnter: () => {
+      window.clearTimeout(hoverTimer)
+      hoverTimer = window.setTimeout(() => hoverChat(id), 200)
+    },
+    onMouseLeave: () => window.clearTimeout(hoverTimer),
+  }
+}
+
 export function closeChat(id: string): void {
   disposeTerm(id)
   clearAttachments(id)

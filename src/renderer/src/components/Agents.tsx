@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
 import { basename, shownLayout, useStore } from '../store'
-import { defaultAgent, detectClaude, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setLayoutMode } from '../actions'
+import { defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setLayoutMode } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
@@ -282,7 +282,7 @@ function LayoutMap(): React.JSX.Element {
       const c = chats.find((x) => x.id === n)
       if (!c) return null
       return (
-        <button key={key} className={`layout-map-cell${c.id === activeId ? ' on' : ''}`} title={c.title} onClick={() => selectChat(c.id)}>
+        <button key={key} className={`layout-map-cell${c.id === activeId ? ' on' : ''}`} title={c.title} onClick={() => selectChat(c.id)} {...hoverFocus(c.id)}>
           <StatusDot status={c.status} attention={c.attention} />
           <span className="layout-map-title">{c.title}</span>
         </button>
