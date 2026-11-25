@@ -25,8 +25,33 @@ export function appendLayout(cur: Layout | null, id: string, dir: Dir): Layout {
   return mapLeaves<string, string>({ dir, kids: [cur, id] }, (l) => l) ?? cur
 }
 
-export function swapLeaves(n: Layout, a: string, b: string): Layout {
-  return mapLeaves(n, (id) => (id === a ? b : id === b ? a : id)) ?? n
+export type Side = 'left' | 'right' | 'top' | 'bottom'
+
+export function sideAt(x: number, y: number, r: { left: number; top: number; width: number; height: number }): Side {
+  const fx = (x - r.left) / r.width
+  const fy = (y - r.top) / r.height
+  const d: Record<Side, number> = { left: fx, right: 1 - fx, top: fy, bottom: 1 - fy }
+  return (Object.keys(d) as Side[]).reduce((a, b) => (d[b] < d[a] ? b : a))
+}
+
+function insertBeside(n: Layout, target: string, id: string, dir: Dir, before: boolean): Layout {
+  if (!isSplit(n)) return n === target ? (before ? { dir, kids: [id, target] } : { dir, kids: [target, id] }) : n
+  const i = n.kids.indexOf(target)
+  if (i >= 0 && n.dir === dir) {
+    const at = before ? i : i + 1
+    return { dir, kids: [...n.kids.slice(0, at), id, ...n.kids.slice(at)] }
+  }
+  return { dir: n.dir, kids: n.kids.map((k) => insertBeside(k, target, id, dir, before)) }
+}
+
+/** The layout with `id` taken out of its place and put on one side of `target`; the others make room. */
+export function moveLeaf(n: Layout, id: string, target: string, side: Side): Layout {
+  if (id === target) return n
+  const rest = removeLayout(n, id)
+  if (rest === null || !layoutIds(rest).includes(target)) return n
+  const dir: Dir = side === 'left' || side === 'right' ? 'row' : 'col'
+  const before = side === 'left' || side === 'top'
+  return mapLeaves<string, string>(insertBeside(rest, target, id, dir, before), (l) => l) ?? rest
 }
 
 export function reconcileLayout(cur: Layout | null, ids: string[]): Layout | null {

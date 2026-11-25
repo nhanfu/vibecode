@@ -1374,11 +1374,51 @@ kbd {
   overflow-x: auto;
 }
 .claude-col {
+  position: relative;
   flex: 1 1 0;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+.claude-col.dragging {
+  opacity: 0.45;
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+}
+.claude-col.drop-left::after,
+.claude-col.drop-right::after,
+.claude-col.drop-top::after,
+.claude-col.drop-bottom::after {
+  content: '';
+  position: absolute;
+  background: var(--accent);
+  z-index: 10;
+  pointer-events: none;
+}
+.claude-col.drop-left::after {
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+.claude-col.drop-right::after {
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+.claude-col.drop-top::after {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+.claude-col.drop-bottom::after {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
 }
 .claude-split {
   flex: 1 1 0;

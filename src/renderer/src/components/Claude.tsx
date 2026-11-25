@@ -14,8 +14,8 @@ import {
   newShell,
   renameChat,
   restartChat,
-  chatDragSource,
   chatDropTarget,
+  chatTitleDrag,
   hoverFocus,
   hoverPane,
   selectChat
@@ -65,7 +65,11 @@ export function ClaudePanel(): React.JSX.Element {
   const chats = useStore((s) => s.chats)
   const chatLayouts = useStore((s) => s.chatLayouts)
   const layoutMode = useStore((s) => s.layoutMode)
-  const shown = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode }), [chats, activeId, chatLayouts, layoutMode])
+  const drag = useStore((s) => s.layoutDrag)
+  const shown = useMemo(
+    () => (drag ? drag.layout : shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode })),
+    [drag, chats, activeId, chatLayouts, layoutMode]
+  )
   const hasActive = useStore((s) => s.chats.some((c) => c.id === s.activeChatId))
   const claude = useStore((s) => s.claude)
   // Codex / Gemini… alone is enough to chat; the install card is for when no agent is there at all
@@ -99,6 +103,7 @@ function LayoutNode({ node, activeId }: { node: Layout | string; activeId: strin
 function ChatColumn({ id, current }: { id: string; current: boolean }): React.JSX.Element {
   const active = useStore((s) => s.chats.find((c) => c.id === id) ?? null)
   const activeId = active?.id ?? null
+  const drag = useStore((s) => s.layoutDrag)
   // switching chats: the new conversation eases in
   const termFrame = useRef<HTMLDivElement>(null)
   useEnterAnimation(termFrame, activeId)
@@ -108,7 +113,7 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
   // Chats are picked from the sidebar, so there is no tab strip here — just the open chat's title row.
   return (
     <div
-      className={`claude-col${current ? ' current' : ''}`}
+      className={`claude-col${current ? ' current' : ''}${drag?.src === id ? ' dragging' : ''}${drag?.over === id ? ` drop-${drag.side}` : ''}`}
       onPointerDownCapture={() => {
         if (!current) selectChat(id)
       }}
@@ -117,9 +122,9 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
     >
       {active && (
         <>
-          <div className="chat-titlebar">
+          <div className="chat-titlebar" {...chatTitleDrag(active.id)}>
             <div className="chat-titlebar-main">
-              <span className="chat-grip" title="Drag onto another pane to swap places" {...chatDragSource(active.id)}>
+              <span className="chat-grip" title="Drag the title bar to move this chat">
                 <GripVertical size={13} />
               </span>
               <StatusDot status={active.status} attention={active.attention} />

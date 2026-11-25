@@ -6,7 +6,7 @@ import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
 import { userStore } from './localPref'
-import { appendLayout, gridLayout, joinLayout, layoutIds, layoutKey, mapLeaves, reconcileLayout, removeLayout, replaceLayout, swapLeaves, type Dir, type Layout } from './chatLayout'
+import { appendLayout, gridLayout, joinLayout, layoutIds, layoutKey, mapLeaves, moveLeaf, reconcileLayout, removeLayout, replaceLayout, sideAt, type Dir, type Layout, type Side } from './chatLayout'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -623,52 +623,91 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
 
 export const CHAT_DRAG = 'application/x-vibe-chat'
 
-export function chatDragSource(id: string): { draggable: true; onDragStart: (e: DragEvent) => void } {
-  return {
-    draggable: true,
-    onDragStart: (e) => {
-      e.dataTransfer.setData(CHAT_DRAG, id)
-      e.dataTransfer.effectAllowed = 'move'
-    },
-  }
+let dragSrc: string | null = null
+
+function startChatDrag(e: DragEvent, id: string): void {
+  dragSrc = id
+  e.dataTransfer.setData(CHAT_DRAG, id)
+  e.dataTransfer.effectAllowed = 'move'
 }
 
-export function chatDropTarget(id: string): { onDragOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void } {
-  return {
-    onDragOver: (e) => {
-      if (!e.dataTransfer.types.includes(CHAT_DRAG)) return
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-    },
-    onDrop: (e) => {
-      const from = e.dataTransfer.getData(CHAT_DRAG)
-      if (!from) return
-      e.preventDefault()
-      swapChats(from, id)
-    },
-  }
+function endChatDrag(): void {
+  dragSrc = null
+  useStore.setState({ layoutDrag: null })
 }
 
-export function swapChats(a: string, b: string): void {
+/** Where `src` would go if dropped on `target` from `side`: the layout that shows it, or null. */
+function planChatMove(src: string, target: string, side: Side): { key: string; layout: Layout } | null {
   const s = st()
-  const ca = s.chats.find((c) => c.id === a)
-  const cb = s.chats.find((c) => c.id === b)
-  if (!ca || !cb || a === b) return
+  const a = s.chats.find((c) => c.id === src)
+  const b = s.chats.find((c) => c.id === target)
+  if (!a || !b || src === target) return null
   if (s.layoutMode === 'merged') {
     const ids = s.chats.map((c) => c.id)
     const stored = s.chatLayouts[ALL_LAYOUT_KEY]
-    const cur = stored ? reconcileLayout(stored, ids) : gridLayout(ids)
-    if (cur === null) return
-    useStore.setState({ chatLayouts: { ...s.chatLayouts, [ALL_LAYOUT_KEY]: swapLeaves(cur, a, b) } })
-    return
+    const base = stored ? reconcileLayout(stored, ids) : gridLayout(ids)
+    return base ? { key: ALL_LAYOUT_KEY, layout: moveLeaf(base, src, target, side) } : null
   }
-  const key = layoutKey(ca.cwd)
-  if (key !== layoutKey(cb.cwd)) return
+  const key = layoutKey(a.cwd)
   const cur = s.chatLayouts[key]
-  if (!cur) return
+  if (key !== layoutKey(b.cwd) || !cur) return null
   const ids = layoutIds(cur)
-  if (!ids.includes(a) || !ids.includes(b)) return
-  useStore.setState({ chatLayouts: withLayout(s.chatLayouts, ca.cwd, swapLeaves(cur, a, b)) })
+  if (!ids.includes(src) || !ids.includes(target)) return null
+  return { key, layout: moveLeaf(cur, src, target, side) }
+}
+
+function previewChatDrop(src: string, target: string, side: Side): void {
+  const cur = st().layoutDrag
+  if (cur && cur.src === src && cur.over === target && cur.side === side) return
+  const plan = planChatMove(src, target, side)
+  useStore.setState({ layoutDrag: plan ? { src, over: target, side, ...plan } : null })
+}
+
+function commitChatDrop(): void {
+  const d = st().layoutDrag
+  if (d) useStore.setState((s) => ({ chatLayouts: { ...s.chatLayouts, [d.key]: d.layout }, layoutDrag: null }))
+  else useStore.setState({ layoutDrag: null })
+}
+
+/** The whole title bar of a chat drags it (buttons and the rename field keep their own use). */
+export function chatTitleDrag(id: string): {
+  onMouseDown: (e: React.MouseEvent<HTMLElement>) => void
+  onDragStart: (e: DragEvent) => void
+  onDragEnd: () => void
+} {
+  return {
+    onMouseDown: (e) => {
+      e.currentTarget.draggable = !(e.target as HTMLElement).closest('button, input, select, textarea, a')
+    },
+    onDragStart: (e) => startChatDrag(e, id),
+    onDragEnd: endChatDrag
+  }
+}
+
+/** A chat that can be dragged by an element of its own (the layout map's cells). */
+export function chatDragSource(id: string): { draggable: true; onDragStart: (e: DragEvent) => void; onDragEnd: () => void } {
+  return {
+    draggable: true,
+    onDragStart: (e) => startChatDrag(e, id),
+    onDragEnd: endChatDrag
+  }
+}
+
+/** A pane that takes a dragged chat: the side of the pane under the pointer decides where it lands. */
+export function chatDropTarget(id: string): { onDragOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void } {
+  return {
+    onDragOver: (e) => {
+      if (dragSrc === null) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      previewChatDrop(dragSrc, id, sideAt(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect()))
+    },
+    onDrop: (e) => {
+      if (dragSrc === null) return
+      e.preventDefault()
+      commitChatDrop()
+    }
+  }
 }
 
 function layoutWith(n: Layout | null, id: string, active: string | null): Layout | string {

@@ -2,7 +2,16 @@ import { create } from 'zustand'
 import type { AgentId } from '../../shared/agents'
 import type { AgentInfo, AppSettings, ClaudeInfo, GitState, PluginInfo, ProjectGroup, WindowState } from '../../shared/types'
 import { userStore } from './localPref'
-import { gridLayout, layoutIds, layoutKey, reconcileLayout, type Layout } from './chatLayout'
+import { gridLayout, layoutIds, layoutKey, reconcileLayout, type Layout, type Side } from './chatLayout'
+
+/** A chat pane being dragged: where it would go, and the layout that shows it there. */
+export interface LayoutDrag {
+  src: string
+  over: string
+  side: Side
+  key: string
+  layout: Layout
+}
 
 export type LayoutMode = 'project' | 'merged'
 
@@ -91,6 +100,7 @@ interface State {
   chats: Chat[]
   activeChatId: string | null
   chatLayouts: Record<string, Layout>
+  layoutDrag: LayoutDrag | null
   layoutMode: LayoutMode
   newChatModel: string | null
 
@@ -405,6 +415,7 @@ export const useStore = create<State>((set) => ({
   chats: [],
   activeChatId: null,
   chatLayouts: {},
+  layoutDrag: null,
   layoutMode: 'project',
   newChatModel: null,
 
