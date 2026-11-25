@@ -5,6 +5,7 @@ import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
 import { userStore } from './localPref'
+import { layoutIds, mapLeaves, removeLayout, replaceLayout, splitLayout, type Dir, type Layout } from './chatLayout'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -554,9 +555,7 @@ export function newChat(opts: NewChatOpts = {}): void {
     sessionId = crypto.randomUUID()
     args = [...args, '--session-id', sessionId]
   }
-  // New chats start with the model last picked in this project (else the default chosen in the status
-  // bar), and the effort and permission mode last picked in any chat.
-  const model = opts.model ?? rememberedModel(cwd)
+  const model = 'model' in opts ? opts.model || undefined : defaultModel()
   const effort = opts.effort ?? remembered(EFFORT_KEY, NEW_CHAT_DEFAULTS.effort)
   const permissionMode = opts.permissionMode ?? remembered(PERMISSION_KEY, NEW_CHAT_DEFAULTS.permissionMode)
   args = [...args, ...launchFlags({ model, effort, permissionMode })]
@@ -614,17 +613,16 @@ const agentFlags = (agentId: AgentId | undefined, permissionMode?: string): stri
   permissionMode === 'bypassPermissions' ? agentDef(agentId).yolo : []
 
 /** What every new chat starts with, unless another value was picked last: Opus 5.5, medium effort, bypass permissions. */
-const NEW_CHAT_DEFAULTS = { model: 'claude-opus-5-5', effort: 'medium', permissionMode: 'bypassPermissions' }
+const NEW_CHAT_DEFAULTS = { effort: 'medium', permissionMode: 'bypassPermissions' }
 
 const MODEL_KEY = 'vibe.newChatModel'
-const projectModelKey = (cwd: string): string => `${MODEL_KEY}:${folderKey(cwd)}`
-/** The default model for new chats, chosen in the status bar ('' = Claude Code's default). */
-function defaultModel(): string | undefined {
-  const m = st().settings?.model
-  return m === undefined ? NEW_CHAT_DEFAULTS.model : m || undefined
+export function defaultModel(): string | undefined {
+  return remembered(MODEL_KEY, '')
 }
-/** The model last picked in this project, else the status bar's default. */
-const rememberedModel = (cwd: string): string | undefined => remembered(projectModelKey(cwd), defaultModel() ?? '')
+export function setDefaultModel(model: string): void {
+  remember(MODEL_KEY, model)
+  useStore.setState({ newChatModel: model })
+}
 const EFFORT_KEY = 'vibe.newChatEffort'
 const PERMISSION_KEY = 'vibe.newChatPermission'
 /** The value last picked in a chat's menu ('' = Claude Code's default), else the fallback. */
@@ -660,9 +658,7 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
 export function setChatModel(id: string, model: string): void {
   writeToTerm(id, `/model ${model || 'default'}\r`)
   st().patchChat(id, { model: model || undefined })
-  // new chats in this project start with it too (elsewhere: the status bar's default)
-  const c = st().chats.find((x) => x.id === id)
-  if (c) remember(projectModelKey(c.cwd), model)
+  setDefaultModel(model)
   focusTerm(id)
 }
 
@@ -684,23 +680,19 @@ export function setChatPermission(id: string, mode: string): void {
   restartChat(id)
 }
 
-function rowWith(row: string[], active: string | null, id: string): string[] {
-  if (row.includes(id)) return row
-  if (active && row.includes(active)) return row.map((x) => (x === active ? id : x))
-  return [id]
-}
-
-function rowBeside(row: string[], at: string, id: string): string[] {
-  const base = row.includes(at) ? row : [at]
-  const i = base.indexOf(at)
-  return [...base.slice(0, i + 1), id, ...base.slice(i + 1).filter((x) => x !== id)]
+function layoutWith(n: Layout | null, active: string | null, id: string): Layout | string {
+  if (!n) return id
+  const ids = layoutIds(n)
+  if (ids.includes(id)) return n
+  if (active && ids.includes(active)) return replaceLayout(n, active, id)
+  return id
 }
 
 export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   // the chat comes on screen: the Agent drop-down floats open unless it is pinned
-  const { chatRow, activeChatId } = st()
-  useStore.setState({ activeChatId: id, chatRow: rowWith(chatRow, activeChatId, id), ...openPatch('agents') })
+  const { chatLayout, activeChatId } = st()
+  useStore.setState({ activeChatId: id, chatLayout: layoutWith(chatLayout, activeChatId, id), ...openPatch('agents') })
   if (chat?.attention) st().patchChat(id, { attention: false })
   // Explorer / Changes follow the chat you're looking at.
   if (chat) {
@@ -727,9 +719,11 @@ export function closeChat(id: string): void {
     const chats = s.chats.filter((c) => c.id !== id)
     const activeChatId =
       s.activeChatId === id ? (chats[Math.min(idx, chats.length - 1)]?.id ?? null) : s.activeChatId
-    const at = s.chatRow.indexOf(id)
-    const chatRow = s.chatRow.filter((x) => x !== id)
-    if (at >= 0 && activeChatId && activeChatId !== id && !chatRow.includes(activeChatId)) chatRow.splice(at, 0, activeChatId)
+    let chatLayout: Layout | null = s.chatLayout
+    if (chatLayout && layoutIds(chatLayout).includes(id)) {
+      const takes = !!activeChatId && activeChatId !== id && !layoutIds(chatLayout).includes(activeChatId)
+      chatLayout = takes ? replaceLayout(chatLayout, id, activeChatId!) : removeLayout(chatLayout, id)
+    }
     // the chat's browser page goes with it; torn-off pages are user data and stay
     const browsers = { ...s.browsers }
     const kept = (browsers[id]?.tabs ?? []).filter((t) => t.detached)
@@ -738,11 +732,11 @@ export function closeChat(id: string): void {
       const pool = browsers[PAGES_KEY]
       browsers[PAGES_KEY] = { tabs: [...(pool?.tabs ?? []), ...kept], active: pool?.active ?? kept[0].id }
     }
-    return { chats, activeChatId, browsers, chatRow }
+    return { chats, activeChatId, browsers, chatLayout }
   })
 }
 
-export function duplicateChat(): void {
+export function duplicateChat(dir: Dir = 'row'): void {
   const s = st()
   const c = s.chats.find((x) => x.id === s.activeChatId)
   if (!c) return
@@ -750,7 +744,12 @@ export function duplicateChat(): void {
   newChat({ agent: agentDef(c.agent).id, cwd: c.cwd, title: `${c.title} copy` })
   const id = st().activeChatId
   if (!id || id === original) return
-  useStore.setState((x) => ({ chatRow: rowBeside(x.chatRow, original, id) }))
+  useStore.setState((x) => {
+    const n = x.chatLayout
+    const base: Layout = !n ? original : layoutIds(n).includes(original) ? n : { dir, kids: [n, original] }
+    const next = splitLayout(base, original, id, dir)
+    return { chatLayout: mapLeaves(next, (leaf) => leaf) ?? next }
+  })
 }
 
 export function restartChat(id: string): void {
@@ -1188,6 +1187,7 @@ export function cycleChat(step: 1 | -1): void {
 /* ---------------- Open chats survive quitting the app ---------------- */
 
 const OPEN_CHATS_KEY = 'vibe.openChats'
+const CHAT_LAYOUT_KEY = 'vibe.chatLayout'
 interface SavedChat {
   /** the chat's id, which is also the id of its terminal in ptyd */
   id?: string
@@ -1221,6 +1221,7 @@ function saveOpenChats(): void {
   }))
   try {
     userStore.setItem(OPEN_CHATS_KEY, JSON.stringify(list))
+    userStore.setItem(CHAT_LAYOUT_KEY, JSON.stringify(st().chatLayout))
   } catch {
     /* nothing to restore next time */
   }
@@ -1248,6 +1249,15 @@ export async function restoreChats(): Promise<void> {
   const running = new Set(listed ?? [])
   const claimed = new Set<string>()
   let activeId: string | null = null
+  const came = new Map<string, string>()
+  const modelOf = new Map<string, string>()
+  await Promise.all(
+    saved.map(async (c) => {
+      if (!c.sessionId) return
+      const r = await window.api.sessions.context(c.sessionId).catch(() => null)
+      if (r?.model) modelOf.set(c.sessionId, r.model)
+    })
+  )
   // one chat per session: a session already open (or listed twice) is not opened again
   const opened = new Set(st().chats.map((c) => c.sessionId).filter(Boolean))
   for (const c of saved) {
@@ -1261,11 +1271,22 @@ export async function restoreChats(): Promise<void> {
       if (!alive && (!c.sessionId || !known.has(c.sessionId))) continue
       if (c.sessionId && opened.has(c.sessionId)) continue
       if (c.sessionId) opened.add(c.sessionId)
-      newChat({ ...same, cwd: c.cwd, args: c.sessionId ? ['--resume', c.sessionId] : [], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: c.model, effort: c.effort, permissionMode: c.permissionMode })
+      newChat({ ...same, cwd: c.cwd, args: c.sessionId ? ['--resume', c.sessionId] : [], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: (c.sessionId && modelOf.get(c.sessionId)) || c.model, effort: c.effort, permissionMode: c.permissionMode })
     } else {
       newChat({ ...same, cwd: c.cwd, agent: agent.id, args: [...agent.resume], title: c.title, pinnedTitle: c.pinnedTitle })
     }
     if (c.active) activeId = st().activeChatId
+    if (c.id && st().activeChatId) came.set(c.id, st().activeChatId!)
+  }
+  let savedLayout: Layout | null = null
+  try {
+    savedLayout = JSON.parse(userStore.getItem(CHAT_LAYOUT_KEY) ?? 'null')
+  } catch {
+    savedLayout = null
+  }
+  if (savedLayout) {
+    const restored = mapLeaves(savedLayout, (old) => came.get(String(old)) ?? null)
+    if (restored) useStore.setState({ chatLayout: restored })
   }
   if (activeId) selectChat(activeId)
   // terminals no chat claims (the chat was closed while the app was away, or never saved) would run for ever
@@ -1273,7 +1294,7 @@ export async function restoreChats(): Promise<void> {
   persistChats = true
   saveOpenChats()
   useStore.subscribe((s, prev) => {
-    if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId) saveOpenChats()
+    if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId || s.chatLayout !== prev.chatLayout) saveOpenChats()
   })
 }
 

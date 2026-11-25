@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
-import { basename, useStore } from '../store'
-import { defaultAgent, detectClaude, newChatWith, openFolder, setDefaultAgent } from '../actions'
+import { basename, shownLayout, useStore } from '../store'
+import { defaultAgent, detectClaude, newChatWith, openFolder, selectChat, setDefaultAgent } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
+import { type Layout } from '../chatLayout'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
 import { ChangesView, ChatsView } from './Sidebar'
 import { ExplorerNav } from './ExplorerNav'
+import { StatusDot } from './icons'
 
 /** what counts as "on the rail": its icons, the flyout, and the popups beside the flyout */
 const RAIL_PARTS = '.agent-rail, .agent-flyout, .explorer-pop, .plan-pop, .menu, .ctx-menu, .overlay'
@@ -225,6 +227,7 @@ export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element
         </button>
       }
     >
+      <LayoutMap />
       {AGENTS.map((a) => {
         const ok = installed(a.id)
         const n = chatsOf(a.id).length
@@ -266,6 +269,31 @@ export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element
       })}
     </SideGroup>
   )
+}
+
+function LayoutMap(): React.JSX.Element | null {
+  const layout = useStore((s) => shownLayout(s))
+  const activeId = useStore((s) => s.activeChatId)
+  const chats = useStore((s) => s.chats)
+  if (layout === null) return null
+  const draw = (n: Layout | string, key: string): React.JSX.Element | null => {
+    if (typeof n === 'string') {
+      const c = chats.find((x) => x.id === n)
+      if (!c) return null
+      return (
+        <button key={key} className={`layout-map-cell${c.id === activeId ? ' on' : ''}`} title={c.title} onClick={() => selectChat(c.id)}>
+          <StatusDot status={c.status} attention={c.attention} />
+          <span className="layout-map-title">{c.title}</span>
+        </button>
+      )
+    }
+    return (
+      <div key={key} className={`layout-map-split ${n.dir}`}>
+        {n.kids.map((k, i) => draw(k, `${key}.${i}`))}
+      </div>
+    )
+  }
+  return <div className="layout-map">{draw(layout, 'r')}</div>
 }
 
 export function GitGroup({ always }: { always?: boolean }): React.JSX.Element {

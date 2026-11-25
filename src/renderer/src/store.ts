@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { AgentId } from '../../shared/agents'
 import type { AgentInfo, AppSettings, ClaudeInfo, GitState, PluginInfo, ProjectGroup, WindowState } from '../../shared/types'
 import { userStore } from './localPref'
+import { layoutIds, type Layout } from './chatLayout'
 
 export type ChatStatus = 'starting' | 'working' | 'idle' | 'exited'
 
@@ -87,7 +88,8 @@ interface State {
 
   chats: Chat[]
   activeChatId: string | null
-  chatRow: string[]
+  chatLayout: Layout | null
+  newChatModel: string | null
 
   shells: ShellTab[]
   activeShellId: string | null
@@ -322,11 +324,9 @@ export function toggleFullscreen(id: PanelId): void {
   useStore.setState({ fullscreen: id, floatOpen: null, peek: null })
 }
 
-export function chatsShown(s: Pick<State, 'chats' | 'activeChatId' | 'chatRow'>): Chat[] {
-  const row = s.chatRow.map((id) => s.chats.find((c) => c.id === id)).filter((c): c is Chat => !!c)
-  if (row.some((c) => c.id === s.activeChatId)) return row
-  const active = s.chats.find((c) => c.id === s.activeChatId)
-  return active ? [active] : []
+export function shownLayout(s: Pick<State, 'chats' | 'activeChatId' | 'chatLayout'>): Layout | string | null {
+  if (s.chatLayout && layoutIds(s.chatLayout).includes(s.activeChatId ?? '')) return s.chatLayout
+  return s.activeChatId && s.chats.some((c) => c.id === s.activeChatId) ? s.activeChatId : null
 }
 
 /**
@@ -378,7 +378,7 @@ export const useStore = create<State>((set) => ({
 
   sidebarView: 'chats',
   panelOrder: loadOrder(),
-  pinned: loadIds(PINNED_KEY, ['agents']),
+  pinned: loadIds(PINNED_KEY, ['agents', 'web']),
   floatOpen: null,
   peek: null,
   fullscreen: null,
@@ -389,7 +389,8 @@ export const useStore = create<State>((set) => ({
 
   chats: [],
   activeChatId: null,
-  chatRow: [],
+  chatLayout: null,
+  newChatModel: null,
 
   shells: [],
   activeShellId: null,

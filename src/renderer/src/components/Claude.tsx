@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
-import { chatsShown, useStore, type Chat } from '../store'
+import { shownLayout, useStore, type Chat } from '../store'
+import { layoutIds, type Layout } from '../chatLayout'
 import { SlidePill, useEnterAnimation } from './motion'
 import {
   closeChat,
@@ -70,24 +71,34 @@ const PULL =
   'keep my work safe and tell me what happened.\r'
 
 export function ClaudePanel(): React.JSX.Element {
-  const ids = useStore((s) => chatsShown(s).map((c) => c.id).join('\n'))
+  const shown = useStore((s) => shownLayout(s))
   const activeId = useStore((s) => s.activeChatId)
   const hasActive = useStore((s) => s.chats.some((c) => c.id === s.activeChatId))
   const claude = useStore((s) => s.claude)
   // Codex / Gemini… alone is enough to chat; the install card is for when no agent is there at all
   const anyAgent = useStore((s) => !!s.claude?.found || s.agents.some((a) => a.found))
-  const row = ids ? ids.split('\n') : []
   return (
     <div className="claude-panel">
       {claude && !anyAgent && <InstallCard />}
       {anyAgent && !hasActive && <NoChat />}
-      {row.length > 0 && (
-        <div className={`claude-row${row.length > 1 ? ' split' : ''}`}>
-          {row.map((id) => (
-            <ChatColumn key={id} id={id} current={id === activeId} />
-          ))}
+      {shown !== null && (
+        <div className={`claude-row${typeof shown === 'string' ? '' : ' split'}`}>
+          <LayoutNode node={shown} activeId={activeId} />
         </div>
       )}
+    </div>
+  )
+}
+
+function LayoutNode({ node, activeId }: { node: Layout | string; activeId: string | null }): React.JSX.Element {
+  if (typeof node === 'string') return <ChatColumn id={node} current={node === activeId} />
+  return (
+    <div className={`claude-split ${node.dir}`}>
+      {node.kids.map((k) => (
+        <div className="claude-cell" key={layoutIds(k)[0]}>
+          <LayoutNode node={k} activeId={activeId} />
+        </div>
+      ))}
     </div>
   )
 }

@@ -30,7 +30,7 @@ import {
 } from 'lucide-react'
 import { basename, panelShown, showPanel, togglePanel, useStore, type SidebarView } from '../store'
 import { StackBar } from './Stack'
-import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
+import { defaultAgent, defaultModel, installedAgents, openBrowser, setDefaultModel, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { languageOf } from '../fileModelsLite'
 import { FileIcon, Logo } from './icons'
@@ -333,19 +333,11 @@ export function StatusBar(): React.JSX.Element {
 
 /** Status-bar picker for the model every new Claude chat starts with (shown while Claude is the AI in use). */
 function NewChatModelPicker(): React.JSX.Element | null {
-  const saved = useStore((s) => s.settings?.model)
+  useStore((s) => s.newChatModel)
   useStore((s) => s.preferredAgent)
   useStore((s) => s.agents)
   if (defaultAgent() !== 'claude') return null
-  const value = saved ?? 'claude-opus-5-5'
-  const onPick = (model: string): void => {
-    useStore.setState((s) => (s.settings ? { settings: { ...s.settings, model } } : s))
-    window.api.app
-      .setSettings({ model })
-      .then((settings) => useStore.setState({ settings }))
-      .catch(() => {})
-  }
-  return <Picker title="Model for new chats" options={MODELS} value={value} onPick={onPick} />
+  return <Picker title="Model for new chats" options={MODELS} value={defaultModel() ?? ''} onPick={setDefaultModel} />
 }
 
 /** Status-bar "AI in use" picker — a plain New chat starts with the agent chosen here. */
