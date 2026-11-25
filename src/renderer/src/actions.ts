@@ -6,7 +6,7 @@ import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
 import { userStore } from './localPref'
-import { gridLayout, joinLayout, layoutIds, layoutKey, mapLeaves, reconcileLayout, removeLayout, replaceLayout, swapLeaves, type Dir, type Layout } from './chatLayout'
+import { appendLayout, gridLayout, joinLayout, layoutIds, layoutKey, mapLeaves, reconcileLayout, removeLayout, replaceLayout, swapLeaves, type Dir, type Layout } from './chatLayout'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -821,7 +821,7 @@ export function closeChat(id: string): void {
   })
 }
 
-export function duplicateChat(dir: Dir = 'row'): void {
+export function duplicateChat(dir: Dir = 'row', whole = false): void {
   const s = st()
   const c = s.chats.find((x) => x.id === s.activeChatId)
   if (!c) return
@@ -833,13 +833,13 @@ export function duplicateChat(dir: Dir = 'row'): void {
   if (!id || id === original) return
   if (s.layoutMode === 'merged') {
     const base = before[ALL_LAYOUT_KEY] ?? gridLayout(idsBefore)
-    useStore.setState((x) => ({ chatLayouts: { ...x.chatLayouts, [ALL_LAYOUT_KEY]: joinLayout(base, original, id, dir) } }))
+    const next = whole ? appendLayout(base, id, dir) : joinLayout(base, original, id, dir)
+    useStore.setState((x) => ({ chatLayouts: { ...x.chatLayouts, [ALL_LAYOUT_KEY]: next } }))
     return
   }
   const key = layoutKey(c.cwd)
-  useStore.setState((x) => ({
-    chatLayouts: withLayout(x.chatLayouts, c.cwd, joinLayout(before[key] ?? null, original, id, dir))
-  }))
+  const next = whole ? appendLayout(before[key] ?? original, id, dir) : joinLayout(before[key] ?? null, original, id, dir)
+  useStore.setState((x) => ({ chatLayouts: withLayout(x.chatLayouts, c.cwd, next) }))
 }
 
 export function restartChat(id: string): void {

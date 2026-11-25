@@ -20,6 +20,11 @@ export function mapLeaves<A, B>(n: Tree<A>, f: (leaf: A) => Tree<B> | null): Tre
   return { dir: n.dir, kids }
 }
 
+export function appendLayout(cur: Layout | null, id: string, dir: Dir): Layout {
+  if (cur === null) return id
+  return mapLeaves<string, string>({ dir, kids: [cur, id] }, (l) => l) ?? cur
+}
+
 export function swapLeaves(n: Layout, a: string, b: string): Layout {
   return mapLeaves(n, (id) => (id === a ? b : id === b ? a : id)) ?? n
 }
