@@ -1,0 +1,9 @@
+{
+  "id": "hello-ui",
+  "name": "Hello UI",
+  "version": "0.1.0",
+  "description": "Test of a renderer module: adds one command to the palette",
+  "license": "MIT",
+  "homepage": "",
+  "renderer": "ui.js"
+}

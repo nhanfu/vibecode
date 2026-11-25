@@ -119,3 +119,21 @@ the manager only offers an entry that fits this system.
 A title-bar button of its own for a plugin that replaces nothing (it opens inside the manager for now),
 signed registries (only an optional SHA-256 today), automatic update checks, and plugins that run code in
 the renderer. The manifest is the contract those will extend; nothing in it needs to change for them.
+
+## Renderer modules (experimental)
+
+A plugin can bring a renderer module: `"renderer": "ui.js"` in its `plugin.json`, with the file at
+`plugins/<id>/ui.js`. The file is an ES module exporting `activate(api)`, which the app calls at startup:
+
+```js
+export function activate(api) {
+  api.addCommand({ id: 'hello-ui.hello', label: 'Hello from a renderer plugin', run: () => api.notify('Hi') })
+}
+```
+
+- `api.addCommand({ id, label, run })` adds a command to the palette (Ctrl+Shift+P). Ids must be unique.
+- `api.notify(text)` shows a message (for now an alert).
+
+Only modules in the checkout's `plugins/` folder are loaded, and they are bundled into the app at build
+time (`src/renderer/src/rendererPlugins.ts`). A change to `ui.js` reloads the window in dev; the app does
+not restart. Installed (user) plugins and a permission prompt for modules are not done yet.
