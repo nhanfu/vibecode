@@ -746,7 +746,7 @@ export function hoverChat(id: string): void {
 export function hoverPane(id: string): void {
   hoverChat(id)
   const ae = document.activeElement as HTMLElement | null
-  const typing = !!ae && ae !== document.body && !ae.closest('.claude-panel') && ae.matches('input, textarea, select, [contenteditable="true"]')
+  const typing = !!ae && ae !== document.body && !ae.closest('.xterm') && ae.matches('input, textarea, select, [contenteditable="true"]')
   if (!typing) focusTerm(id)
 }
 
