@@ -109,6 +109,15 @@ export const COMMANDS: Command[] = [
   { id: 'closeTab', label: 'Close the file or change on show', run: () => closeActiveTab() },
   { id: 'newWebTab', label: 'New web tab', run: () => newWebTab() },
   {
+    id: 'webDevtools',
+    label: 'Web tab: open developer tools',
+    run: () => {
+      const tab = activeWebTab()
+      const label = tab && pageLabels.get(tab.id)
+      if (label) window.api.browser.devtools(label)
+    }
+  },
+  {
     id: 'closeWebTab',
     label: 'Close web tab',
     run: () => {
@@ -242,6 +251,7 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'alt+shift+d', command: 'duplicateAgent' },
   { key: 'alt+shift+v', command: 'duplicateAgentBelow' },
   { key: 'ctrl+shift+j', command: 'duplicateAgentBelow' },
+  { key: 'ctrl+shift+j', command: 'webDevtools', when: 'webFocus' },
   { key: 'ctrl+alt+shift+d', command: 'duplicateAgentWholeRight' },
   { key: 'ctrl+alt+shift+v', command: 'duplicateAgentWholeBelow' },
   { key: 'ctrl+shift+k', command: 'newLayoutChat' },
