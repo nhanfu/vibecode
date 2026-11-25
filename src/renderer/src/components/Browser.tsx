@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, RotateCw, Search, Shuffle, Star, X } from 'lucide-react'
-import type { WebSuggestion } from '../../../shared/types'
+import { ArrowLeft, ArrowRight, RotateCw, Search, Shuffle, X } from 'lucide-react'
 import { BookmarkBar } from './BrowserBookmarks'
 import { useStore } from '../store'
 import { HOME_URL, pageLabels, setBrowserSession, setBrowserUrl } from '../actions'
@@ -26,7 +25,7 @@ const display = (url: string): string => (url === HOME_URL ? '' : url)
  * drop-down floating over a pinned Web). The page itself is a native view stacked above the app's
  * HTML, so it steps aside while one is open. The drop-down the page is in doesn't count.
  */
-const OVERLAYS = '.overlay, .menu, .ctx-menu, .stack-panel.floating.shown, .image-lightbox, .term-image-hover, .bm-menu, .browser-sugg'
+const OVERLAYS = '.overlay, .menu, .ctx-menu, .stack-panel.floating.shown, .image-lightbox, .term-image-hover, .bm-menu'
 
 const overlaps = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 
@@ -227,29 +226,13 @@ export function BrowserTab({
   }, [live, label, zoom, home])
 
   const go = (to = toUrl(address)): void => {
-    typed.current = '' // a suggestion request still on its way must not reopen the list over the page
     setAddress(to)
-    setSugg([])
     setHome(to === HOME_URL)
     shown.current = to
     // the tab is no longer blank as of now, not only once the page reports in (a "+" meanwhile
     // reused this tab instead of opening a second one)
     setBrowserUrl(chatKey, to, tabId)
     void window.api.browser.navigate(label, to).catch(() => {})
-  }
-
-  // address-bar suggestions from bookmarks + history
-  const [sugg, setSugg] = useState<WebSuggestion[]>([])
-  const [pick, setPick] = useState(-1)
-  const typed = useRef('')
-  const onType = (v: string): void => {
-    setAddress(v)
-    setPick(-1)
-    typed.current = v
-    if (!v.trim()) return setSugg([])
-    void window.api.browser.suggest(v).then((list) => {
-      if (typed.current === v) setSugg(list)
-    })
   }
 
   return (
@@ -271,44 +254,16 @@ export function BrowserTab({
             value={address}
             spellCheck={false}
             placeholder="Search or type a URL"
-            onChange={(e) => onType(e.target.value)}
+            onChange={(e) => setAddress(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
-            onBlur={() => {
-              typed.current = ''
-              setTimeout(() => setSugg([]), 120)
-            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                go(pick >= 0 && sugg[pick] ? sugg[pick].url : undefined)
+                go()
                 // like a browser: once the address is entered, the keyboard goes into the page
                 window.api.browser.focus(label)
               }
-              else if (e.key === 'Escape') {
-                typed.current = ''
-                setSugg([])
-              }
-              else if (e.key === 'ArrowDown' && sugg.length) {
-                e.preventDefault()
-                setPick((i) => (i + 1) % sugg.length)
-              } else if (e.key === 'ArrowUp' && sugg.length) {
-                e.preventDefault()
-                setPick((i) => (i <= 0 ? sugg.length - 1 : i - 1))
-              }
             }}
           />
-          {sugg.length > 0 && (
-            <div className="browser-sugg">
-              {sugg.map((x, i) => (
-                <button key={x.url} className={i === pick ? 'on' : ''} onMouseDown={(e) => e.preventDefault()} onClick={() => go(x.url)}>
-                  <span className="bs-title">
-                    {x.search ? <Search size={11} /> : x.bookmark && <Star size={11} />}
-                    {x.title || x.url}
-                  </span>
-                  <span className="bs-url">{x.search ? 'Google search' : x.url}</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
         {/* thin bar along the toolbar's bottom edge while the page loads, like other browsers */}
         {loading && (

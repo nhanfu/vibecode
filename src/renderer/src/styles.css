@@ -877,6 +877,48 @@ kbd {
   font-size: 12px;
 }
 .changes-summary { position: relative; }
+.changes-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 8px;
+}
+.changes-search {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+.changes-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.changes-tools .chip {
+  flex: none;
+}
+.explorer-filter {
+  margin: 4px 8px 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  width: calc(100% - 16px);
+  box-sizing: border-box;
+}
+.explorer-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 .branch-picker { min-width: 0; display: flex; }
 .changes-branch {
   display: flex;

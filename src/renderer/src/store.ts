@@ -141,7 +141,7 @@ export type PagePanelId = `page:${string}`
 /** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and its service runs. */
 export type PluginPanelId = `plugin:${string}`
 export type PanelId = StaticPanelId | PagePanelId | PluginPanelId
-export const PANEL_IDS: StaticPanelId[] = ['web', 'plugins', 'agents']
+export const PANEL_IDS: StaticPanelId[] = ['agents', 'web', 'plugins']
 export const isPage = (id: PanelId): id is PagePanelId => id.startsWith('page:')
 export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith('plugin:')
 export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`

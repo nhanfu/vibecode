@@ -29,7 +29,7 @@ import { FileIcon, FolderIcon, StatusDot, statusLabel } from './icons'
 import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, GitFile, ProjectGroup, SessionInfo } from '../../../shared/types'
 import { agentDef } from '../../../shared/agents'
 import { NewChatMenu } from './AgentMenu'
-import { focusTerm } from '../terminals'
+import { focusTerm, writeToTerm } from '../terminals'
 import { userStore } from '../localPref'
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }): React.JSX.Element {
@@ -647,10 +647,50 @@ const statusName: Record<string, string> = {
   C: 'Copied'
 }
 
+/** Sent to the agent by "Agent commit": commit only, with the same message rules as the Claude panel's commit button. */
+const COMMIT_ONLY =
+  'Commit all current changes, without pushing. Commit message rules: English, one short subject line only ' +
+  '(no body or description), and no Co-Authored-By or any other author/attribution trailer.\r'
+
 /** `embedded`: inside a sidebar group that already has the title (the agent sidebar). */
-export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Element {
+export function ChangesView({ embedded, focusSearch }: { embedded?: boolean; focusSearch?: boolean }): React.JSX.Element {
   const git = useStore((s) => s.git)
   const root = useStore((s) => s.root)!
+  const activeChatId = useStore((s) => s.activeChatId)
+  const [q, setQ] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (focusSearch) searchRef.current?.focus()
+  }, [focusSearch])
+  const needle = q.trim().toLowerCase()
+  // files whose changed lines (added or removed against HEAD) contain the text, found for one needle at a time
+  const [contentHits, setContentHits] = useState<{ needle: string; rels: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!needle) return
+    let live = true
+    const timer = window.setTimeout(() => {
+      Promise.all(
+        git.files.map(async (f) => {
+          const [before, now] = await Promise.all([
+            window.api.git.original(git.root ?? root, f.rel).catch(() => ''),
+            f.status === 'D' ? Promise.resolve('') : window.api.fs.readFile(f.abs).then((r) => (r.binary || r.tooLarge ? '' : r.content), () => '')
+          ])
+          const a = new Set(before.split('\n'))
+          const b = new Set(now.split('\n'))
+          const changed = [...b.keys()].filter((l) => !a.has(l)).concat([...a.keys()].filter((l) => !b.has(l)))
+          return changed.some((l) => l.toLowerCase().includes(needle)) ? f.rel : null
+        })
+      ).then((rels) => {
+        if (live) setContentHits({ needle, rels: new Set(rels.filter((r): r is string => r !== null)) })
+      })
+    }, 200)
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+    }
+  }, [needle, git.files, git.root, root])
+  const contentRels = contentHits?.needle === needle ? contentHits.rels : null
+  const files = needle ? git.files.filter((f) => f.rel.toLowerCase().includes(needle) || !!contentRels?.has(f.rel)) : git.files
   const totals = git.files.reduce((a, f) => ({ add: a.add + f.added, del: a.del + f.deleted }), { add: 0, del: 0 })
 
   if (!git.isRepo) {
@@ -690,6 +730,36 @@ export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Ele
           <span className="del">−{totals.del}</span>
         </div>
       </div>
+      <div className="changes-tools">
+        <input
+          ref={searchRef}
+          className="changes-search"
+          type="search"
+          placeholder="Filter by name or content"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && q) {
+              e.preventDefault()
+              e.stopPropagation()
+              setQ('')
+            }
+          }}
+        />
+        <button
+          className="chip"
+          disabled={!activeChatId || git.files.length === 0}
+          title="Ask the agent in the current chat to commit all changes (no push)"
+          onClick={() => {
+            if (!activeChatId) return
+            writeToTerm(activeChatId, COMMIT_ONLY)
+            focusTerm(activeChatId)
+          }}
+        >
+          <GitCommitHorizontal size={12} />
+          Agent commit
+        </button>
+      </div>
       <div className="scroll">
         {git.files.length === 0 && (
           <div className="empty-hint">
@@ -697,7 +767,9 @@ export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Ele
             <p>Working tree clean. Changes Claude makes will show up here instantly.</p>
           </div>
         )}
-        <ChangeList key={git.root ?? root} files={git.files} />
+        {needle && !contentRels && files.length === 0 && <div className="empty-hint"><p>Searching the changes…</p></div>}
+        {needle && contentRels && files.length === 0 && <div className="empty-hint"><p>No changed file has “{q.trim()}” in its name or changed lines.</p></div>}
+        <ChangeList key={git.root ?? root} files={files} />
         <HistoryList key={git.root ?? root} />
       </div>
     </>

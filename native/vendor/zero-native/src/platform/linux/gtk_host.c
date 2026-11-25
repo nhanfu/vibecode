@@ -738,7 +738,7 @@ static gboolean on_decide_policy(WebKitWebView *web_view, WebKitPolicyDecision *
 
 static char *zn_dark_library = NULL;
 static int zn_web_dark = 0;
-static const char *ZN_DARK_ON = "if (window.DarkReader) DarkReader.enable({}, { ignoreImageAnalysis: ['svg', 'image', 'img[src$=\".svg\" i]', 'img[src*=\".svg?\" i]'].concat(/(^|\\.)google\\./.test(location.hostname) ? ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*=\"Google\"]', 'svg[aria-label*=\"Google\"]'] : []), css: /(^|\\.)google\\./.test(location.hostname) ? 'svg[aria-label=\"Google\"] path{fill:#e8eaed !important}' : undefined });";
+static const char *ZN_DARK_ON = "if (window.DarkReader) DarkReader.enable({}, { ignoreImageAnalysis: ['svg', 'image', 'img[src$=\".svg\" i]', 'img[src*=\".svg?\" i]'].concat(/(^|\\.)google\\./.test(location.hostname) ? ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*=\"Google\"]', 'svg[aria-label*=\"Google\"]'] : []), css: /(^|\\.)google\\./.test(location.hostname) ? 'svg[aria-label=\"Google\"] path{fill:#e8eaed !important}' : /(^|\\.)(dev\\.azure\\.com|visualstudio\\.com)$/.test(location.hostname) ? '.region-header,.region-header-menubar{background-color:#191919 !important}' : undefined });";
 static const char *ZN_DARK_OFF = "if (window.DarkReader) DarkReader.disable();";
 
 int zero_native_gtk_web_set_dark_library(zero_native_gtk_host_t *host, const char *source, size_t len) {

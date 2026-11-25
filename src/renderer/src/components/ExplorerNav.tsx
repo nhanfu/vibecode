@@ -7,7 +7,7 @@ import { hasUnsaved } from '../fileModelsLite'
 import { FileIcon, FolderIcon } from './icons'
 import { sameEntries, useDirChanges, useGitDecorations } from './Sidebar'
 import { InlineFile } from './Review'
-import { setExplorerLive } from '../explorerFocus'
+import { explorerHasFocus, setExplorerLive } from '../explorerFocus'
 import type { DirEntry } from '../../../shared/types'
 
 /**
@@ -44,6 +44,24 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
   const inline = useStore((s) => s.inlineTab)
   // a popup closed by its own × or by a quick open can leave the active index past the end
   const act = Math.min(active, cols.length - 1)
+  // each folder's column (and popup) has its own name filter, kept while the folder stays open
+  const [filters, setFilters] = useState<Record<string, string>>({})
+  const setFilter = (dir: string, text: string): void => setFilters((f) => ({ ...f, [dir]: text }))
+
+  // Ctrl+F inside the Files list focuses the filter of the column that has the focus
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'f' || !explorerHasFocus()) return
+      const col = colEls.current[latest.current.active]
+      const input = col?.querySelector<HTMLInputElement>('input.explorer-filter')
+      if (!input) return
+      e.preventDefault()
+      input.focus()
+      input.select()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
 
   const focusLater = (i: number): void => {
     requestAnimationFrame(() => colEls.current[i]?.focus())
@@ -193,7 +211,9 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
       onFile: (e) => openFileRow(i, e),
       onHover: (e) => hoverOpen(i, e),
       onPreview: (e) => hoverPreview(i, e),
-      onBack: () => back(i)
+      onBack: () => back(i),
+      filter: filters[c.dir] ?? '',
+      onFilter: (text) => setFilter(c.dir, text)
     }
   }
 
@@ -247,11 +267,14 @@ interface ColProps {
   onHover: (e: DirEntry) => void
   onPreview: (e: DirEntry) => void
   onBack: () => void
+  /** this folder's name filter, and how it changes */
+  filter: string
+  onFilter: (text: string) => void
   root?: boolean
 }
 
 function ExplorerCol(p: ColProps): React.JSX.Element {
-  const { dir, cursor, openDir, deco, onCursor, onOpen, onFile, onHover, onPreview, onBack, root } = p
+  const { dir, cursor, openDir, deco, onCursor, onOpen, onFile, onHover, onPreview, onBack, filter, onFilter, root } = p
   const [items, setItems] = useState<DirEntry[] | null>(null)
   const [limit, setLimit] = useState(PAGE)
   const list = useRef<HTMLDivElement>(null)
@@ -270,8 +293,10 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
     }
   }, [dir, tick, changed])
 
+  const needle = filter.trim().toLowerCase()
+  const visible = items && needle ? items.filter((e) => e.name.toLowerCase().includes(needle)) : items
   // the first row is the cursor until the user moves it
-  const cur = items?.find((e) => e.path === cursor?.path) ?? items?.[0] ?? null
+  const cur = visible?.find((e) => e.path === cursor?.path) ?? visible?.[0] ?? null
   useEffect(() => {
     if (cur && cur.path !== cursor?.path) onCursor(cur, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -283,10 +308,10 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
 
   const onKey = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (e.ctrlKey || e.metaKey || e.altKey) return
-    const n = items?.length ?? 0
-    const i = items && cur ? items.findIndex((x) => x.path === cur.path) : -1
+    const n = visible?.length ?? 0
+    const i = visible && cur ? visible.findIndex((x) => x.path === cur.path) : -1
     const pick = (k: number): void => {
-      if (items && n) onCursor(items[Math.max(0, Math.min(n - 1, k))], false)
+      if (visible && n) onCursor(visible[Math.max(0, Math.min(n - 1, k))], false)
     }
     let used = true
     switch (e.key) {
@@ -325,15 +350,37 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
     if (used) e.preventDefault()
   }
 
-  const shown = items?.slice(0, limit) ?? []
+  const shown = visible?.slice(0, limit) ?? []
   return (
     <div className={`explorer-col${root ? ' root' : ''}`} tabIndex={0} ref={p.colRef} onFocus={p.onFocus} onKeyDown={onKey}>
       <div className="explorer-col-head" title={dir}>
         {basename(dir)}
       </div>
+      <input
+        className="explorer-filter"
+        type="search"
+        placeholder="Filter (Ctrl+F)"
+        title={`Shows only the entries of ${basename(dir)} whose name matches`}
+        value={filter}
+        onChange={(e) => onFilter(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && filter) {
+            e.preventDefault()
+            e.stopPropagation()
+            onFilter('')
+            return
+          }
+          e.stopPropagation()
+          if (e.key === 'ArrowDown' || e.key === 'Enter') {
+            e.preventDefault()
+            e.currentTarget.closest<HTMLElement>('.explorer-col')?.focus()
+          }
+        }}
+      />
       <div className="explorer-list" ref={list}>
         {items === null && <div className="tree-loading" />}
         {items?.length === 0 && <div className="tree-empty">Empty folder</div>}
+        {!!items?.length && visible?.length === 0 && <div className="tree-empty">No match</div>}
         {shown.map((it) => {
           const isCur = cur?.path === it.path
           const open = it.isDir && openDir === it.path
@@ -355,9 +402,9 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
             </div>
           )
         })}
-        {items && items.length > limit && (
+        {visible && visible.length > limit && (
           <button className="explorer-more" onClick={() => setLimit((n) => n + PAGE)}>
-            {items.length - limit} more
+            {visible.length - limit} more
           </button>
         )}
       </div>

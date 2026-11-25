@@ -301,7 +301,7 @@ export function GitGroup({ always }: { always?: boolean }): React.JSX.Element {
   return (
     <SideGroup id="git-changes" label="Git changes" count={gitChanged} always={always}>
       <div className="embedded-view">
-        <ChangesView embedded />
+        <ChangesView embedded focusSearch={always} />
       </div>
     </SideGroup>
   )
