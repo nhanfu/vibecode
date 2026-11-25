@@ -247,6 +247,7 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+s', command: 'save', when: '!terminalFocus && fileDirty' },
   { key: 'ctrl+w', command: 'closeTab', when: '!terminalFocus && !textInputFocus && reviewOpen' },
   { key: 'ctrl+f4', command: 'closeTab', when: '!terminalFocus && reviewOpen' },
+  { key: 'ctrl+w', command: 'closeChat', when: 'chatFocus || agentsFocus' },
   // the keyboard in a Web tab: these keys belong to the tabs there (the later rule wins)
   { key: 'ctrl+t', command: 'newWebTab', when: '!terminalFocus' },
   { key: 'ctrl+w', command: 'closeWebTab', when: 'webFocus' },
