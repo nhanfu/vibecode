@@ -733,10 +733,8 @@ export function selectChat(id: string): void {
 }
 
 let hoverTimer: number | undefined
-/** How long the pointer rests on a chat before it takes focus: long enough that passing over does not switch. */
 const HOVER_DWELL_MS = 80
 
-/** Hovering a chat makes it the active one, after a short dwell so passing over it does not switch. */
 export function hoverChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   if (!chat || st().activeChatId === id) return
@@ -745,10 +743,6 @@ export function hoverChat(id: string): void {
   useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext })
 }
 
-/**
- * A pane in a split layout under the pointer: it becomes the active chat and its terminal takes the
- * keys, unless a text field outside the chat panels has the keyboard (then the field keeps it).
- */
 export function hoverPane(id: string): void {
   hoverChat(id)
   const ae = document.activeElement as HTMLElement | null
@@ -756,7 +750,6 @@ export function hoverPane(id: string): void {
   if (!typing) focusTerm(id)
 }
 
-/** Mouse handlers for a chat row or pane: hover settles on it, leaving before the dwell cancels. */
 export function hoverFocus(id: string, settle: (id: string) => void = hoverChat): { onMouseEnter: () => void; onMouseLeave: () => void } {
   return {
     onMouseEnter: () => {

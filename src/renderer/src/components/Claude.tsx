@@ -11,6 +11,7 @@ import {
   newChat,
   newChatWith,
   newShell,
+  renameChat,
   restartChat,
   hoverFocus,
   hoverPane,
@@ -117,17 +118,6 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
 
   // the bar over the quick actions: moving while the chat works, green once that run has finished
   const busy = active?.status === 'working' || active?.status === 'starting'
-  const [done, setDone] = useState(false)
-  const wasBusy = useRef(false)
-  useEffect(() => {
-    wasBusy.current = false
-    setDone(false)
-  }, [activeId])
-  useEffect(() => {
-    if (busy) setDone(false)
-    else if (wasBusy.current && active?.status === 'idle') setDone(true)
-    wasBusy.current = busy
-  }, [busy, active?.status])
 
   // Chats are picked from the sidebar, so there is no tab strip here — just the open chat's title row.
   return (
@@ -143,7 +133,7 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
           <div className="chat-titlebar">
             <div className="chat-titlebar-main">
               <StatusDot status={active.status} attention={active.attention} />
-              <span className="chat-titlebar-title">{active.title}</span>
+              <ChatTitle chat={active} />
               {agentDef(active.agent).id !== 'claude' && <span className="chat-agent">{agentDef(active.agent).label}</span>}
               <span className={`chat-state s-${active.status}`}>{statusLabel[active.status]}</span>
             </div>
@@ -166,7 +156,7 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
             </div>
           </div>
           <AttachmentTray chatId={active.id} />
-          <div className={`quick-bar${busy ? ' busy' : done ? ' done' : ''}`}>
+          <div className={`quick-bar${busy ? ' busy' : ''}`}>
             {active.status === 'working' && (
               <button
                 className="chip chip-stop"
@@ -316,6 +306,40 @@ function sendPrompt(id: string, text: string): void {
   // a separate Enter, so Claude doesn't read it as part of a pasted block
   setTimeout(() => writeToTerm(id, '\r'), 150)
   focusTerm(id)
+}
+
+function ChatTitle({ chat }: { chat: Chat }): React.JSX.Element {
+  const [draft, setDraft] = useState<string | null>(null)
+  const cancelled = useRef(false)
+  const finish = (): void => {
+    if (draft !== null && !cancelled.current) renameChat(chat.id, draft)
+    cancelled.current = false
+    setDraft(null)
+  }
+  if (draft === null)
+    return (
+      <span className="chat-titlebar-title" title="Click to rename" onClick={() => setDraft(chat.title)}>
+        {chat.title}
+      </span>
+    )
+  return (
+    <input
+      className="chat-titlebar-input"
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') finish()
+        else if (e.key === 'Escape') {
+          cancelled.current = true
+          finish()
+        }
+      }}
+      onBlur={finish}
+    />
+  )
 }
 
 function ChatStatusBar({ chat }: { chat: Chat }): React.JSX.Element {
