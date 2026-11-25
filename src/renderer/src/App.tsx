@@ -6,6 +6,7 @@ import { onGlobalKey, runNativeShortcut, webKeyFromNative } from './shortcuts'
 import { focusTerm } from './terminals'
 import { reloadIfClean } from './fileModelsLite'
 import { QuickOpen, StatusBar, TitleBar, Welcome } from './components/Chrome'
+import { KeybindingsEditor } from './components/KeybindingsEditor'
 import { StackLayout } from './components/Stack'
 import { ReviewPopup } from './components/Review'
 import { BottomPanel, ClaudePanel } from './components/Claude'
@@ -100,6 +101,7 @@ export default function App(): React.JSX.Element {
       )}
       <StatusBar />
       {quickOpen && <QuickOpen />}
+      <KeybindingsEditor />
       <ReviewPopup />
     </div>
   )

@@ -41,7 +41,7 @@ import { explorerCtrlE } from './explorerFocus'
 import { openRail, type RailId, type RailMode } from './rail'
 import { saveFile } from './fileModelsLite'
 import type { PluginInfo } from '../../shared/types'
-import { buildBindings, keysFor, pressOf, resolve, type Binding, type Context, type KeyRule } from './keybindings'
+import { buildBindings, keysFor, parseJsonc, pressOf, resolve, type Binding, type Context, type KeyRule } from './keybindings'
 
 export interface Command {
   id: string
@@ -85,6 +85,7 @@ export function pluginCommands(plugins: PluginInfo[]): Command[] {
 
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },
+  { id: 'keyboardShortcuts', label: 'Keyboard shortcuts: edit…', run: () => window.dispatchEvent(new Event('open-keybindings')) },
   { id: 'quickOpen', label: 'Go to file…', run: () => st().root && palette('') },
   { id: 'symbol', label: 'Go to symbol in file…', run: () => window.dispatchEvent(new Event('go-to-symbol')) },
   { id: 'line', label: 'Go to line…', run: () => window.dispatchEvent(new Event('go-to-line')) },
@@ -232,6 +233,7 @@ function switchChat(n: number): void {
  */
 export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+shift+p', command: 'palette' },
+  { key: 'ctrl+k ctrl+s', command: 'keyboardShortcuts' },
   { key: 'f1', command: 'palette' },
   { key: 'ctrl+p', command: 'quickOpen', when: 'hasFolder' },
   { key: 'ctrl+shift+o', command: 'symbol' },
@@ -397,9 +399,32 @@ const CONTEXT_HELP = [
 ]
 
 let bindings: Binding[] = []
+let userText: string | null = null
+
+export function allBindings(): Binding[] {
+  return bindings
+}
+
+/** The rules of keybindings.json as the file has them now (none when the file is missing or broken). */
+export function userRules(): KeyRule[] {
+  try {
+    const v = parseJsonc(userText ?? '[]')
+    return Array.isArray(v) ? (v as KeyRule[]) : []
+  } catch {
+    return []
+  }
+}
+
+/** Writes the whole keybindings.json and applies it at once. */
+export async function writeKeybindings(rules: KeyRule[]): Promise<void> {
+  const text = '// Keyboard shortcuts, edited in the app. Later rules win over the defaults.\n' + JSON.stringify(rules, null, 2) + '\n'
+  await window.api.fs.writeFile(await window.api.keybindings.path(), text)
+  apply(text)
+}
 let lastProblems = ''
 
 function apply(text: string | null): void {
+  userText = text
   const built = buildBindings(DEFAULT_KEYS, text, (id) => byId.has(id))
   bindings = built.bindings
   for (const c of COMMANDS) c.keys = keysFor(bindings, c.id)
@@ -483,8 +508,11 @@ export function webKeyFromNative(key: string, shift: boolean): void {
   window.dispatchEvent(new KeyboardEvent('keydown', { key: shift ? key.toUpperCase() : key, ctrlKey: true, shiftKey: shift }))
 }
 
+/** Set while the keyboard shortcuts editor waits for a key to record: no command runs then. */
+export const shortcutRecording = { on: false }
+
 export function onGlobalKey(e: KeyboardEvent): void {
-  if (e.defaultPrevented) return
+  if (e.defaultPrevented || shortcutRecording.on) return
   const inTerminal = !!(document.activeElement as HTMLElement | null)?.closest?.('.xterm')
   if (isReload(e) && !inTerminal) {
     // Ctrl+Shift+R still reloads while developing

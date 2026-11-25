@@ -5502,3 +5502,79 @@ button.plan-chevron:hover {
   margin-right: 8px;
   color: var(--accent);
 }
+
+/* Keyboard shortcuts editor (Ctrl+K Ctrl+S): a command list with its keys, VS Code style */
+.kb-editor {
+  width: min(760px, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 30px 80px -10px #000d, 0 0 0 1px #0006;
+  overflow: hidden;
+  animation: pop 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.kb-editor .palette-input input {
+  flex: 1;
+}
+.kb-note {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  min-height: 18px;
+}
+.kb-head,
+.kb-row {
+  display: grid;
+  grid-template-columns: 1fr 200px 64px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+}
+.kb-head {
+  height: 26px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+.kb-list {
+  overflow-y: auto;
+}
+.kb-row {
+  min-height: 32px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.kb-row:hover {
+  background: var(--bg-hover);
+}
+.kb-row.editing {
+  background: var(--accent-soft);
+}
+.kb-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kb-keys kbd {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+.kb-keys em {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.kb-actions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
