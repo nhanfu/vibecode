@@ -110,8 +110,6 @@ export const api = {
     agents: (): Promise<AgentInfo[]> => invoke('agents_detect'),
     usage: (): Promise<UsageLimit[] | null> => invoke('claude_usage'),
     memory: (): Promise<{ usedBytes: number; totalBytes: number } | null> => invoke('sys_memory'),
-    getProjectBypass: (folder: string): Promise<boolean> => invoke('claude_get_project_bypass', { folder }),
-    setProjectBypass: (folder: string, on: boolean): Promise<boolean> => invoke('claude_set_project_bypass', { folder, on })
   },
   browser: {
     /** create (hidden) the native page for one Web tab */

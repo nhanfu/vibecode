@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Copy, GripVertical, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ChevronDown, Copy, GripVertical, History, Plus, RefreshCw, RotateCcw, Sparkles, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
 import { shownLayout, useStore, type Chat } from '../store'
 import { layoutIds, type Layout } from '../chatLayout'
 import { SlidePill, useEnterAnimation } from './motion'
@@ -17,15 +18,12 @@ import {
   chatDropTarget,
   hoverFocus,
   hoverPane,
-  selectChat,
-  folderKey,
-  loadProjectBypass,
-  toggleProjectBypass
+  selectChat
 } from '../actions'
 import { attachTerm, detachTerm, fitTerm, focusTerm, writeToTerm } from '../terminals'
-import { Logo, StatusDot, statusLabel } from './icons'
+import { Logo } from './icons'
 import { AttachmentTray } from './AttachmentTray'
-import { NewChatMenu } from './AgentMenu'
+import { COMMANDS } from '../shortcuts'
 import { AGENTS, agentDef } from '../../../shared/agents'
 
 export function TerminalView({ id, autoFocus = true }: { id: string; autoFocus?: boolean }): React.JSX.Element {
@@ -124,10 +122,8 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
               <span className="chat-grip" title="Drag onto another pane to swap places" {...chatDragSource(active.id)}>
                 <GripVertical size={13} />
               </span>
-              <StatusDot status={active.status} attention={active.attention} />
               <ChatTitle chat={active} />
               {agentDef(active.agent).id !== 'claude' && <span className="chat-agent">{agentDef(active.agent).label}</span>}
-              <span className={`chat-state s-${active.status}`}>{statusLabel[active.status]}</span>
             </div>
             <div className="chat-titlebar-actions">
               {active.status === 'exited' && (
@@ -135,8 +131,7 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
                   <RefreshCw size={13} /> Restart
                 </button>
               )}
-              {agentDef(active.agent).id === 'claude' && <BypassProjectButton chat={active} />}
-              <NewChatMenu title="New chat with the default agent (Ctrl+Shift+N) — right-click to pick another AI" onPick={newChatWith} />
+              <AddAgentMenu />
               <button className="icon-btn" title="Close chat (it stays in the sidebar history)" onClick={() => closeChat(active.id)}>
                 <X size={15} />
               </button>
@@ -154,21 +149,75 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
   )
 }
 
-/** One click: Claude never asks for permission anywhere in this chat's project. */
-function BypassProjectButton({ chat }: { chat: Chat }): React.JSX.Element {
-  const on = useStore((s) => !!s.projectBypass[folderKey(chat.cwd)])
+const ADD_PLACES = [
+  { label: 'Split vertical (side by side)', command: 'newLayoutChat' },
+  { label: 'Split horizontal (stacked)', command: 'newLayoutBelow' },
+  { label: 'New column (right edge of layout)', command: 'newLayoutColumn' },
+  { label: 'New row (bottom of layout)', command: 'newLayoutRow' }
+]
+
+function AddAgentMenu(): React.JSX.Element {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  const btn = useRef<HTMLButtonElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    loadProjectBypass(chat.cwd)
-  }, [chat.cwd])
+    if (!at) return
+    const close = (e: MouseEvent): void => {
+      if (!menu.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setAt(null)
+    }
+    const esc = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setAt(null)
+    }
+    window.addEventListener('mousedown', close, true)
+    window.addEventListener('keydown', esc, true)
+    return () => {
+      window.removeEventListener('mousedown', close, true)
+      window.removeEventListener('keydown', esc, true)
+    }
+  }, [at])
   return (
-    <button
-      className={`btn btn-sm bypass-btn${on ? ' on' : ''}`}
-      title={on ? `Bypass is on for ${chat.cwd} — click to turn off` : `Bypass permissions for the whole project ${chat.cwd}`}
-      onClick={() => toggleProjectBypass(chat.id)}
-    >
-      {on ? <ShieldOff size={13} /> : <Shield size={13} />}
-      <span className="bypass-label">{on ? 'Project bypassed' : 'Bypass project'}</span>
-    </button>
+    <>
+      <button
+        ref={btn}
+        className="icon-btn accent"
+        title="Add an agent: beside, below, or as a new row or column"
+        onClick={() => {
+          if (at) return setAt(null)
+          const r = btn.current!.getBoundingClientRect()
+          setAt({ x: r.right, y: r.bottom + 4 })
+        }}
+      >
+        <Plus size={16} />
+      </button>
+      {at &&
+        createPortal(
+          <div
+            ref={menu}
+            className="menu ctx-menu agent-menu"
+            style={{ position: 'fixed', top: at.y, right: window.innerWidth - at.x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="menu-sep">Add an agent</div>
+            {ADD_PLACES.map((p) => {
+              const cmd = COMMANDS.find((c) => c.id === p.command)
+              return (
+                <button
+                  key={p.command}
+                  className="menu-item"
+                  onClick={() => {
+                    setAt(null)
+                    cmd?.run()
+                  }}
+                >
+                  <span className="menu-item-main">{p.label}</span>
+                  <span className="menu-item-sub">{cmd?.keys ?? ''}</span>
+                </button>
+              )
+            })}
+          </div>,
+          document.body
+        )}
+    </>
   )
 }
 

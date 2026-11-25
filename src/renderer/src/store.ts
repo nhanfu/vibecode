@@ -103,8 +103,6 @@ interface State {
 
   /** each chat has its own browser tabs: chat id ('_' with no chat open) → its tabs */
   browsers: Record<string, ChatBrowser>
-  /** project folder (lower-cased, no trailing slash) → Claude runs it in bypass-permissions mode */
-  projectBypass: Record<string, boolean>
   /** the Browser mini-app: one set of tabs for all chats (true) or one set per chat (false) */
   browserShared: boolean
 
@@ -418,7 +416,6 @@ export const useStore = create<State>((set) => ({
   diffSideBySide: true,
 
   browsers: savedBrowsers,
-  projectBypass: {},
   browserShared: userStore.getItem(BROWSER_SHARED_STORE) !== 'false',
 
   set: (p) => set(p),

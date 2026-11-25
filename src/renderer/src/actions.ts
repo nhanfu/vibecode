@@ -105,7 +105,7 @@ onTerminalEvents({
     if (!chat) return
     // Startup prompts: the trust-folder question is always answered "Yes" (you only open your own
     // projects here); the bypass warning too when the chat or its project runs in bypass mode.
-    const bypass = !!st().projectBypass[folderKey(chat.cwd)] || chat.permissionMode === 'bypassPermissions'
+    const bypass = chat.permissionMode === 'bypassPermissions'
     if (agentDef(chat.agent).id === 'claude' && !settled.has(id)) answerStartupDialog(id, bypass)
     if (pendingDraft.has(id)) typeDraftWhenReady(id)
     const text = ((outTail.get(id) ?? '') + data.replace(ANSI, '')).slice(-400)
@@ -121,40 +121,6 @@ onTerminalEvents({
   }
 })
 
-/* ---------------- Bypass permissions for a whole project ---------------- */
-
-export const folderKey = (p: string): string => p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
-
-export async function loadProjectBypass(folder: string): Promise<void> {
-  const on = await window.api.claude.getProjectBypass(folder).catch(() => false)
-  useStore.setState((s) => ({ projectBypass: { ...s.projectBypass, [folderKey(folder)]: on } }))
-}
-
-/**
- * Turn bypass on/off for the chat's project: Claude Code's own per-project setting, then restart
- * that project's open chats so they pick it up.
- */
-export async function toggleProjectBypass(chatId: string): Promise<void> {
-  const chat = st().chats.find((c) => c.id === chatId)
-  if (!chat) return
-  const key = folderKey(chat.cwd)
-  const on = !st().projectBypass[key]
-  const msg = on
-    ? `Bypass permissions for the whole project?\n\n${chat.cwd}\n\nClaude will run commands and edit files here without asking. The trust-folder and bypass warnings are answered "Yes" for you. Saved in .claude/settings.local.json, so it also applies when you run claude from a terminal.\n\nOpen chats in this project restart.`
-    : `Turn off bypass for ${chat.cwd}?\n\nClaude asks for permission again. Open chats in this project restart.`
-  if (!window.confirm(msg)) return
-  try {
-    await window.api.claude.setProjectBypass(chat.cwd, on)
-  } catch (e) {
-    window.alert(`Couldn't update .claude/settings.local.json in this project:\n${(e as Error).message}`)
-    return
-  }
-  useStore.setState((s) => ({ projectBypass: { ...s.projectBypass, [key]: on } }))
-  for (const c of st().chats.filter((x) => folderKey(x.cwd) === key)) {
-    st().patchChat(c.id, { permissionMode: on ? 'bypassPermissions' : undefined })
-    restartChat(c.id)
-  }
-}
 
 const dialogTimer = new Map<string, ReturnType<typeof setTimeout>>()
 /**
@@ -726,21 +692,6 @@ export function setLayoutMode(mode: LayoutMode): void {
   useStore.setState({ layoutMode: mode })
 }
 
-export function newLayoutChat(): void {
-  const s = st()
-  const active = s.chats.find((c) => c.id === s.activeChatId)
-  const before = s.activeChatId
-  newChat(active ? { cwd: active.cwd } : {})
-  const id = st().activeChatId
-  if (!id || id === before || st().layoutMode === 'merged') return
-  const chat = st().chats.find((c) => c.id === id)
-  if (!chat) return
-  const sameProject = !!active && layoutKey(active.cwd) === layoutKey(chat.cwd)
-  useStore.setState((x) => ({
-    chatLayouts: withLayout(x.chatLayouts, chat.cwd, joinLayout(x.chatLayouts[layoutKey(chat.cwd)] ?? null, sameProject ? active!.id : null, id, 'row'))
-  }))
-}
-
 export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   // the chat comes on screen: the Agent drop-down floats open unless it is pinned
@@ -821,6 +772,21 @@ export function closeChat(id: string): void {
   })
 }
 
+/** Where a chat that was just created goes in the layout: beside / below `anchor`, or at the outer edge (`whole`). */
+function placedLayouts(prev: Record<string, Layout>, mode: LayoutMode, cwd: string, anchor: string | null, idsBefore: string[], id: string, dir: Dir, whole: boolean): Record<string, Layout> {
+  if (mode === 'merged') {
+    const base = prev[ALL_LAYOUT_KEY] ?? gridLayout(idsBefore)
+    if (base && layoutIds(base).includes(id)) return prev
+    const next = whole || anchor === null ? appendLayout(base, id, dir) : joinLayout(base, anchor, id, dir)
+    return { ...prev, [ALL_LAYOUT_KEY]: next }
+  }
+  const key = layoutKey(cwd)
+  const cur = prev[key] ?? null
+  if (cur && layoutIds(cur).includes(id)) return prev
+  const next = whole ? appendLayout(cur ?? anchor, id, dir) : anchor !== null ? joinLayout(cur, anchor, id, dir) : appendLayout(cur, id, dir)
+  return { ...prev, [key]: next }
+}
+
 export function duplicateChat(dir: Dir = 'row', whole = false): void {
   const s = st()
   const c = s.chats.find((x) => x.id === s.activeChatId)
@@ -831,15 +797,22 @@ export function duplicateChat(dir: Dir = 'row', whole = false): void {
   newChat({ agent: agentDef(c.agent).id, cwd: c.cwd, title: `${c.title} copy` })
   const id = st().activeChatId
   if (!id || id === original) return
-  if (s.layoutMode === 'merged') {
-    const base = before[ALL_LAYOUT_KEY] ?? gridLayout(idsBefore)
-    const next = whole ? appendLayout(base, id, dir) : joinLayout(base, original, id, dir)
-    useStore.setState((x) => ({ chatLayouts: { ...x.chatLayouts, [ALL_LAYOUT_KEY]: next } }))
-    return
-  }
-  const key = layoutKey(c.cwd)
-  const next = whole ? appendLayout(before[key] ?? original, id, dir) : joinLayout(before[key] ?? null, original, id, dir)
-  useStore.setState((x) => ({ chatLayouts: withLayout(x.chatLayouts, c.cwd, next) }))
+  useStore.setState({ chatLayouts: placedLayouts(before, s.layoutMode, c.cwd, original, idsBefore, id, dir, whole) })
+}
+
+export function newLayoutChat(dir: Dir = 'row', whole = false): void {
+  const s = st()
+  const active = s.chats.find((c) => c.id === s.activeChatId)
+  const before = s.activeChatId
+  const prev = s.chatLayouts
+  const idsBefore = s.chats.map((x) => x.id)
+  newChat(active ? { cwd: active.cwd } : {})
+  const id = st().activeChatId
+  if (!id || id === before) return
+  const chat = st().chats.find((c) => c.id === id)
+  if (!chat) return
+  const sameProject = !!active && layoutKey(active.cwd) === layoutKey(chat.cwd)
+  useStore.setState({ chatLayouts: placedLayouts(prev, s.layoutMode, chat.cwd, sameProject ? active!.id : null, idsBefore, id, dir, whole) })
 }
 
 export function restartChat(id: string): void {
