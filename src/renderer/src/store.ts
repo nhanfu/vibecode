@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { AgentId } from '../../shared/agents'
 import type { AgentInfo, AppSettings, ClaudeInfo, GitState, PluginInfo, ProjectGroup, WindowState } from '../../shared/types'
 import { userStore } from './localPref'
-import { gridLayout, layoutIds, layoutKey, type Layout } from './chatLayout'
+import { gridLayout, layoutIds, layoutKey, reconcileLayout, type Layout } from './chatLayout'
 
 export type LayoutMode = 'project' | 'merged'
 
@@ -327,6 +327,8 @@ export function toggleFullscreen(id: PanelId): void {
   useStore.setState({ fullscreen: id, floatOpen: null, peek: null })
 }
 
+export const ALL_LAYOUT_KEY = '*'
+
 export function shownLayout(s: {
   chats: Chat[]
   activeChatId: string | null
@@ -335,7 +337,11 @@ export function shownLayout(s: {
 }): Layout | string | null {
   const active = s.chats.find((c) => c.id === s.activeChatId)
   if (!active) return null
-  if (s.layoutMode === 'merged') return gridLayout(s.chats.map((c) => c.id))
+  if (s.layoutMode === 'merged') {
+    const ids = s.chats.map((c) => c.id)
+    const stored = s.chatLayouts[ALL_LAYOUT_KEY]
+    return (stored ? reconcileLayout(stored, ids) : gridLayout(ids)) ?? null
+  }
   const cur = s.chatLayouts[layoutKey(active.cwd)]
   return cur && layoutIds(cur).includes(active.id) ? cur : active.id
 }

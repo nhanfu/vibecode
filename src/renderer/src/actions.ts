@@ -1,11 +1,12 @@
+import type { DragEvent } from 'react'
 import { clearAttachments } from './attachments'
-import { PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type LayoutMode, type WebTab } from './store'
+import { ALL_LAYOUT_KEY, PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type LayoutMode, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
 import { userStore } from './localPref'
-import { joinLayout, layoutIds, layoutKey, mapLeaves, removeLayout, replaceLayout, type Dir, type Layout } from './chatLayout'
+import { gridLayout, joinLayout, layoutIds, layoutKey, mapLeaves, reconcileLayout, removeLayout, replaceLayout, swapLeaves, type Dir, type Layout } from './chatLayout'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -652,6 +653,56 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
   if (c.effort) out.push('--effort', c.effort)
   if (c.permissionMode) out.push('--permission-mode', c.permissionMode)
   return out
+}
+
+export const CHAT_DRAG = 'application/x-vibe-chat'
+
+export function chatDragSource(id: string): { draggable: true; onDragStart: (e: DragEvent) => void } {
+  return {
+    draggable: true,
+    onDragStart: (e) => {
+      e.dataTransfer.setData(CHAT_DRAG, id)
+      e.dataTransfer.effectAllowed = 'move'
+    },
+  }
+}
+
+export function chatDropTarget(id: string): { onDragOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void } {
+  return {
+    onDragOver: (e) => {
+      if (!e.dataTransfer.types.includes(CHAT_DRAG)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+    },
+    onDrop: (e) => {
+      const from = e.dataTransfer.getData(CHAT_DRAG)
+      if (!from) return
+      e.preventDefault()
+      swapChats(from, id)
+    },
+  }
+}
+
+export function swapChats(a: string, b: string): void {
+  const s = st()
+  const ca = s.chats.find((c) => c.id === a)
+  const cb = s.chats.find((c) => c.id === b)
+  if (!ca || !cb || a === b) return
+  if (s.layoutMode === 'merged') {
+    const ids = s.chats.map((c) => c.id)
+    const stored = s.chatLayouts[ALL_LAYOUT_KEY]
+    const cur = stored ? reconcileLayout(stored, ids) : gridLayout(ids)
+    if (cur === null) return
+    useStore.setState({ chatLayouts: { ...s.chatLayouts, [ALL_LAYOUT_KEY]: swapLeaves(cur, a, b) } })
+    return
+  }
+  const key = layoutKey(ca.cwd)
+  if (key !== layoutKey(cb.cwd)) return
+  const cur = s.chatLayouts[key]
+  if (!cur) return
+  const ids = layoutIds(cur)
+  if (!ids.includes(a) || !ids.includes(b)) return
+  useStore.setState({ chatLayouts: withLayout(s.chatLayouts, ca.cwd, swapLeaves(cur, a, b)) })
 }
 
 function layoutWith(n: Layout | null, id: string, active: string | null): Layout | string {

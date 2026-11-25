@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Copy, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
+import { ChevronDown, Copy, GripVertical, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
 import { shownLayout, useStore, type Chat } from '../store'
 import { layoutIds, type Layout } from '../chatLayout'
 import { SlidePill, useEnterAnimation } from './motion'
@@ -13,6 +13,8 @@ import {
   newShell,
   renameChat,
   restartChat,
+  chatDragSource,
+  chatDropTarget,
   hoverFocus,
   hoverPane,
   selectChat,
@@ -86,7 +88,7 @@ export function ClaudePanel(): React.JSX.Element {
 function LayoutNode({ node, activeId }: { node: Layout | string; activeId: string | null }): React.JSX.Element {
   if (typeof node === 'string') return <ChatColumn id={node} current={node === activeId} />
   return (
-    <div className={`claude-split ${node.dir}${node.dir === 'col' && node.kids.length > 3 ? ' tall' : ''}`}>
+    <div className={`claude-split ${node.dir}${node.dir === 'col' && node.kids.length > 2 ? ' tall' : ''}`}>
       {node.kids.map((k) => (
         <div className="claude-cell" key={layoutIds(k)[0]}>
           <LayoutNode node={k} activeId={activeId} />
@@ -113,11 +115,15 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
         if (!current) selectChat(id)
       }}
       {...hoverFocus(id, hoverPane)}
+      {...chatDropTarget(id)}
     >
       {active && (
         <>
           <div className="chat-titlebar">
             <div className="chat-titlebar-main">
+              <span className="chat-grip" title="Drag onto another pane to swap places" {...chatDragSource(active.id)}>
+                <GripVertical size={13} />
+              </span>
               <StatusDot status={active.status} attention={active.attention} />
               <ChatTitle chat={active} />
               {agentDef(active.agent).id !== 'claude' && <span className="chat-agent">{agentDef(active.agent).label}</span>}

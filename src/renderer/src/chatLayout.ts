@@ -20,6 +20,16 @@ export function mapLeaves<A, B>(n: Tree<A>, f: (leaf: A) => Tree<B> | null): Tre
   return { dir: n.dir, kids }
 }
 
+export function swapLeaves(n: Layout, a: string, b: string): Layout {
+  return mapLeaves(n, (id) => (id === a ? b : id === b ? a : id)) ?? n
+}
+
+export function reconcileLayout(cur: Layout | null, ids: string[]): Layout | null {
+  let out = cur === null ? null : mapLeaves<string, string>(cur, (id) => (ids.includes(id) ? id : null))
+  for (const id of ids) if (!layoutIds(out).includes(id)) out = joinLayout(out, null, id, 'row')
+  return out
+}
+
 export function layoutIds(n: Layout | null): string[] {
   const out: string[] = []
   if (n === null) return out

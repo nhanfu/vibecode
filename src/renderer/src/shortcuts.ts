@@ -227,20 +227,20 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+o', command: 'openFolder', when: '!terminalFocus && !textInputFocus' },
 
   { key: 'ctrl+shift+n', command: 'newChat' },
-  { key: 'ctrl+alt+right', command: 'nextChat' },
-  { key: 'ctrl+alt+left', command: 'prevChat' },
-  { key: 'alt+shift+down', command: 'nextAgent' },
-  { key: 'alt+shift+up', command: 'prevAgent' },
-  { key: 'alt+down', command: 'nextAgentGroup' },
-  { key: 'alt+up', command: 'prevAgentGroup' },
-  { key: 'alt+shift+d', command: 'duplicateAgent' },
-  { key: 'alt+shift+v', command: 'duplicateAgentBelow' },
-  { key: 'alt+shift+c', command: 'newLayoutChat' },
+  { key: 'ctrl+shift+right', command: 'nextChat' },
+  { key: 'ctrl+shift+left', command: 'prevChat' },
+  { key: 'ctrl+shift+down', command: 'nextAgent' },
+  { key: 'ctrl+shift+up', command: 'prevAgent' },
+  { key: 'ctrl+shift+pagedown', command: 'nextAgentGroup' },
+  { key: 'ctrl+shift+pageup', command: 'prevAgentGroup' },
+  { key: 'ctrl+shift+d', command: 'duplicateAgent' },
+  { key: 'ctrl+shift+j', command: 'duplicateAgentBelow' },
+  { key: 'ctrl+shift+k', command: 'newLayoutChat' },
   { key: 'alt+enter', command: 'fullscreen' },
   { key: 'alt+shift+left', command: 'miniAppPrev' },
   { key: 'alt+shift+right', command: 'miniAppNext' },
   { key: 'ctrl+shift+l', command: 'focusChat' },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `alt+${n}`, command: `chat${n}` })),
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `ctrl+shift+${n}`, command: `chat${n}` })),
 
   // nothing unsaved: the key is left alone
   { key: 'ctrl+s', command: 'save', when: '!terminalFocus && fileDirty' },
@@ -257,13 +257,13 @@ export const DEFAULT_KEYS: KeyRule[] = [
 
   { key: 'ctrl+shift+e', command: 'explorer' },
   // no terminalFocus guard: in a chat it takes Claude Code's Ctrl+E (end of line); keybindings.json can give it back
-  { key: 'ctrl+e', command: 'explorerFocus' },
+  { key: 'ctrl+shift+f', command: 'explorerFocus' },
   { key: 'ctrl+shift+g', command: 'changes' },
-  // the agent sidebar's icons: each one toggles its flyout (ctrl+alt keys avoid the terminal's and the editor's)
-  { key: 'ctrl+alt+o', command: 'railProject' },
-  { key: 'ctrl+alt+a', command: 'railAgents' },
-  { key: 'ctrl+alt+p', command: 'railPlans' },
-  { key: 'ctrl+alt+g', command: 'railGit' },
+  // the agent sidebar's icons: each one toggles its flyout
+  { key: 'ctrl+shift+b', command: 'railProject' },
+  { key: 'ctrl+shift+m', command: 'railAgents' },
+  { key: 'ctrl+shift+y', command: 'railPlans' },
+  { key: 'ctrl+shift+h', command: 'railGit' },
   // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
   { key: 'ctrl+shift+c', command: 'chats', when: '!terminalFocus' },
   { key: 'ctrl+b', command: 'sidebar' },

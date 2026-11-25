@@ -1412,7 +1412,16 @@ kbd {
   border-top: 1px solid var(--border);
 }
 .claude-split.col.tall > .claude-cell {
-  flex: 0 0 50%;
+  flex: 0 0 50vh;
+}
+.chat-grip {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-faint);
+  cursor: grab;
+}
+.chat-grip:active {
+  cursor: grabbing;
 }
 .claude-split.col > .claude-cell:first-child {
   border-top: 0;
