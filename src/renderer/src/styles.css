@@ -1411,6 +1411,9 @@ kbd {
   flex: 1 0 200px;
   border-top: 1px solid var(--border);
 }
+.claude-split.col.tall > .claude-cell {
+  flex: 0 0 50%;
+}
 .claude-split.col > .claude-cell:first-child {
   border-top: 0;
 }
@@ -1565,36 +1568,6 @@ kbd {
 .xterm .xterm-viewport::-webkit-scrollbar-thumb {
   background-color: var(--w-14);
 }
-.quick-bar {
-  position: relative;
-  flex: none;
-  display: flex;
-  gap: 5px;
-  padding: 8px 10px 10px;
-  overflow-x: auto;
-  border-top: 1px solid var(--w-07);
-}
-/* the chat is working: an indeterminate bar runs along the top edge */
-.quick-bar.busy::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 30%;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--blue), transparent);
-  animation: quick-busy 1.4s ease-in-out infinite;
-  pointer-events: none;
-}
-@keyframes quick-busy {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(340%); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .quick-bar.busy::before { animation: none; width: 100%; opacity: 0.6; }
-}
-
 /* Tasks tab: the chat's background tasks */
 .chat-tasks {
   flex: 1;
@@ -1691,9 +1664,6 @@ kbd {
 .chat-tabs .center-count.running {
   background: var(--blue);
   color: #fff;
-}
-.quick-bar::-webkit-scrollbar {
-  height: 0;
 }
 .chip {
   height: 24px;
@@ -2959,26 +2929,6 @@ button.plan-chevron:hover {
   }
 }
 
-
-/* chat action buttons (replace typed commands) */
-.quick-bar .chip,
-.sb-actions .chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-family: inherit;
-  font-size: 11.5px;
-}
-.quick-bar .chip-stop,
-.quick-bar .chip-stop:hover {
-  color: var(--red);
-  border-color: color-mix(in srgb, var(--red) 45%, transparent);
-  background: color-mix(in srgb, var(--red) 12%, transparent);
-}
-.quick-bar .chip-stop:hover {
-  background: color-mix(in srgb, var(--red) 22%, transparent);
-}
-
 /* window opacity popover */
 .opacity-ctl {
   position: relative;
@@ -3624,15 +3574,6 @@ button.plan-chevron:hover {
 }
 
 /* one-click prompts (Run App / Publish BE), left side of the chat status bar */
-.sb-actions {
-  display: flex;
-  gap: 6px;
-  margin-right: auto;
-}
-.chip.sb-action:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
 
 /* chat panel: Chat | Images tabs */
 .chat-tabs {
@@ -4403,7 +4344,6 @@ button.plan-chevron:hover {
 }
 
 /* chat footer rows wrap instead of running off the edge */
-.quick-bar,
 .chat-statusbar {
   flex-wrap: wrap;
   row-gap: 5px;

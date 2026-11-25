@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
+import { Check, ChevronDown, Copy, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
 import { shownLayout, useStore, type Chat } from '../store'
 import { layoutIds, type Layout } from '../chatLayout'
 import { SlidePill, useEnterAnimation } from './motion'
@@ -26,7 +26,6 @@ import {
 import { attachTerm, detachTerm, fitTerm, focusTerm, writeToTerm } from '../terminals'
 import { Logo, StatusDot, statusLabel } from './icons'
 import { AttachmentTray } from './AttachmentTray'
-import { pickAttachments } from '../attachments'
 import { NewChatMenu } from './AgentMenu'
 import { AGENTS, agentDef } from '../../../shared/agents'
 
@@ -64,15 +63,6 @@ export function TerminalView({ id, autoFocus = true }: { id: string; autoFocus?:
 
 /* ================================ Claude panel ================================ */
 
-/** One click: Claude commits everything and pushes, following our commit-message rules. */
-const COMMIT_PUSH =
-  'Commit all current changes and push to the remote. Commit message rules: English, one short subject line only ' +
-  '(no body or description), and no Co-Authored-By or any other author/attribution trailer.\r'
-
-const PULL =
-  'Pull the latest code from the remote for the current branch (git pull). If there are local changes or conflicts, ' +
-  'keep my work safe and tell me what happened.\r'
-
 export function ClaudePanel(): React.JSX.Element {
   const activeId = useStore((s) => s.activeChatId)
   const chats = useStore((s) => s.chats)
@@ -99,7 +89,7 @@ export function ClaudePanel(): React.JSX.Element {
 function LayoutNode({ node, activeId }: { node: Layout | string; activeId: string | null }): React.JSX.Element {
   if (typeof node === 'string') return <ChatColumn id={node} current={node === activeId} />
   return (
-    <div className={`claude-split ${node.dir}`}>
+    <div className={`claude-split ${node.dir}${node.dir === 'col' && node.kids.length > 3 ? ' tall' : ''}`}>
       {node.kids.map((k) => (
         <div className="claude-cell" key={layoutIds(k)[0]}>
           <LayoutNode node={k} activeId={activeId} />
@@ -117,7 +107,6 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
   useEnterAnimation(termFrame, activeId)
 
   // the bar over the quick actions: moving while the chat works, green once that run has finished
-  const busy = active?.status === 'working' || active?.status === 'starting'
 
   // Chats are picked from the sidebar, so there is no tab strip here — just the open chat's title row.
   return (
@@ -156,55 +145,6 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
             </div>
           </div>
           <AttachmentTray chatId={active.id} />
-          <div className={`quick-bar${busy ? ' busy' : ''}`}>
-            {active.status === 'working' && (
-              <button
-                className="chip chip-stop"
-                title="Stop what the AI is doing (Esc)"
-                onClick={() => {
-                  writeToTerm(active.id, '\x1b')
-                  focusTerm(active.id)
-                }}
-              >
-                <Square size={10} fill="currentColor" />
-                Stop
-              </button>
-            )}
-            <button
-              className="chip"
-              title="Attach files — they go with your next message (you can also paste pictures or drag files onto the chat)"
-              disabled={active.status === 'exited'}
-              onClick={async () => {
-                await pickAttachments(active.id, active.cwd)
-                focusTerm(active.id)
-              }}
-            >
-              <Paperclip size={12} />
-              Attach files
-            </button>
-            <button
-              className="chip"
-              title="Ask Claude to commit all changes (English subject line, no description, no co-author) and push"
-              onClick={() => {
-                writeToTerm(active.id, COMMIT_PUSH)
-                focusTerm(active.id)
-              }}
-            >
-              <GitCommitHorizontal size={12} />
-              Commit + push
-            </button>
-            <button
-              className="chip"
-              title="Ask Claude to pull the latest code from the remote"
-              onClick={() => {
-                writeToTerm(active.id, PULL)
-                focusTerm(active.id)
-              }}
-            >
-              <Download size={12} />
-              Pull
-            </button>
-          </div>
           <ChatStatusBar chat={active} />
           {agentDef(active.agent).id === 'claude' && <ContextBar chat={active} />}
         </>
@@ -263,51 +203,6 @@ const MODES: Opt[] = [
   { value: 'bypassPermissions', label: 'Bypass permissions', hint: 'No prompts at all' }
 ]
 
-/** One-click prompts for the chat's project. */
-const ACTIONS = [
-  {
-    key: 'continue',
-    label: 'Continue',
-    icon: <FastForward size={12} />,
-    title: 'Tell Claude to continue where it stopped',
-    prompt: 'continue',
-    confirm: ''
-  },
-  {
-    key: 'resume',
-    label: 'Resume',
-    icon: <History size={12} />,
-    title: 'Tell Claude to resume the task that was interrupted',
-    prompt: 'resume',
-    confirm: ''
-  },
-  {
-    key: 'run',
-    label: 'Run App',
-    icon: <Play size={12} />,
-    title: 'Ask Claude to start this project and give you the local URL',
-    prompt:
-      "Run this project's app the usual way for this project (backend and frontend if both are needed). Keep it running in the background, check that it responds, and give me the local URL.",
-    confirm: ''
-  },
-  {
-    key: 'publish',
-    label: 'Publish BE',
-    icon: <Upload size={12} />,
-    title: 'Ask Claude to build and publish the backend',
-    prompt:
-      "Publish this project's backend: build it in Release and publish it the way this project is set up to (publish profile or script). Tell me where the output went and whether anything failed.",
-    confirm: 'Ask Claude to publish the backend of this project now?'
-  }
-]
-
-function sendPrompt(id: string, text: string): void {
-  writeToTerm(id, text)
-  // a separate Enter, so Claude doesn't read it as part of a pasted block
-  setTimeout(() => writeToTerm(id, '\r'), 150)
-  focusTerm(id)
-}
-
 function ChatTitle({ chat }: { chat: Chat }): React.JSX.Element {
   const [draft, setDraft] = useState<string | null>(null)
   const cancelled = useRef(false)
@@ -343,30 +238,12 @@ function ChatTitle({ chat }: { chat: Chat }): React.JSX.Element {
 }
 
 function ChatStatusBar({ chat }: { chat: Chat }): React.JSX.Element {
-  const exited = chat.status === 'exited'
   const agent = agentDef(chat.agent)
   const isClaude = agent.id === 'claude'
   // other agents: only "ask" vs their own never-ask flag (Codex --dangerously-bypass…, Gemini --yolo…)
   const modes = isClaude ? MODES : agent.yolo.length ? MODES.filter((m) => !m.value || m.value === 'bypassPermissions') : []
   return (
     <div className="chat-statusbar">
-      <div className="sb-actions">
-        {ACTIONS.map((a) => (
-          <button
-            key={a.key}
-            className="chip sb-action"
-            title={exited ? 'This chat has ended — restart it first' : `${a.label} — ${a.title}`}
-            aria-label={a.label}
-            disabled={exited}
-            onClick={() => {
-              if (a.confirm && !window.confirm(a.confirm)) return
-              sendPrompt(chat.id, a.prompt)
-            }}
-          >
-            {a.icon}
-          </button>
-        ))}
-      </div>
       {isClaude && <Picker title="Model" options={MODELS} value={chat.model ?? ''} onPick={(v) => setChatModel(chat.id, v)} />}
       {isClaude && <Picker title="Effort" options={EFFORTS} value={chat.effort ?? ''} onPick={(v) => setChatEffort(chat.id, v)} />}
       {modes.length > 0 && (
