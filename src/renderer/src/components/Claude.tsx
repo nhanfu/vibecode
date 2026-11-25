@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
 import { shownLayout, useStore, type Chat } from '../store'
-import { layoutIds, type Layout } from '../chatLayout'
+import { layoutIds, rowCount, type Layout } from '../chatLayout'
 import { SlidePill, useEnterAnimation } from './motion'
 import {
   closeChat,
@@ -79,6 +79,7 @@ export function ClaudePanel(): React.JSX.Element {
   const chatLayouts = useStore((s) => s.chatLayouts)
   const layoutMode = useStore((s) => s.layoutMode)
   const shown = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode }), [chats, activeId, chatLayouts, layoutMode])
+  const [row, setRow] = useState<HTMLDivElement | null>(null)
   const hasActive = useStore((s) => s.chats.some((c) => c.id === s.activeChatId))
   const claude = useStore((s) => s.claude)
   // Codex / Gemini… alone is enough to chat; the install card is for when no agent is there at all
@@ -88,10 +89,79 @@ export function ClaudePanel(): React.JSX.Element {
       {claude && !anyAgent && <InstallCard />}
       {anyAgent && !hasActive && <NoChat />}
       {shown !== null && (
-        <div className={`claude-row${typeof shown === 'string' ? '' : ' split'}`}>
-          <LayoutNode node={shown} activeId={activeId} />
+        <div className="claude-body">
+          <div className={`claude-row${typeof shown === 'string' ? '' : ' split'}`} ref={setRow}>
+            <LayoutNode node={shown} activeId={activeId} />
+          </div>
+          {rowCount(shown) > 2 && <LayoutMinimap root={row} layout={shown} activeId={activeId} />}
         </div>
       )}
+    </div>
+  )
+}
+
+type MiniBox = { id: string; x: number; y: number; w: number; h: number }
+
+function LayoutMinimap({ root, layout, activeId }: { root: HTMLDivElement | null; layout: Layout; activeId: string | null }): React.JSX.Element {
+  const chats = useStore((s) => s.chats)
+  const [boxes, setBoxes] = useState<MiniBox[]>([])
+  const [view, setView] = useState({ y: 0, h: 1 })
+  const scroller = (): HTMLElement | null => root?.querySelector<HTMLElement>(':scope > .claude-split') ?? null
+
+  useLayoutEffect(() => {
+    const el = scroller()
+    if (!el) return
+    const measure = (): void => {
+      const sr = el.getBoundingClientRect()
+      const W = Math.max(el.scrollWidth, el.clientWidth, 1)
+      const H = Math.max(el.scrollHeight, el.clientHeight, 1)
+      setBoxes(
+        [...el.querySelectorAll<HTMLElement>('.claude-col[data-chat-id]')].map((c) => {
+          const r = c.getBoundingClientRect()
+          return { id: c.dataset.chatId ?? '', x: (r.left - sr.left + el.scrollLeft) / W, y: (r.top - sr.top + el.scrollTop) / H, w: r.width / W, h: r.height / H }
+        })
+      )
+      setView({ y: el.scrollTop / H, h: el.clientHeight / H })
+    }
+    measure()
+    el.addEventListener('scroll', measure, { passive: true })
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', measure)
+      ro.disconnect()
+    }
+  }, [root, layout])
+
+  const goTo = (f: number): void => {
+    const el = scroller()
+    if (el) el.scrollTo({ top: Math.max(0, f * el.scrollHeight - el.clientHeight / 2), behavior: 'smooth' })
+  }
+
+  return (
+    <div
+      className="layout-minimap"
+      onClick={(e) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        goTo((e.clientY - r.top) / r.height)
+      }}
+    >
+      {boxes.map((b) => {
+        const c = chats.find((x) => x.id === b.id)
+        return (
+          <div
+            key={b.id}
+            className={`lm-box s-${c?.status ?? 'idle'}${b.id === activeId ? ' on' : ''}`}
+            title={c?.title}
+            style={{ left: `${b.x * 100}%`, top: `${b.y * 100}%`, width: `${b.w * 100}%`, height: `${b.h * 100}%` }}
+            onClick={(e) => {
+              e.stopPropagation()
+              selectChat(b.id)
+            }}
+          />
+        )
+      })}
+      <div className="lm-view" style={{ top: `${view.y * 100}%`, height: `${view.h * 100}%` }} />
     </div>
   )
 }
@@ -123,6 +193,7 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
   return (
     <div
       className={`claude-col${current ? ' current' : ''}`}
+      data-chat-id={id}
       onPointerDownCapture={() => {
         if (!current) selectChat(id)
       }}

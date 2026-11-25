@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
-import { basename, shownLayout, useStore } from '../store'
+import { basename, shownLayout, useStore, type Chat } from '../store'
 import { defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setLayoutMode } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
-import { type Layout } from '../chatLayout'
+import { gridLayout, joinLayout, layoutIds, layoutKey, type Layout } from '../chatLayout'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
 import { ChangesView, ChatsView } from './Sidebar'
@@ -271,29 +271,49 @@ export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element
   )
 }
 
+function LayoutTree({ node, chats, activeId }: { node: Layout | string; chats: Chat[]; activeId: string | null }): React.JSX.Element | null {
+  if (typeof node === 'string') {
+    const c = chats.find((x) => x.id === node)
+    if (!c) return null
+    return (
+      <button className={`layout-map-cell${c.id === activeId ? ' on' : ''}`} title={c.title} onClick={() => selectChat(c.id)} {...hoverFocus(c.id)}>
+        <StatusDot status={c.status} attention={c.attention} />
+        <span className="layout-map-title">{c.title}</span>
+      </button>
+    )
+  }
+  return (
+    <div className={`layout-map-split ${node.dir}`}>
+      {node.kids.map((k, i) => (
+        <LayoutTree key={i} node={k} chats={chats} activeId={activeId} />
+      ))}
+    </div>
+  )
+}
+
+function runningLayouts(chats: Chat[], chatLayouts: Record<string, Layout>): { key: string; name: string; cwd: string; layout: Layout }[] {
+  const groups = new Map<string, Chat[]>()
+  for (const c of chats) {
+    if (c.status === 'exited') continue
+    const k = layoutKey(c.cwd)
+    groups.set(k, [...(groups.get(k) ?? []), c])
+  }
+  return [...groups].map(([key, cs]) => {
+    const ids = cs.map((c) => c.id)
+    const cur = chatLayouts[key]
+    const shown = new Set(layoutIds(cur ?? null))
+    const layout = cur ? ids.filter((id) => !shown.has(id)).reduce<Layout>((l, id) => joinLayout(l, null, id, 'row'), cur) : (gridLayout(ids) as Layout)
+    return { key, name: basename(cs[0].cwd), cwd: cs[0].cwd, layout }
+  })
+}
+
 function LayoutMap(): React.JSX.Element {
   const activeId = useStore((s) => s.activeChatId)
   const chats = useStore((s) => s.chats)
   const chatLayouts = useStore((s) => s.chatLayouts)
   const mode = useStore((s) => s.layoutMode)
-  const layout = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode: mode }), [chats, activeId, chatLayouts, mode])
-  const draw = (n: Layout | string, key: string): React.JSX.Element | null => {
-    if (typeof n === 'string') {
-      const c = chats.find((x) => x.id === n)
-      if (!c) return null
-      return (
-        <button key={key} className={`layout-map-cell${c.id === activeId ? ' on' : ''}`} title={c.title} onClick={() => selectChat(c.id)} {...hoverFocus(c.id)}>
-          <StatusDot status={c.status} attention={c.attention} />
-          <span className="layout-map-title">{c.title}</span>
-        </button>
-      )
-    }
-    return (
-      <div key={key} className={`layout-map-split ${n.dir}`}>
-        {n.kids.map((k, i) => draw(k, `${key}.${i}`))}
-      </div>
-    )
-  }
+  const merged = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode: 'merged' }), [chats, activeId, chatLayouts])
+  const projects = useMemo(() => (mode === 'merged' ? [] : runningLayouts(chats, chatLayouts)), [chats, chatLayouts, mode])
   return (
     <>
       <div className="layout-bar">
@@ -309,7 +329,24 @@ function LayoutMap(): React.JSX.Element {
           <Plus size={14} />
         </button>
       </div>
-      {layout !== null && <div className="layout-map">{draw(layout, 'r')}</div>}
+      {mode === 'merged' ? (
+        merged !== null && (
+          <div className="layout-map">
+            <LayoutTree node={merged} chats={chats} activeId={activeId} />
+          </div>
+        )
+      ) : (
+        projects.map((p) => (
+          <div key={p.key} className="layout-proj">
+            <div className="layout-proj-name" title={p.cwd}>
+              {p.name}
+            </div>
+            <div className="layout-map">
+              <LayoutTree node={p.layout} chats={chats} activeId={activeId} />
+            </div>
+          </div>
+        ))
+      )}
     </>
   )
 }
