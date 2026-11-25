@@ -927,11 +927,54 @@ static gboolean on_web_history_key(GtkEventControllerKey *controller, guint keyv
     return FALSE;
 }
 
+static double zn_swipe_acc = 0;
+static gboolean zn_swipe_done = FALSE;
+static gint64 zn_swipe_last = 0;
+
+/* Two-finger horizontal swipe on a browser tab: content sliding right goes back, left goes forward. */
+static gboolean on_web_swipe(GtkEventControllerScroll *controller, gdouble dx, gdouble dy, gpointer data) {
+    (void)data;
+    WebKitWebView *web_view = WEBKIT_WEB_VIEW(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller)));
+    gint64 now = g_get_monotonic_time();
+    if (now - zn_swipe_last > 400000) {
+        zn_swipe_acc = 0;
+        zn_swipe_done = FALSE;
+    }
+    zn_swipe_last = now;
+    double ax = dx < 0 ? -dx : dx;
+    double ay = dy < 0 ? -dy : dy;
+    if (ax <= ay || zn_swipe_done) return FALSE;
+    zn_swipe_acc += dx;
+    if (zn_swipe_acc <= -60 && webkit_web_view_can_go_forward(web_view)) {
+        webkit_web_view_go_forward(web_view);
+        zn_swipe_done = TRUE;
+        return TRUE;
+    }
+    if (zn_swipe_acc >= 60 && webkit_web_view_can_go_back(web_view)) {
+        webkit_web_view_go_back(web_view);
+        zn_swipe_done = TRUE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void on_web_swipe_end(GtkEventControllerScroll *controller, gpointer data) {
+    (void)controller;
+    (void)data;
+    zn_swipe_acc = 0;
+    zn_swipe_done = FALSE;
+}
+
 static void zero_native_attach_history_keys(WebKitWebView *web_view, zero_native_gtk_window_t *win) {
     GtkEventController *keys = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
     g_signal_connect(keys, "key-pressed", G_CALLBACK(on_web_history_key), win);
     gtk_widget_add_controller(GTK_WIDGET(web_view), keys);
+    GtkEventController *swipe = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+    gtk_event_controller_set_propagation_phase(swipe, GTK_PHASE_CAPTURE);
+    g_signal_connect(swipe, "scroll", G_CALLBACK(on_web_swipe), NULL);
+    g_signal_connect(swipe, "scroll-end", G_CALLBACK(on_web_swipe_end), NULL);
+    gtk_widget_add_controller(GTK_WIDGET(web_view), swipe);
 }
 
 static void on_web_property_changed(WebKitWebView *web_view, GParamSpec *pspec, gpointer data) {
