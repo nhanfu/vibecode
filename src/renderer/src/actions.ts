@@ -743,12 +743,23 @@ export function hoverChat(id: string): void {
   useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext })
 }
 
-/** Mouse handlers for a chat row: hover focuses it, leaving before the dwell cancels. */
-export function hoverFocus(id: string): { onMouseEnter: () => void; onMouseLeave: () => void } {
+/**
+ * A pane in a split layout under the pointer: it becomes the active chat and its terminal takes the
+ * keys, unless a text field outside the chat panels has the keyboard (then the field keeps it).
+ */
+export function hoverPane(id: string): void {
+  hoverChat(id)
+  const ae = document.activeElement as HTMLElement | null
+  const typing = !!ae && ae !== document.body && !ae.closest('.claude-panel') && ae.matches('input, textarea, select, [contenteditable="true"]')
+  if (!typing) focusTerm(id)
+}
+
+/** Mouse handlers for a chat row or pane: hover settles on it, leaving before the dwell cancels. */
+export function hoverFocus(id: string, settle: (id: string) => void = hoverChat): { onMouseEnter: () => void; onMouseLeave: () => void } {
   return {
     onMouseEnter: () => {
       window.clearTimeout(hoverTimer)
-      hoverTimer = window.setTimeout(() => hoverChat(id), 200)
+      hoverTimer = window.setTimeout(() => settle(id), 200)
     },
     onMouseLeave: () => window.clearTimeout(hoverTimer),
   }

@@ -12,6 +12,8 @@ import {
   newChatWith,
   newShell,
   restartChat,
+  hoverFocus,
+  hoverPane,
   selectChat,
   setChatEffort,
   setChatModel,
@@ -134,6 +136,7 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
       onPointerDownCapture={() => {
         if (!current) selectChat(id)
       }}
+      {...hoverFocus(id, hoverPane)}
     >
       {active && (
         <>
