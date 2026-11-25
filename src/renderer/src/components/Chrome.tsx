@@ -30,7 +30,7 @@ import {
 } from 'lucide-react'
 import { basename, panelShown, showPanel, togglePanel, useStore, type SidebarView } from '../store'
 import { StackBar } from './Stack'
-import { defaultAgent, defaultModel, installedAgents, openBrowser, setDefaultModel, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
+import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { languageOf } from '../fileModelsLite'
 import { FileIcon, Logo } from './icons'
@@ -38,7 +38,6 @@ import type { UsageLimit } from '../../../shared/types'
 import { revealIn } from '../scroll'
 import { COMMANDS, pluginCommands, type Command } from '../shortcuts'
 import { openRail } from '../rail'
-import { MODELS, Picker } from './Claude'
 
 /* ================================ Title bar ================================ */
 
@@ -324,20 +323,10 @@ export function StatusBar(): React.JSX.Element {
       <div className="statusbar-right">
         {tab && <span className="sb-item">{languageOf(tab.path)}</span>}
         {tab && <span className="sb-item">UTF-8</span>}
-        <NewChatModelPicker />
         {claude && <AgentPicker />}
       </div>
     </div>
   )
-}
-
-/** Status-bar picker for the model every new Claude chat starts with (shown while Claude is the AI in use). */
-function NewChatModelPicker(): React.JSX.Element | null {
-  useStore((s) => s.newChatModel)
-  useStore((s) => s.preferredAgent)
-  useStore((s) => s.agents)
-  if (defaultAgent() !== 'claude') return null
-  return <Picker title="Model for new chats" options={MODELS} value={defaultModel() ?? ''} onPick={setDefaultModel} />
 }
 
 /** Status-bar "AI in use" picker — a plain New chat starts with the agent chosen here. */

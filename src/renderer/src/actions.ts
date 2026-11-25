@@ -654,32 +654,6 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
   return out
 }
 
-/** Switch model live (`/model`) for this chat. */
-export function setChatModel(id: string, model: string): void {
-  writeToTerm(id, `/model ${model || 'default'}\r`)
-  st().patchChat(id, { model: model || undefined })
-  setDefaultModel(model)
-  focusTerm(id)
-}
-
-/** Switch reasoning effort live (`/effort`) for this chat. */
-export function setChatEffort(id: string, effort: string): void {
-  writeToTerm(id, `/effort ${effort || 'auto'}\r`)
-  st().patchChat(id, { effort: effort || undefined })
-  remember(EFFORT_KEY, effort)
-  focusTerm(id)
-}
-
-/** Permission mode is a launch flag: resume the same conversation with the new mode. */
-export function setChatPermission(id: string, mode: string): void {
-  const c = st().chats.find((x) => x.id === id)
-  if (!c) return
-  if (c.status === 'working' && !window.confirm(`${agentDef(c.agent).label} is still working. Restart this chat with the new permission mode?`)) return
-  st().patchChat(id, { permissionMode: mode || undefined })
-  remember(PERMISSION_KEY, mode)
-  restartChat(id)
-}
-
 function layoutWith(n: Layout | null, id: string, active: string | null): Layout | string {
   if (!n) return id
   const ids = layoutIds(n)
