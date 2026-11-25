@@ -121,6 +121,8 @@ export const api = {
     setActive: (chatId: string, label: string): void => void invoke('web_set_active', { chatId, label }),
     navigate: (label: string, url: string): Promise<void> => invoke('web_navigate', { label, url }),
     back: (label: string): void => void invoke('web_history', { label, step: -1 }),
+    /** the page's developer tools (Inspect), in their own window */
+    devtools: (label: string): void => void invoke('web_devtools', { label }),
     forward: (label: string): void => void invoke('web_history', { label, step: 1 }),
     reload: (label: string, hard = false): void => void invoke('web_reload', { label, hard }),
     stop: (label: string): void => void invoke('web_stop', { label }),

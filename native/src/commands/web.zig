@@ -11,6 +11,7 @@ const zn = @import("zero-native");
 const cmd = @import("root.zig");
 const adblock = @import("../adblock/adblock.zig");
 
+extern "c" fn zero_native_gtk_web_devtools(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern "c" fn zero_native_gtk_web_history(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, step: c_int) c_int;
 extern "c" fn zero_native_gtk_web_reload(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, hard: c_int) c_int;
 extern "c" fn zero_native_gtk_web_stop(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
@@ -160,6 +161,14 @@ pub fn navigate(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     if (!tabKnown(args.label)) return cmd.fail(output, "the tab is closed");
     if (!allowedUrl(args.url)) return cmd.fail(output, "this address cannot be opened");
     try (try services()).navigateWebView(main_window, args.label, args.url);
+    return cmd.json(output, null);
+}
+
+pub fn devtools(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const args = try cmd.args(struct { label: []const u8 }, arena.allocator(), invocation);
+    _ = zero_native_gtk_web_devtools(try host(), main_window, args.label.ptr, args.label.len);
     return cmd.json(output, null);
 }
 

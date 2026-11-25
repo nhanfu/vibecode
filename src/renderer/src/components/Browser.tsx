@@ -87,7 +87,7 @@ export function BrowserTab({
     const muted = saved?.muted
     void window.api.browser.open(label, chatKey, initial, undefined, saved?.session).then(() => {
       if (muted) void window.api.browser.setMuted(label, true)
-    }).catch(() => {})
+    }).catch((e) => console.warn('web open failed:', label, initial, e))
     return () => window.api.browser.close(label)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [label])
@@ -139,7 +139,7 @@ export function BrowserTab({
       shown.current = url
       setAddress(display(url))
       setHome(url === HOME_URL)
-      void window.api.browser.navigate(label, url).catch(() => {})
+      void window.api.browser.navigate(label, url).catch((e) => console.warn('web navigate failed:', label, url, e))
     }
   }, [url, label])
 
@@ -232,7 +232,7 @@ export function BrowserTab({
     // the tab is no longer blank as of now, not only once the page reports in (a "+" meanwhile
     // reused this tab instead of opening a second one)
     setBrowserUrl(chatKey, to, tabId)
-    void window.api.browser.navigate(label, to).catch(() => {})
+    void window.api.browser.navigate(label, to).catch((e) => console.warn('web navigate failed:', label, to, e))
   }
 
   return (

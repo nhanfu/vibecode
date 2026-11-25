@@ -896,6 +896,10 @@ static gboolean on_web_history_key(GtkEventControllerKey *controller, guint keyv
     (void)keycode;
     zero_native_gtk_window_t *win = data;
     WebKitWebView *web_view = WEBKIT_WEB_VIEW(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller)));
+    if ((state & GDK_CONTROL_MASK) && (state & GDK_SHIFT_MASK) && (keyval == GDK_KEY_J || keyval == GDK_KEY_j)) {
+        webkit_web_inspector_show(webkit_web_view_get_inspector(web_view));
+        return TRUE;
+    }
     if (!(state & GDK_ALT_MASK)) return FALSE;
     if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter) {
         zero_native_emit_app_key(win, "fullscreen", "enter");
@@ -1420,6 +1424,7 @@ int zero_native_gtk_create_webview(zero_native_gtk_host_t *host, uint64_t window
     g_signal_connect(web_view, "decide-policy", G_CALLBACK(on_webview_decide_policy), win);
     if (browser) {
         vc_adblock_attach(web_view);
+        webkit_settings_set_enable_developer_extras(webkit_web_view_get_settings(web_view), TRUE);
         zero_native_attach_history_keys(web_view, win);
     }
     webkit_web_view_load_uri(web_view, url_copy);
@@ -1760,6 +1765,13 @@ int zero_native_gtk_web_session_restore(zero_native_gtk_host_t *host, uint64_t w
     if (!state) return 0;
     webkit_web_view_restore_session_state(webview->web_view, state);
     webkit_web_view_session_state_unref(state);
+    return 1;
+}
+
+int zero_native_gtk_web_devtools(zero_native_gtk_host_t *host, uint64_t window_id, const char *label, size_t label_len) {
+    zero_native_gtk_webview_t *webview = zero_native_browser_tab(host, window_id, label, label_len, NULL);
+    if (!webview) return 0;
+    webkit_web_inspector_show(webkit_web_view_get_inspector(webview->web_view));
     return 1;
 }
 
