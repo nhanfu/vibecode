@@ -826,11 +826,19 @@ export function duplicateChat(dir: Dir = 'row'): void {
   const c = s.chats.find((x) => x.id === s.activeChatId)
   if (!c) return
   const original = c.id
+  const before = s.chatLayouts
+  const idsBefore = s.chats.map((x) => x.id)
   newChat({ agent: agentDef(c.agent).id, cwd: c.cwd, title: `${c.title} copy` })
   const id = st().activeChatId
   if (!id || id === original) return
+  if (s.layoutMode === 'merged') {
+    const base = before[ALL_LAYOUT_KEY] ?? gridLayout(idsBefore)
+    useStore.setState((x) => ({ chatLayouts: { ...x.chatLayouts, [ALL_LAYOUT_KEY]: joinLayout(base, original, id, dir) } }))
+    return
+  }
+  const key = layoutKey(c.cwd)
   useStore.setState((x) => ({
-    chatLayouts: withLayout(x.chatLayouts, c.cwd, joinLayout(x.chatLayouts[layoutKey(c.cwd)] ?? null, original, id, dir))
+    chatLayouts: withLayout(x.chatLayouts, c.cwd, joinLayout(before[key] ?? null, original, id, dir))
   }))
 }
 

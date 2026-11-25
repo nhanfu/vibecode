@@ -234,6 +234,7 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+shift+pagedown', command: 'nextAgentGroup' },
   { key: 'ctrl+shift+pageup', command: 'prevAgentGroup' },
   { key: 'ctrl+shift+d', command: 'duplicateAgent' },
+  { key: 'alt+shift+d', command: 'duplicateAgent' },
   { key: 'ctrl+shift+j', command: 'duplicateAgentBelow' },
   { key: 'ctrl+shift+k', command: 'newLayoutChat' },
   { key: 'alt+enter', command: 'fullscreen' },
