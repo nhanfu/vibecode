@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Copy, GripVertical, History, Plus, RefreshCw, RotateCcw, Sparkles, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
 import { shownLayout, useStore, type Chat } from '../store'
@@ -21,7 +21,7 @@ import {
   selectChat
 } from '../actions'
 import { attachTerm, detachTerm, fitTerm, focusTerm, writeToTerm } from '../terminals'
-import { Logo } from './icons'
+import { Logo, StatusDot } from './icons'
 import { AttachmentTray } from './AttachmentTray'
 import { COMMANDS } from '../shortcuts'
 import { AGENTS, agentDef } from '../../../shared/agents'
@@ -122,6 +122,7 @@ function ChatColumn({ id, current }: { id: string; current: boolean }): React.JS
               <span className="chat-grip" title="Drag onto another pane to swap places" {...chatDragSource(active.id)}>
                 <GripVertical size={13} />
               </span>
+              <StatusDot status={active.status} attention={active.attention} />
               <ChatTitle chat={active} />
               {agentDef(active.agent).id !== 'claude' && <span className="chat-agent">{agentDef(active.agent).label}</span>}
             </div>
@@ -158,8 +159,19 @@ const ADD_PLACES = [
 
 function AddAgentMenu(): React.JSX.Element {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  const [pos, setPos] = useState<React.CSSProperties>({ visibility: 'hidden' })
   const btn = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!at) return
+    const r = menu.current?.getBoundingClientRect()
+    if (!r) return
+    setPos({
+      position: 'fixed',
+      top: at.y,
+      left: Math.max(4, Math.min(at.x - r.width, window.innerWidth - r.width - 4))
+    })
+  }, [at])
   useEffect(() => {
     if (!at) return
     const close = (e: MouseEvent): void => {
@@ -184,6 +196,7 @@ function AddAgentMenu(): React.JSX.Element {
         onClick={() => {
           if (at) return setAt(null)
           const r = btn.current!.getBoundingClientRect()
+          setPos({ visibility: 'hidden' })
           setAt({ x: r.right, y: r.bottom + 4 })
         }}
       >
@@ -194,7 +207,7 @@ function AddAgentMenu(): React.JSX.Element {
           <div
             ref={menu}
             className="menu ctx-menu agent-menu"
-            style={{ position: 'fixed', top: at.y, right: window.innerWidth - at.x }}
+            style={pos}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="menu-sep">Add an agent</div>
