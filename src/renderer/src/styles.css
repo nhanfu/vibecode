@@ -1413,8 +1413,16 @@ kbd {
 }
 .claude-split.col.tall {
   overflow-y: scroll;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: var(--w-22) transparent;
+  scrollbar-color: var(--w-22) var(--bg-1);
+}
+.claude-split.col.tall::-webkit-scrollbar {
+  width: 12px;
+}
+.claude-split.col.tall::-webkit-scrollbar-track {
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
 }
 .claude-split.col.tall > .claude-cell {
   flex: 0 0 50vh;
