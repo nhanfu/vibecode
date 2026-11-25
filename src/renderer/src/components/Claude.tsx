@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, Download, GitCommitHorizontal, Shield, ShieldOff, History, Plus, RefreshCw, RotateCcw, Sparkles, Play, FastForward, Upload, Paperclip, Square, SquareTerminal, Trash2, X, ExternalLink } from 'lucide-react'
 import { shownLayout, useStore, type Chat } from '../store'
 import { layoutIds, type Layout } from '../chatLayout'
@@ -71,8 +71,11 @@ const PULL =
   'keep my work safe and tell me what happened.\r'
 
 export function ClaudePanel(): React.JSX.Element {
-  const shown = useStore((s) => shownLayout(s))
   const activeId = useStore((s) => s.activeChatId)
+  const chats = useStore((s) => s.chats)
+  const chatLayouts = useStore((s) => s.chatLayouts)
+  const layoutMode = useStore((s) => s.layoutMode)
+  const shown = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode }), [chats, activeId, chatLayouts, layoutMode])
   const hasActive = useStore((s) => s.chats.some((c) => c.id === s.activeChatId))
   const claude = useStore((s) => s.claude)
   // Codex / Gemini… alone is enough to chat; the install card is for when no agent is there at all

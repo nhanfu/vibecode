@@ -1,11 +1,11 @@
 import { clearAttachments } from './attachments'
-import { PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
+import { PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type LayoutMode, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
 import { userStore } from './localPref'
-import { layoutIds, mapLeaves, removeLayout, replaceLayout, splitLayout, type Dir, type Layout } from './chatLayout'
+import { joinLayout, layoutIds, layoutKey, mapLeaves, removeLayout, replaceLayout, type Dir, type Layout } from './chatLayout'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -680,19 +680,48 @@ export function setChatPermission(id: string, mode: string): void {
   restartChat(id)
 }
 
-function layoutWith(n: Layout | null, active: string | null, id: string): Layout | string {
+function layoutWith(n: Layout | null, id: string, active: string | null): Layout | string {
   if (!n) return id
   const ids = layoutIds(n)
   if (ids.includes(id)) return n
   if (active && ids.includes(active)) return replaceLayout(n, active, id)
-  return id
+  return n
+}
+
+function withLayout(all: Record<string, Layout>, cwd: string, layout: Layout | null): Record<string, Layout> {
+  const key = layoutKey(cwd)
+  const next = { ...all }
+  if (layout === null) delete next[key]
+  else next[key] = layout
+  return next
+}
+
+export function setLayoutMode(mode: LayoutMode): void {
+  remember(LAYOUT_MODE_KEY, mode)
+  useStore.setState({ layoutMode: mode })
+}
+
+export function newLayoutChat(): void {
+  const s = st()
+  const active = s.chats.find((c) => c.id === s.activeChatId)
+  const before = s.activeChatId
+  newChat(active ? { cwd: active.cwd } : {})
+  const id = st().activeChatId
+  if (!id || id === before || st().layoutMode === 'merged') return
+  const chat = st().chats.find((c) => c.id === id)
+  if (!chat) return
+  const sameProject = !!active && layoutKey(active.cwd) === layoutKey(chat.cwd)
+  useStore.setState((x) => ({
+    chatLayouts: withLayout(x.chatLayouts, chat.cwd, joinLayout(x.chatLayouts[layoutKey(chat.cwd)] ?? null, sameProject ? active!.id : null, id, 'row'))
+  }))
 }
 
 export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   // the chat comes on screen: the Agent drop-down floats open unless it is pinned
-  const { chatLayout, activeChatId } = st()
-  useStore.setState({ activeChatId: id, chatLayout: layoutWith(chatLayout, activeChatId, id), ...openPatch('agents') })
+  const { chatLayouts, activeChatId } = st()
+  const chatLayoutsNext = chat ? withLayout(chatLayouts, chat.cwd, layoutWith(chatLayouts[layoutKey(chat.cwd)] ?? null, id, activeChatId)) : chatLayouts
+  useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext, ...openPatch('agents') })
   if (chat?.attention) st().patchChat(id, { attention: false })
   // Explorer / Changes follow the chat you're looking at.
   if (chat) {
@@ -719,10 +748,13 @@ export function closeChat(id: string): void {
     const chats = s.chats.filter((c) => c.id !== id)
     const activeChatId =
       s.activeChatId === id ? (chats[Math.min(idx, chats.length - 1)]?.id ?? null) : s.activeChatId
-    let chatLayout: Layout | null = s.chatLayout
-    if (chatLayout && layoutIds(chatLayout).includes(id)) {
-      const takes = !!activeChatId && activeChatId !== id && !layoutIds(chatLayout).includes(activeChatId)
-      chatLayout = takes ? replaceLayout(chatLayout, id, activeChatId!) : removeLayout(chatLayout, id)
+    let chatLayouts = s.chatLayouts
+    const closing = s.chats.find((c) => c.id === id)
+    const cur = closing ? (chatLayouts[layoutKey(closing.cwd)] ?? null) : null
+    if (closing && cur && layoutIds(cur).includes(id)) {
+      const activeChat = chats.find((c) => c.id === activeChatId)
+      const takes = !!activeChat && layoutKey(activeChat.cwd) === layoutKey(closing.cwd) && !layoutIds(cur).includes(activeChat.id)
+      chatLayouts = withLayout(chatLayouts, closing.cwd, takes ? replaceLayout(cur, id, activeChat!.id) : removeLayout(cur, id))
     }
     // the chat's browser page goes with it; torn-off pages are user data and stay
     const browsers = { ...s.browsers }
@@ -732,7 +764,7 @@ export function closeChat(id: string): void {
       const pool = browsers[PAGES_KEY]
       browsers[PAGES_KEY] = { tabs: [...(pool?.tabs ?? []), ...kept], active: pool?.active ?? kept[0].id }
     }
-    return { chats, activeChatId, browsers, chatLayout }
+    return { chats, activeChatId, browsers, chatLayouts }
   })
 }
 
@@ -744,12 +776,9 @@ export function duplicateChat(dir: Dir = 'row'): void {
   newChat({ agent: agentDef(c.agent).id, cwd: c.cwd, title: `${c.title} copy` })
   const id = st().activeChatId
   if (!id || id === original) return
-  useStore.setState((x) => {
-    const n = x.chatLayout
-    const base: Layout = !n ? original : layoutIds(n).includes(original) ? n : { dir, kids: [n, original] }
-    const next = splitLayout(base, original, id, dir)
-    return { chatLayout: mapLeaves(next, (leaf) => leaf) ?? next }
-  })
+  useStore.setState((x) => ({
+    chatLayouts: withLayout(x.chatLayouts, c.cwd, joinLayout(x.chatLayouts[layoutKey(c.cwd)] ?? null, original, id, dir))
+  }))
 }
 
 export function restartChat(id: string): void {
@@ -1187,7 +1216,8 @@ export function cycleChat(step: 1 | -1): void {
 /* ---------------- Open chats survive quitting the app ---------------- */
 
 const OPEN_CHATS_KEY = 'vibe.openChats'
-const CHAT_LAYOUT_KEY = 'vibe.chatLayout'
+const CHAT_LAYOUTS_KEY = 'vibe.chatLayouts'
+const LAYOUT_MODE_KEY = 'vibe.layoutMode'
 interface SavedChat {
   /** the chat's id, which is also the id of its terminal in ptyd */
   id?: string
@@ -1221,7 +1251,7 @@ function saveOpenChats(): void {
   }))
   try {
     userStore.setItem(OPEN_CHATS_KEY, JSON.stringify(list))
-    userStore.setItem(CHAT_LAYOUT_KEY, JSON.stringify(st().chatLayout))
+    userStore.setItem(CHAT_LAYOUTS_KEY, JSON.stringify(st().chatLayouts))
   } catch {
     /* nothing to restore next time */
   }
@@ -1278,23 +1308,26 @@ export async function restoreChats(): Promise<void> {
     if (c.active) activeId = st().activeChatId
     if (c.id && st().activeChatId) came.set(c.id, st().activeChatId!)
   }
-  let savedLayout: Layout | null = null
+  let savedLayouts: Record<string, Layout> = {}
   try {
-    savedLayout = JSON.parse(userStore.getItem(CHAT_LAYOUT_KEY) ?? 'null')
+    const v = JSON.parse(userStore.getItem(CHAT_LAYOUTS_KEY) ?? 'null')
+    if (v && typeof v === 'object') savedLayouts = v
   } catch {
-    savedLayout = null
+    savedLayouts = {}
   }
-  if (savedLayout) {
-    const restored = mapLeaves(savedLayout, (old) => came.get(String(old)) ?? null)
-    if (restored) useStore.setState({ chatLayout: restored })
+  const restoredLayouts: Record<string, Layout> = {}
+  for (const [key, tree] of Object.entries(savedLayouts)) {
+    const r = mapLeaves(tree, (old) => came.get(String(old)) ?? null)
+    if (r) restoredLayouts[key] = r
   }
+  useStore.setState({ chatLayouts: restoredLayouts, layoutMode: userStore.getItem(LAYOUT_MODE_KEY) === 'merged' ? 'merged' : 'project' })
   if (activeId) selectChat(activeId)
   // terminals no chat claims (the chat was closed while the app was away, or never saved) would run for ever
   if (savedOk && listed) for (const id of running) if (!claimed.has(id) || !st().chats.some((c) => c.id === id)) window.api.pty.kill(id)
   persistChats = true
   saveOpenChats()
   useStore.subscribe((s, prev) => {
-    if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId || s.chatLayout !== prev.chatLayout) saveOpenChats()
+    if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId || s.chatLayouts !== prev.chatLayouts) saveOpenChats()
   })
 }
 

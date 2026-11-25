@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
 import { basename, shownLayout, useStore } from '../store'
-import { defaultAgent, detectClaude, newChatWith, openFolder, selectChat, setDefaultAgent } from '../actions'
+import { defaultAgent, detectClaude, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setLayoutMode } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
@@ -271,11 +271,12 @@ export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element
   )
 }
 
-function LayoutMap(): React.JSX.Element | null {
-  const layout = useStore((s) => shownLayout(s))
+function LayoutMap(): React.JSX.Element {
   const activeId = useStore((s) => s.activeChatId)
   const chats = useStore((s) => s.chats)
-  if (layout === null) return null
+  const chatLayouts = useStore((s) => s.chatLayouts)
+  const mode = useStore((s) => s.layoutMode)
+  const layout = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode: mode }), [chats, activeId, chatLayouts, mode])
   const draw = (n: Layout | string, key: string): React.JSX.Element | null => {
     if (typeof n === 'string') {
       const c = chats.find((x) => x.id === n)
@@ -293,7 +294,24 @@ function LayoutMap(): React.JSX.Element | null {
       </div>
     )
   }
-  return <div className="layout-map">{draw(layout, 'r')}</div>
+  return (
+    <>
+      <div className="layout-bar">
+        <div className="layout-seg">
+          <button className={`layout-seg-btn${mode === 'project' ? ' on' : ''}`} title="One layout per project" onClick={() => setLayoutMode('project')}>
+            By project
+          </button>
+          <button className={`layout-seg-btn${mode === 'merged' ? ' on' : ''}`} title="All open chats in one grid" onClick={() => setLayoutMode('merged')}>
+            All
+          </button>
+        </div>
+        <button className="icon-btn tiny" title="New chat in the layout (Alt+Shift+C)" onClick={() => newLayoutChat()}>
+          <Plus size={14} />
+        </button>
+      </div>
+      {layout !== null && <div className="layout-map">{draw(layout, 'r')}</div>}
+    </>
+  )
 }
 
 export function GitGroup({ always }: { always?: boolean }): React.JSX.Element {

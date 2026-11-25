@@ -2,7 +2,9 @@ import { create } from 'zustand'
 import type { AgentId } from '../../shared/agents'
 import type { AgentInfo, AppSettings, ClaudeInfo, GitState, PluginInfo, ProjectGroup, WindowState } from '../../shared/types'
 import { userStore } from './localPref'
-import { layoutIds, type Layout } from './chatLayout'
+import { gridLayout, layoutIds, layoutKey, type Layout } from './chatLayout'
+
+export type LayoutMode = 'project' | 'merged'
 
 export type ChatStatus = 'starting' | 'working' | 'idle' | 'exited'
 
@@ -88,7 +90,8 @@ interface State {
 
   chats: Chat[]
   activeChatId: string | null
-  chatLayout: Layout | null
+  chatLayouts: Record<string, Layout>
+  layoutMode: LayoutMode
   newChatModel: string | null
 
   shells: ShellTab[]
@@ -324,9 +327,17 @@ export function toggleFullscreen(id: PanelId): void {
   useStore.setState({ fullscreen: id, floatOpen: null, peek: null })
 }
 
-export function shownLayout(s: Pick<State, 'chats' | 'activeChatId' | 'chatLayout'>): Layout | string | null {
-  if (s.chatLayout && layoutIds(s.chatLayout).includes(s.activeChatId ?? '')) return s.chatLayout
-  return s.activeChatId && s.chats.some((c) => c.id === s.activeChatId) ? s.activeChatId : null
+export function shownLayout(s: {
+  chats: Chat[]
+  activeChatId: string | null
+  chatLayouts: Record<string, Layout>
+  layoutMode: LayoutMode
+}): Layout | string | null {
+  const active = s.chats.find((c) => c.id === s.activeChatId)
+  if (!active) return null
+  if (s.layoutMode === 'merged') return gridLayout(s.chats.map((c) => c.id))
+  const cur = s.chatLayouts[layoutKey(active.cwd)]
+  return cur && layoutIds(cur).includes(active.id) ? cur : active.id
 }
 
 /**
@@ -389,7 +400,8 @@ export const useStore = create<State>((set) => ({
 
   chats: [],
   activeChatId: null,
-  chatLayout: null,
+  chatLayouts: {},
+  layoutMode: 'project',
   newChatModel: null,
 
   shells: [],
