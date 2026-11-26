@@ -1541,6 +1541,15 @@ kbd {
 .chat-side .icon-btn {
   position: relative;
 }
+.chat-side-branch {
+  margin-left: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 .chat-side-badge {
   position: absolute;
   top: -4px;

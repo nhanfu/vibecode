@@ -266,6 +266,11 @@ function ChatSide({ cwd }: { cwd: string }): React.JSX.Element {
           <GitBranch size={14} />
           {changed > 0 && <span className="chat-side-badge">{changed > 99 ? '99+' : changed}</span>}
         </button>
+        {git?.isRepo && (
+          <span className="chat-side-branch" title={`Branch: ${git.branch ?? 'detached'}`}>
+            {git.branch ?? 'detached'}
+          </span>
+        )}
       </div>
       {shown && (
         <div className={`chat-side-pop ${shown === 'folder' ? 'is-folder' : 'is-git'}`} onKeyDown={(e) => e.stopPropagation()}>
