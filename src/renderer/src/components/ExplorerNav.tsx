@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, ChevronsDownUp, RefreshCw } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { basename, useStore } from '../store'
-import { closeTab, openInlineFile } from '../actions'
+import { closeTab, openFileInOverlay, openInlineFile } from '../actions'
 import { hasUnsaved } from '../fileModelsLite'
 import { FileIcon, FolderIcon } from './icons'
 import { sameEntries, useDirChanges, useGitDecorations } from './Sidebar'
 import { InlineFile } from './Review'
-import { explorerHasFocus, setExplorerLive } from '../explorerFocus'
+import { releaseExplorer, setExplorerLive } from '../explorerFocus'
 import type { DirEntry } from '../../../shared/types'
 
 /**
@@ -21,26 +21,59 @@ type Col =
 
 const POP_W = 240
 const FILE_W = 560
-const GAP = 6
-const PAGE = 300
-/** popups beside the list at once, folders and a file together; one more closes the oldest */
-const MAX_POPUPS = 2
-
-const capPopups = (next: Col[]): Col[] => (next.length - 1 > MAX_POPUPS ? [next[0], ...next.slice(-MAX_POPUPS)] : next)
+/** ms the pointer must stay on empty space before the popups it opened close */
+const BLANK_DELAY = 400
 
 /**
- * Files in the agent sidebar, navigated like lf: the project's folder is listed in the sidebar, and
- * a folder or file opened (hover or click on a folder; click, Enter or → on a file) shows in a popup
- * beside it instead of expanding inline. Moving the cursor closes folder popups past it; a file's
- * popup stays until it is closed (×, Esc, ←) or another folder is clicked.
+ * Left edge of each popup (cols[1:]), or null when a file has no free place. Popups go left to right while
+ * they fit. Once the right side is full, each new popup slides left of its parent (cols[k] → popup k-1)
+ * until the left edge is full too; then a folder opens over the popup two levels back, and a file has no
+ * place (null). Nothing is ever covered except by this sliding.
  */
-export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
+function popupLefts(cols: Col[], box: { left: number; right: number }, innerWidth: number): number[] | null {
+  const limit = innerWidth - 8
+  const lefts: number[] = []
+  let natural = box.right + GAP
+  let fits = true
+  for (let k = 0; k < cols.length - 1; k++) {
+    const c = cols[k + 1]
+    const w = c.kind === 'file' ? FILE_W : POP_W
+    if (fits && natural + w <= limit) {
+      lefts.push(natural)
+      natural += w + GAP
+      continue
+    }
+    fits = false
+    const parent = k > 0 ? lefts[k - 1] : box.left
+    const slid = parent - GAP - w
+    if (slid >= 8) {
+      lefts.push(slid)
+      continue
+    }
+    if (c.kind === 'file') return null
+    lefts.push(k >= 2 ? lefts[k - 2] : box.right + GAP)
+  }
+  return lefts
+}
+const GAP = 6
+const PAGE = 300
+const NO_DECO = new Map<string, string>()
+
+/**
+ * Files of a project, navigated like lf: the project's folder is listed, and a folder or file opened
+ * (hover or click on a folder; click, Enter or → on a file) shows in a popup beside it instead of
+ * expanding inline. Moving the cursor closes folder popups past it; a file's popup stays until it is
+ * closed (×, Esc, ←) or another folder is clicked. `git`: false for a project that is not the open
+ * root (its folders get no Changes marks).
+ */
+export function ExplorerNav({ root, git = true }: { root: string; git?: boolean }): React.JSX.Element {
   const [cols, setCols] = useState<Col[]>([{ kind: 'dir', dir: root, cursor: null }])
   const [active, setActive] = useState(0)
-  const [box, setBox] = useState({ top: 0, right: 0 })
+  const [box, setBox] = useState({ top: 0, left: 0, right: 0 })
   const boxRef = useRef<HTMLDivElement>(null)
   const colEls = useRef<(HTMLDivElement | null)[]>([])
-  const deco = useGitDecorations()
+  const rootDeco = useGitDecorations()
+  const deco = git ? rootDeco : NO_DECO
   const inline = useStore((s) => s.inlineTab)
   // a popup closed by its own × or by a quick open can leave the active index past the end
   const act = Math.min(active, cols.length - 1)
@@ -48,11 +81,12 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
   const [filters, setFilters] = useState<Record<string, string>>({})
   const setFilter = (dir: string, text: string): void => setFilters((f) => ({ ...f, [dir]: text }))
 
-  // Ctrl+F inside the Files list focuses the filter of the column that has the focus
+  // Ctrl+F inside a Files list focuses the filter of the column that has the focus
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'f' || !explorerHasFocus()) return
-      const col = colEls.current[latest.current.active]
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'f') return
+      // only the list (or popup) that has the focus; other lists on screen leave it alone
+      const col = colEls.current.find((el) => el?.contains(document.activeElement))
       const input = col?.querySelector<HTMLInputElement>('input.explorer-filter')
       if (!input) return
       e.preventDefault()
@@ -82,7 +116,7 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
       const head = cs.slice(0, i + 1).map((c, k) => (k === i && c.kind === 'dir' ? { ...c, cursor: e } : c))
       const old = cs[i + 1]
       const keep: Col = old?.kind === 'dir' && old.dir === e.path ? old : { kind: 'dir', dir: e.path, cursor: null }
-      return capPopups([...head, keep])
+      return [...head, keep]
     })
     if (focus) {
       // the popup is fixed beside the list: bring the list into view first, or the popup opens off-screen
@@ -115,16 +149,23 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
     openFileRow(i, e, true)
   }
 
-  /** A file from column i, in a popup beside it: its tab is shown there, not in the overlay. */
+  /**
+   * A file from column i, in a popup beside it: its tab is shown there, not in the overlay. When no free
+   * place is left for it, a click opens the file in the editor instead; a hover preview does nothing.
+   */
   const openFileRow = (i: number, e: DirEntry, preview = false): void => {
+    const candidate: Col[] = [...latest.current.cols.slice(0, i + 1), { kind: 'file', dir: latest.current.cols[i].dir, tabId: 'f:' + e.path.toLowerCase() }]
+    if (popupLefts(candidate, box, window.innerWidth) === null) {
+      // no room for the file beside the list: a click opens it in the editor, a hover shows nothing
+      if (!preview) openFileInOverlay(e.path)
+      return
+    }
     const tabId = openInlineFile(e.path, preview)
     if (!tabId) return
-    setCols((cs) =>
-      capPopups([
-        ...cs.slice(0, i + 1).map((c, k) => (k === i && c.kind === 'dir' ? { ...c, cursor: e } : c)),
-        { kind: 'file', dir: cs[i].dir, tabId }
-      ])
-    )
+    setCols((cs) => [
+      ...cs.slice(0, i + 1).map((c, k) => (k === i && c.kind === 'dir' ? { ...c, cursor: e } : c)),
+      { kind: 'file', dir: cs[i].dir, tabId }
+    ])
   }
 
   /** Closes column i (a popup) and goes back to the column that opened it. */
@@ -138,6 +179,12 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
   // read by the Ctrl+E hook and by hover, which can fire at any time
   const latest = useRef({ cols, active: act, openChild, focus: focusLater })
   latest.current = { cols, active: act, openChild, focus: focusLater }
+
+  // the window got smaller and the file popup has no free place any more: it closes, its file stays in the editor
+  useEffect(() => {
+    const k = cols.findIndex((c) => c.kind === 'file')
+    if (k > 0 && popupLefts(cols, box, window.innerWidth) === null) setCols((cs) => cs.slice(0, k))
+  }, [box, cols])
 
   // a file popup whose tab was closed elsewhere (its own ×, a quick open) goes too
   useEffect(() => {
@@ -165,10 +212,10 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
     }
     setExplorerLive(live)
     return () => {
-      setExplorerLive(null)
-      // the list is gone (another group, a new root): its file goes with it
+      releaseExplorer(live)
+      // the list is gone (a project folded, a new root): its own file goes with it
       const id = useStore.getState().inlineTab
-      if (id) void closeTab(id)
+      if (id && latest.current.cols.some((c) => c.kind === 'file' && c.tabId === id)) void closeTab(id)
     }
   }, [])
 
@@ -177,7 +224,7 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
     const measure = (): void => {
       const r = boxRef.current?.getBoundingClientRect()
       if (!r) return
-      setBox((b) => (b.top === r.top && b.right === r.right ? b : { top: r.top, right: r.right }))
+      setBox((b) => (b.top === r.top && b.left === r.left && b.right === r.right ? b : { top: r.top, left: r.left, right: r.right }))
     }
     measure()
     window.addEventListener('resize', measure)
@@ -192,12 +239,42 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
   // to move into; a list scrolled low still leaves them a usable height
   const popTop = Math.max(8, Math.min(box.top, window.innerHeight - 360))
   const widths = cols.slice(1).map((c) => (c.kind === 'file' ? FILE_W : POP_W))
-  const lefts = widths.map((_, k) => box.right + GAP + widths.slice(0, k).reduce((sum, w) => sum + w + GAP, 0))
+  const lefts = popupLefts(cols, box, window.innerWidth) ?? widths.map(() => box.right + GAP)
   const maxHeight = window.innerHeight - popTop - 8
+
+  // closes the popups opened from column i (and their preview)
+  const closeAfter = (i: number): void => {
+    if (latest.current.cols.length <= i + 1) return
+    setCols((cs) => cs.slice(0, i + 1))
+    if (latest.current.active > i) setActive(i)
+  }
+
+  /*
+   * The pointer on empty space of column i starts a timer that closes what it opened. Crossing from a
+   * parent toward its popup passes over empty space for a moment, so the timer only fires when the pointer
+   * stays there. A row or another popup under the pointer cancels it.
+   */
+  const blankTimer = useRef<{ i: number; t: number } | null>(null)
+  const cancelBlank = (): void => {
+    if (blankTimer.current) window.clearTimeout(blankTimer.current.t)
+    blankTimer.current = null
+  }
+  const pointerOn = (i: number, blank: boolean): void => {
+    if (!blank || latest.current.cols.length <= i + 1) return cancelBlank()
+    if (blankTimer.current?.i === i) return
+    cancelBlank()
+    const t = window.setTimeout(() => {
+      blankTimer.current = null
+      closeAfter(i)
+    }, BLANK_DELAY)
+    blankTimer.current = { i, t }
+  }
+  useEffect(() => cancelBlank, [])
 
   const colProps = (i: number): ColProps => {
     const c = cols[i]
     return {
+      onPointer: (blank: boolean) => pointerOn(i, blank),
       dir: c.dir,
       cursor: c.kind === 'dir' ? c.cursor : null,
       openDir: cols[i + 1]?.kind === 'dir' ? cols[i + 1].dir : null,
@@ -219,16 +296,6 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
 
   return (
     <div className="explorer-nav" ref={boxRef}>
-      <div className="section-header bare">
-        <div className="section-actions">
-          <button className="icon-btn" title="Refresh" onClick={() => useStore.setState((s) => ({ fsTick: s.fsTick + 1 }))}>
-            <RefreshCw size={14} />
-          </button>
-          <button className="icon-btn" title="Close the popups" onClick={() => setCols((cs) => cs.slice(0, 1))}>
-            <ChevronsDownUp size={14} />
-          </button>
-        </div>
-      </div>
       <ExplorerCol {...colProps(0)} root />
       {cols.slice(1).map((c, k) => (
         <Fragment key={`${k + 1}:${c.kind === 'file' ? c.tabId : c.dir}`}>
@@ -237,6 +304,7 @@ export function ExplorerNav({ root }: { root: string }): React.JSX.Element {
               className={`explorer-nav explorer-pop${c.kind === 'file' ? ' explorer-file' : ''}`}
               style={{
                 left: lefts[k],
+                zIndex: 102 + k,
                 top: popTop,
                 width: widths[k],
                 height: maxHeight
@@ -267,6 +335,8 @@ interface ColProps {
   onHover: (e: DirEntry) => void
   onPreview: (e: DirEntry) => void
   onBack: () => void
+  /** the pointer is over this column: true on its empty space, false on a row or the filter */
+  onPointer: (blank: boolean) => void
   /** this folder's name filter, and how it changes */
   filter: string
   onFilter: (text: string) => void
@@ -274,7 +344,7 @@ interface ColProps {
 }
 
 function ExplorerCol(p: ColProps): React.JSX.Element {
-  const { dir, cursor, openDir, deco, onCursor, onOpen, onFile, onHover, onPreview, onBack, filter, onFilter, root } = p
+  const { dir, cursor, openDir, deco, onCursor, onOpen, onFile, onHover, onPreview, onBack, onPointer, filter, onFilter, root } = p
   const [items, setItems] = useState<DirEntry[] | null>(null)
   const [limit, setLimit] = useState(PAGE)
   const list = useRef<HTMLDivElement>(null)
@@ -352,10 +422,22 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
 
   const shown = visible?.slice(0, limit) ?? []
   return (
-    <div className={`explorer-col${root ? ' root' : ''}`} tabIndex={0} ref={p.colRef} onFocus={p.onFocus} onKeyDown={onKey}>
-      <div className="explorer-col-head" title={dir}>
-        {basename(dir)}
-      </div>
+    <div
+      className={`explorer-col${root ? ' root' : ''}`}
+      tabIndex={0}
+      ref={p.colRef}
+      onFocus={p.onFocus}
+      onKeyDown={onKey}
+      onMouseMove={(e) => {
+        onPointer(!(e.target as HTMLElement).closest('.tree-row, .explorer-filter-row'))
+      }}
+    >
+      {!root && (
+        <div className="explorer-col-head" title={dir}>
+          {basename(dir)}
+        </div>
+      )}
+      <div className="explorer-filter-row">
       <input
         className="explorer-filter"
         type="search"
@@ -377,6 +459,7 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
           }
         }}
       />
+      </div>
       <div className="explorer-list" ref={list}>
         {items === null && <div className="tree-loading" />}
         {items?.length === 0 && <div className="tree-empty">Empty folder</div>}

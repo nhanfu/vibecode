@@ -82,6 +82,8 @@ export const api = {
     pageReset: (): Promise<void> => invoke('pty_page_reset'),
     /** chats' terminals still running from before the app was closed */
     list: (): Promise<string[]> => invoke<string[]>('pty_list'),
+    /** the folder each running chat's shell is in now (chats started after this build) */
+    cwds: (): Promise<{ id: string; cwd: string }[]> => invoke('pty_cwds'),
     /** on screen → output every 5 ms; off screen → batched every 50 ms (far fewer wake-ups) */
     visible: (id: string, visible: boolean): void => void invoke('pty_visible', { id, visible }),
     onData: (cb: (id: string, data: string) => void): Off => sub(ptyData, cb),
@@ -202,7 +204,16 @@ export const api = {
     log: (root: string): Promise<GitCommit[]> => invoke('git_log', { root }),
     commitFiles: (root: string, hash: string): Promise<GitCommitFile[]> => invoke('git_commit_files', { root, hash }),
     branches: (root: string): Promise<GitBranch[]> => invoke('git_branches', { root }),
-    checkout: (root: string, name: string, remote: boolean): Promise<void> => invoke('git_checkout', { root, name, remote })
+    checkout: (root: string, name: string, remote: boolean): Promise<void> => invoke('git_checkout', { root, name, remote }),
+    /** commit the folder's changes (every change first when stageAll); the message must not be empty */
+    commit: (root: string, message: string, stageAll: boolean): Promise<void> => invoke('git_commit', { root, message, stageAll }),
+    push: (root: string): Promise<void> => invoke('git_push', { root }),
+    /** a tracked file's changes against HEAD, as a unified diff */
+    diff: (root: string, rel: string): Promise<string> => invoke('git_diff', { root, rel }),
+    /** throws away one file's changes (untracked: removes it) */
+    revertFile: (root: string, rel: string, untracked: boolean): Promise<void> => invoke('git_revert_file', { root, rel, untracked }),
+    /** throws away every change of the folder */
+    revertAll: (root: string): Promise<void> => invoke('git_revert_all', { root })
   },
   keybindings: {
     /** `<userData>/keybindings.json` (it may not exist yet) */

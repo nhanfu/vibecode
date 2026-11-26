@@ -148,17 +148,14 @@ export const COMMANDS: Command[] = [
   { id: 'webBack', label: 'Back in the web tab', run: () => stepBrowserHistory(-1) },
   { id: 'webForward', label: 'Forward in the web tab', run: () => stepBrowserHistory(1) },
 
-  { id: 'explorer', label: 'Show Explorer (files)', run: () => railCmd('files', 'open') },
   {
     id: 'explorerFocus',
-    label: 'Focus Files in the agent sidebar (again: open the folder under the cursor)',
-    run: () => explorerCtrlE(() => railCmd('files', 'open'))
+    label: 'Focus Files in the Project list (again: open the folder under the cursor)',
+    run: () => explorerCtrlE(() => railCmd('project', 'open'))
   },
-  { id: 'changes', label: 'Show Source Control (changes)', run: () => railCmd('git', 'open') },
   { id: 'railProject', label: 'Agent sidebar: show / hide Project', run: () => railCmd('project') },
   { id: 'railAgents', label: 'Agent sidebar: show / hide Agents', run: () => railCmd('agents') },
   { id: 'railPlans', label: 'Agent sidebar: show / hide Plans & tasks', run: () => railCmd('plans') },
-  { id: 'railGit', label: 'Agent sidebar: show / hide Git changes', run: () => railCmd('git') },
   {
     id: 'chats',
     label: 'Show chats (Project)',
@@ -280,10 +277,8 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'alt+left', command: 'webBack', when: '!terminalFocus' },
   { key: 'alt+right', command: 'webForward', when: '!terminalFocus' },
 
-  { key: 'ctrl+shift+e', command: 'explorer' },
   // no terminalFocus guard: in a chat it takes Claude Code's Ctrl+E (end of line); keybindings.json can give it back
   { key: 'ctrl+shift+f', command: 'explorerFocus' },
-  { key: 'ctrl+shift+g', command: 'changes' },
   // the agent sidebar's icons: each one toggles its flyout
   { key: 'ctrl+shift+b', command: 'railProject' },
   { key: 'ctrl+shift+m', command: 'railAgents' },

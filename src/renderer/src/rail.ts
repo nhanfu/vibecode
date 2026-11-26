@@ -3,7 +3,7 @@
  * parts of the app all ask for a group through openRail. A request made while the rail is not on
  * screen waits for it (AgentSplit takes it when it mounts).
  */
-export type RailId = 'project' | 'agents' | 'plans' | 'git' | 'files'
+export type RailId = 'project' | 'agents' | 'plans'
 
 /** toggle: a group that is already open closes; open: it opens (and stays open) */
 export type RailMode = 'toggle' | 'open'

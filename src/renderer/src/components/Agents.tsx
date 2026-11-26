@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Bot, Check, Copy, Files, FolderOpen, GitBranch, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
+import { Bot, Check, Copy, FolderOpen, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
 import { basename, shownLayout, useStore, type Chat } from '../store'
 import { chatDragSource, chatDropTarget, defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setLayoutMode } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
@@ -9,8 +9,7 @@ import { takeRailRequest, type RailId, type RailRequest } from '../rail'
 import { gridLayout, joinLayout, layoutIds, layoutKey, type Layout } from '../chatLayout'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
-import { ChangesView, ChatsView } from './Sidebar'
-import { ExplorerNav } from './ExplorerNav'
+import { ChatsView } from './Sidebar'
 import { StatusDot } from './icons'
 
 /** what counts as "on the rail": its icons, the flyout, and the popups beside the flyout */
@@ -31,8 +30,8 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
   const pinnedRef = useRef<RailId | null>(null)
   hoverRef.current = hover
   pinnedRef.current = pinned
-  // a file open in the Files popup keeps its flyout: leaving or clicking elsewhere would close the file
-  const fileOpen = (id: RailId | null): boolean => id === 'files' && useStore.getState().inlineTab !== null
+  // a file open in the project's Files popup keeps its flyout: leaving or clicking elsewhere would close the file
+  const fileOpen = (id: RailId | null): boolean => id === 'project' && useStore.getState().inlineTab !== null
 
   const apply = (req: RailRequest): void => {
     setHover(null)
@@ -119,9 +118,7 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
 const RAIL: { id: RailId; label: string; icon: LucideIcon; cmd: string }[] = [
   { id: 'project', label: 'Project', icon: FolderOpen, cmd: 'railProject' },
   { id: 'agents', label: 'Agents', icon: Bot, cmd: 'railAgents' },
-  { id: 'plans', label: 'Plans & tasks', icon: ListTodo, cmd: 'railPlans' },
-  { id: 'git', label: 'Git changes', icon: GitBranch, cmd: 'railGit' },
-  { id: 'files', label: 'Files', icon: Files, cmd: 'explorerFocus' }
+  { id: 'plans', label: 'Plans & tasks', icon: ListTodo, cmd: 'railPlans' }
 ]
 
 function AgentRail({
@@ -138,7 +135,7 @@ function AgentRail({
   const root = useStore((s) => s.root)
   const railRef = useRef<HTMLDivElement>(null)
   const [top, setTop] = useState(0)
-  const items = RAIL.filter((r) => root || (r.id !== 'git' && r.id !== 'files'))
+  const items = RAIL
   const flyoutOpen = shown !== null && items.some((r) => r.id === shown)
 
   // the flyout hangs from its icon
@@ -186,8 +183,6 @@ function RailBody({ id }: { id: RailId }): React.JSX.Element {
       {id === 'project' && <ProjectBody />}
       {id === 'agents' && <AgentsGroup always />}
       {id === 'plans' && <PlansGroup always />}
-      {id === 'git' && <GitGroup always />}
-      {id === 'files' && <FilesGroup always />}
     </div>
   )
 }
@@ -348,25 +343,5 @@ function LayoutMap(): React.JSX.Element {
         ))
       )}
     </>
-  )
-}
-
-export function GitGroup({ always }: { always?: boolean }): React.JSX.Element {
-  const gitChanged = useStore((s) => s.git.files.length)
-  return (
-    <SideGroup id="git-changes" label="Git changes" count={gitChanged} always={always}>
-      <div className="embedded-view">
-        <ChangesView embedded focusSearch={always} />
-      </div>
-    </SideGroup>
-  )
-}
-
-export function FilesGroup({ always }: { always?: boolean }): React.JSX.Element {
-  const root = useStore((s) => s.root)
-  return (
-    <SideGroup id="files" label="Files" always={always}>
-      {root && <ExplorerNav key={root} root={root} />}
-    </SideGroup>
   )
 }

@@ -946,6 +946,11 @@ export function openFile(path: string): void {
   review({ id: 'f:' + path.toLowerCase(), kind: 'file', path, title: basename(path), dirty: false })
 }
 
+/** A file in the app's own editor overlay, on top of everything (never VS Code's panel below). */
+export function openFileInOverlay(path: string): void {
+  showInPopup({ id: 'f:' + path.toLowerCase(), kind: 'file', path, title: basename(path), dirty: false })
+}
+
 export const HOME_URL = 'about:blank'
 
 /** Browser key for the chat you're looking at — every chat keeps its own page. */

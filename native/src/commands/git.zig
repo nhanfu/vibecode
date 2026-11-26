@@ -353,3 +353,79 @@ pub fn checkout(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     }
     return cmd.json(output, null);
 }
+
+/// The error git printed, or `fallback` when it printed nothing (`git commit` says "nothing to commit" on stdout).
+fn failure(fallback: []const u8) []const u8 {
+    return if (last_error.len > 0) last_error else fallback;
+}
+
+const CommitArgs = struct { root: []const u8, message: []const u8, stageAll: bool = true };
+
+/// Commits the folder's changes; `stageAll` adds every change first (git add -A), else only what is staged.
+pub fn commit(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(CommitArgs, a, invocation);
+    if (trimmed(args.message).len == 0) return cmd.fail(output, "write a commit message first");
+    if (args.stageAll) _ = git(a, args.root, &.{ "add", "-A" }) catch return cmd.fail(output, failure("could not stage the changes"));
+    _ = git(a, args.root, &.{ "commit", "-m", args.message }) catch return cmd.fail(output, failure("nothing to commit"));
+    return cmd.json(output, null);
+}
+
+const RootArgs = struct { root: []const u8 };
+
+/// Pushes the current branch; a branch with no upstream yet is published to origin.
+pub fn push(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(RootArgs, a, invocation);
+    _ = git(a, args.root, &.{"push"}) catch {
+        _ = git(a, args.root, &.{ "push", "-u", "origin", "HEAD" }) catch return cmd.fail(output, failure("push failed"));
+    };
+    return cmd.json(output, null);
+}
+
+const FileArgs = struct { root: []const u8, rel: []const u8 };
+
+/// The changes of one tracked file against HEAD (staged and not), as a unified diff.
+pub fn diff(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(FileArgs, a, invocation);
+    if (!plainRelPath(args.rel)) return cmd.fail(output, "not a path in this folder");
+    const body = text(a, args.root, &.{ "diff", "--no-color", "HEAD", "--", args.rel }) catch return cmd.fail(output, failure("no diff"));
+    return cmd.json(output, body);
+}
+
+const RevertArgs = struct { root: []const u8, rel: []const u8, untracked: bool = false };
+
+/// Throws away one file's changes: back to HEAD, or removed when it is new (untracked or only added).
+pub fn revertFile(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(RevertArgs, a, invocation);
+    if (!plainRelPath(args.rel)) return cmd.fail(output, "not a path in this folder");
+    if (args.untracked) {
+        _ = git(a, args.root, &.{ "clean", "-fd", "--", args.rel }) catch return cmd.fail(output, failure("could not remove the file"));
+    } else {
+        _ = git(a, args.root, &.{ "restore", "--source=HEAD", "--staged", "--worktree", "--", args.rel }) catch {
+            _ = git(a, args.root, &.{ "rm", "-f", "--", args.rel }) catch return cmd.fail(output, failure("could not revert the file"));
+        };
+    }
+    return cmd.json(output, null);
+}
+
+/// Throws away every change of the folder: tracked files back to HEAD, untracked files removed.
+pub fn revertAll(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(RootArgs, a, invocation);
+    _ = git(a, args.root, &.{ "restore", "--source=HEAD", "--staged", "--worktree", "--", "." }) catch return cmd.fail(output, failure("could not revert the changes"));
+    _ = git(a, args.root, &.{ "clean", "-fd" }) catch return cmd.fail(output, failure("could not remove new files"));
+    return cmd.json(output, null);
+}

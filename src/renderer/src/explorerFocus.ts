@@ -19,6 +19,11 @@ export function setExplorerLive(next: Live | null): void {
   }
 }
 
+/** A list that unmounts clears the registration only if it is still the one registered. */
+export function releaseExplorer(mine: Live): void {
+  if (live === mine) live = null
+}
+
 export function explorerHasFocus(): boolean {
   return !!document.activeElement?.closest('.explorer-nav')
 }

@@ -25,7 +25,7 @@ const display = (url: string): string => (url === HOME_URL ? '' : url)
  * drop-down floating over a pinned Web). The page itself is a native view stacked above the app's
  * HTML, so it steps aside while one is open. The drop-down the page is in doesn't count.
  */
-const OVERLAYS = '.overlay, .menu, .ctx-menu, .stack-panel.floating.shown, .image-lightbox, .term-image-hover, .bm-menu'
+const OVERLAYS = '.overlay, .menu, .ctx-menu, .stack-panel.floating.shown, .image-lightbox, .term-image-hover, .bm-menu, .chat-side-pop, .chat-diff-pop, .explorer-pop'
 
 const overlaps = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 
