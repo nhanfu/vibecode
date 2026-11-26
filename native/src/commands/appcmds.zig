@@ -263,3 +263,13 @@ fn clipboardImageBytes(a: Allocator) ?[]const u8 {
     const data = std.process.run(a, cmd.io, .{ .argv = &.{ "xclip", "-selection", "clipboard", "-t", "image/png", "-o" }, .timeout = cmd.helper_timeout }) catch return null;
     return data.stdout;
 }
+
+pub fn appRelaunch(_: cmd.Invocation, output: []u8) ![]const u8 {
+    if (std.c.getenv("ZERO_NATIVE_FRONTEND_URL") != null) return cmd.json(output, false);
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const exe = std.process.executablePathAlloc(cmd.io, a) catch |err| return cmd.fail(output, @errorName(err));
+    _ = std.process.spawn(cmd.io, .{ .argv = &.{ "/bin/sh", "-c", "sleep 1; exec \"$0\"", exe } }) catch |err| return cmd.fail(output, @errorName(err));
+    std.process.exit(0);
+}

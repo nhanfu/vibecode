@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { Collapse, SlidePill } from './motion'
+import { Collapse } from './motion'
 import {
   Check,
   ChevronDown,
@@ -13,32 +12,22 @@ import {
   RotateCcw,
   Sparkles,
   X,
-  ChevronsDownUp,
-  Copy,
   ExternalLink,
-  FolderOpen,
   GitCommitHorizontal,
   GitBranch,
   Link2,
   Search
 } from 'lucide-react'
-import { basename, closeFloat, useStore, type Chat } from '../store'
-import { closeChat, loadSessions, openFolder, newChat, newChatIn, openCommitDiff, openDiff, openFile, openSession, refreshGit, renameChat, selectChat } from '../actions'
-import { FileIcon, FolderIcon, StatusDot, statusLabel } from './icons'
-import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, GitFile, ProjectGroup, SessionInfo } from '../../../shared/types'
+import { basename, useStore } from '../store'
+import { closeRail } from '../rail'
+import { ExplorerNav } from './ExplorerNav'
+import { closeChat, loadSessions, openFolder, newChat, newChatIn, openCommitDiff, openDiff, openFile, refreshGit, renameChat } from '../actions'
+import { FileIcon, statusLabel } from './icons'
+import type { DirEntry, GitBranch as GitBranchInfo, GitCommit, GitCommitFile, GitFile, ProjectGroup } from '../../../shared/types'
 import { agentDef } from '../../../shared/agents'
 import { NewChatMenu } from './AgentMenu'
-import { focusTerm } from '../terminals'
+import { focusTerm, writeToTerm } from '../terminals'
 import { userStore } from '../localPref'
-
-export function Sidebar(): React.JSX.Element {
-  // files and git changes live in the Source code tab; the sidebar is just the chats
-  return (
-    <div className="sidebar">
-      <ChatsView />
-    </div>
-  )
-}
 
 function SectionHeader({ title, children }: { title: string; children?: React.ReactNode }): React.JSX.Element {
   return (
@@ -61,40 +50,54 @@ function useTick(ms: number): void {
 
 const normKey = (p: string): string => p.toLowerCase().replace(/[\\/]+$/, '')
 
-function ChatsView(): React.JSX.Element {
-  useTick(30000)
-  // New chat lives on the + of each project (and Ctrl+Shift+N), so the list starts right away
+/** The chats of every project, with the folder's own tree beside them in the agent sidebar's Project flyout. */
+/** Pick (or make) a folder and start a chat in it. Icon only: the icon says what it does, the title says it in words. */
+export function NewProjectButton(): React.JSX.Element {
   const disabled = !useStore((s) => !!s.claude?.found || s.agents.some((a) => a.found))
   return (
-    <>
-      <div className="scroll">
-        <ProjectsTree />
-      </div>
-      <div className="sidebar-foot">
-        <button
-          className="btn btn-primary btn-block"
-          disabled={disabled}
-          title="Pick (or make) a folder and start a chat in it"
-          onClick={() => openFolder(null, { autoChat: true })}
-        >
-          <FolderPlus size={15} /> New project
-        </button>
-      </div>
-    </>
+    <button
+      className="icon-btn new-project"
+      disabled={disabled}
+      title="New project: pick or make a folder and start a chat in it"
+      aria-label="New project"
+      onClick={() => openFolder(null, { autoChat: true })}
+    >
+      <FolderPlus size={15} />
+    </button>
+  )
+}
+
+export function ChatsView(): React.JSX.Element {
+  useTick(30000)
+  return (
+    <div className="scroll">
+      <ProjectsTree action={<NewProjectButton />} />
+    </div>
   )
 }
 
 const EXPANDED_KEY = 'tinjs.expandedProjects'
-function loadExpanded(): Set<string> {
+/** how long the pointer rests on a project row before it opens (passing over a row opens nothing) */
+const HOVER_DWELL_MS = 80
+/** The one project open in the list (null: none). Older saves kept a list: its first entry is taken. */
+function loadExpanded(): string | null {
   try {
-    return new Set(JSON.parse(userStore.getItem(EXPANDED_KEY) ?? '[]'))
+    const v: unknown = JSON.parse(userStore.getItem(EXPANDED_KEY) ?? 'null')
+    if (typeof v === 'string') return v
+    if (Array.isArray(v) && typeof v[0] === 'string') return v[0]
+    return null
   } catch {
-    return new Set()
+    return null
   }
 }
 
 // Projects removed from this list. Only the sidebar entry goes; Claude Code's history stays on disk.
 const HIDDEN_KEY = 'tinjs.hiddenProjects'
+/** Whether the project sidebar has removed this folder from its list (its X button). */
+export function isHiddenProject(cwd: string): boolean {
+  return loadHidden().has(normKey(cwd))
+}
+
 function loadHidden(): Set<string> {
   try {
     return new Set(JSON.parse(userStore.getItem(HIDDEN_KEY) ?? '[]'))
@@ -103,76 +106,39 @@ function loadHidden(): Set<string> {
   }
 }
 
-const PAGE = 8
-
-const RECENT_MAX = 5
-
-interface RecentItem {
-  key: string
-  title: string
-  project: string
-  updated: number
-  /** open in this window */
-  chat?: Chat
-  /** in Claude's history (resumable) */
-  session?: SessionInfo
+/** Opens a project's row in the project sidebar, as a click on it does (its files show under it). */
+export function expandProject(cwd: string): void {
+  const key = normKey(cwd)
+  try {
+    userStore.setItem(EXPANDED_KEY, JSON.stringify(key))
+  } catch {
+    /* storage unavailable: the event below still opens it */
+  }
+  window.dispatchEvent(new CustomEvent<string>('project-expand', { detail: key }))
 }
 
-/** A row of Recent; plain props, so it skips re-rendering while nothing about it changed. */
-const RecentRow = memo(function RecentRow(props: {
-  title: string
-  project: string
-  updated: number
-  chatId?: string
-  status?: Chat['status']
-  attention?: boolean
-  session?: SessionInfo
-  active: boolean
-}): React.JSX.Element {
-  const { title, project, updated, chatId, status, attention, session, active } = props
+/** The files of one project, under its row: only mounted while the project is open (Collapse unmounts closed children). */
+function ProjectFiles({ cwd, isRoot }: { cwd: string; isRoot: boolean }): React.JSX.Element {
+  // its popups are React children here: keys pressed in them must not reach the project list's arrow keys
   return (
-    <div
-      className={`sess-row${active ? ' active' : ''}`}
-      onClick={() => (chatId ? selectChat(chatId) : session && void openSession(session))}
-      title={`${title}\n${project} · ${new Date(updated).toLocaleString()}`}
-    >
-      {status ? <StatusDot status={status} attention={attention} /> : <span className="sess-bullet" />}
-      <span className="sess-title">{title}</span>
-      <span className="sess-time">{shortAgo(updated)}</span>
+    <div className="proj-files" onKeyDown={(e) => e.stopPropagation()}>
+      <ExplorerNav root={cwd} git={isRoot} />
     </div>
   )
-})
-
-/** The newest chats of every project: open ones not in the history yet, then the history. */
-function recentItems(projects: ProjectGroup[], chats: Chat[]): RecentItem[] {
-  const live = new Map(chats.filter((c) => c.sessionId).map((c) => [c.sessionId!, c]))
-  const history: RecentItem[] = projects.flatMap((g) =>
-    g.sessions.map((s) => {
-      const chat = live.get(s.id)
-      return { key: s.id, title: chat?.pinnedTitle ? chat.title : s.title || chat?.title || 'Chat', project: g.name, updated: s.updated, chat, session: s }
-    })
-  )
-  const known = new Set(history.map((r) => r.key))
-  const fresh: RecentItem[] = chats
-    .filter((c) => !c.sessionId || !known.has(c.sessionId))
-    .map((c) => ({ key: c.id, title: c.title, project: basename(c.cwd), updated: c.createdAt, chat: c }))
-  return [...fresh, ...history].sort((a, b) => b.updated - a.updated).slice(0, RECENT_MAX)
 }
 
-/** Every project + conversation from Claude Code's store — the same list the Claude app shows. */
-function ProjectsTree(): React.JSX.Element {
+/** Every project from Claude Code's store (the same list the Claude app shows). A row opens to its files. */
+function ProjectsTree({ action }: { action?: React.ReactNode }): React.JSX.Element {
   const projects = useStore((s) => s.projects)
   const root = useStore((s) => s.root)
   const chats = useStore((s) => s.chats)
-  const activeChatId = useStore((s) => s.activeChatId)
-  const [expanded, setExpanded] = useState<Set<string>>(loadExpanded)
-  const [more, setMore] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<string | null>(loadExpanded)
+  /** the project a hover is about to open (a short dwell, so passing over a row opens nothing) */
+  const hoverTimer = useRef<number | undefined>(undefined)
   const [hidden, setHidden] = useState<Set<string>>(loadHidden)
   const [q, setQ] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  /** opened by Ctrl+B or a click (not just hovered, not pinned in the stack) */
-  const opened = useStore((s) => s.floatOpen === 'project' && !s.pinned.includes('project'))
   /** the row the arrow keys are on (marked with data-kbd: React leaves that attribute alone) */
   const kbd = useRef<HTMLElement | null>(null)
 
@@ -183,17 +149,7 @@ function ProjectsTree(): React.JSX.Element {
     el.dataset.kbd = ''
     el.scrollIntoView({ block: 'nearest' })
   }
-  /**
-   * Every row the keys can reach, top to bottom: project / group heads, chats, "Show more"; not the
-   * ones in a closed group. A group is closed by its chevron, not its .collapse: that one only gets
-   * "open" a couple of frames later, for the animation.
-   */
-  const rows = (): HTMLElement[] =>
-    [...(rootRef.current?.querySelectorAll<HTMLElement>('.proj-row:not(.recent-head), .sess-row, .sess-more') ?? [])].filter((el) => {
-      if (!el.closest('.collapse')) return true
-      const chev = el.closest('.proj')?.querySelector(':scope > .proj-row .proj-chev')
-      return !chev || chev.classList.contains('open')
-    })
+  const rows = (): HTMLElement[] => [...(rootRef.current?.querySelectorAll<HTMLElement>('.proj-row') ?? [])]
   const backToChat = (): void => {
     const id = useStore.getState().activeChatId
     if (id) focusTerm(id)
@@ -201,34 +157,31 @@ function ProjectsTree(): React.JSX.Element {
   }
   const close = (): void => {
     mark(null)
-    // floating: it closes; pinned in the stack: it stays, the cursor goes back to the chat
-    closeFloat()
+    closeRail('project')
     backToChat()
   }
 
-  // Opened (Ctrl+B, the title-bar button): the cursor goes to the filter, to type or arrow down.
-  // Closed while the cursor was in here: it goes back to the chat, not into a hidden box.
-  // (Peeking with the pointer over the project button leaves the cursor where it was; pinned in the
-  // stack, Ctrl+B puts it in the filter too: store.ts focusPanel.)
+  // Opened (the Project icon, Ctrl+B, the status-bar count): the cursor goes to the filter, to type or
+  // arrow down. The flyout closes with the cursor still in it: the cursor goes back to the chat, not
+  // into a box that is gone. (useLayoutEffect: the list is still in the page when its cleanup runs.)
   useEffect(() => {
-    if (opened) {
-      const t = setTimeout(() => {
-        inputRef.current?.focus()
-        inputRef.current?.select()
-      }, 0)
-      return () => clearTimeout(t)
+    const t = setTimeout(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
+  useLayoutEffect(() => {
+    const el = rootRef.current
+    return () => {
+      mark(null)
+      window.clearTimeout(hoverTimer.current)
+      if (el?.contains(document.activeElement)) backToChat()
     }
-    mark(null)
-    const hidden = rootRef.current?.closest('.stack-panel.floating:not(.shown)')
-    if (hidden?.contains(document.activeElement)) backToChat()
-    return undefined
-  }, [opened])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  /**
-   * ↑ ↓ move along the rows, Enter opens the row (a chat: and closes the sidebar), → ← open and
-   * close a project (← from a chat goes to its project), Esc clears the filter, then closes. The
-   * cursor stays in the filter box, so typing keeps filtering.
-   */
+  /** ↑ ↓ move along the projects, → ← open and close one, Enter opens or closes the one under the cursor, Esc clears the filter, then closes. */
   const onKey = (e: React.KeyboardEvent): void => {
     const list = rows()
     const cur = kbd.current && list.includes(kbd.current) ? kbd.current : null
@@ -244,28 +197,19 @@ function ProjectsTree(): React.JSX.Element {
           inputRef.current?.focus()
         } else mark(list[i - 1])
         break
-      case 'Enter': {
-        // nothing picked yet but a filter typed: the first chat it found
-        const target = cur ?? (q.trim() ? (list.find((el) => el.classList.contains('sess-row')) ?? null) : null)
-        if (!target) return
-        const chat = target.classList.contains('sess-row')
-        target.click()
-        if (chat) close()
-        break
-      }
       case 'ArrowRight':
       case 'ArrowLeft': {
         // in a filter with text, the arrows move the text cursor
         if (!cur || (inField && q)) return
-        const right = e.key === 'ArrowRight'
-        if (cur.classList.contains('proj-row')) {
-          const open = !!cur.querySelector('.proj-chev.open')
-          if (open !== right) cur.click()
-          else if (right && list[i + 1]) mark(list[i + 1])
-        } else if (!right) {
-          const head = cur.closest('.proj')?.querySelector<HTMLElement>(':scope > .proj-row')
-          if (head) mark(head)
-        } else return
+        const open = !!cur.querySelector('.proj-chev.open')
+        if (open !== (e.key === 'ArrowRight')) cur.click()
+        break
+      }
+      case 'Enter': {
+        // nothing picked yet but a filter typed: the first project it found
+        const target = cur ?? (q.trim() ? (list[0] ?? null) : null)
+        if (!target) return
+        target.click()
         break
       }
       case 'Escape':
@@ -285,8 +229,15 @@ function ProjectsTree(): React.JSX.Element {
   useEffect(() => {
     if (!root) return
     const key = normKey(root)
-    setExpanded((e) => (e.has(key) ? e : new Set(e).add(key)))
+    setExpanded(key)
   }, [root])
+
+  // a chat's footer asks for its project to be open here (expandProject)
+  useEffect(() => {
+    const onExpand = (e: Event): void => setExpanded((e as CustomEvent<string>).detail)
+    window.addEventListener('project-expand', onExpand)
+    return () => window.removeEventListener('project-expand', onExpand)
+  }, [])
 
   useEffect(() => {
     try {
@@ -298,18 +249,14 @@ function ProjectsTree(): React.JSX.Element {
 
   useEffect(() => {
     try {
-      userStore.setItem(EXPANDED_KEY, JSON.stringify([...expanded]))
+      userStore.setItem(EXPANDED_KEY, JSON.stringify(expanded))
     } catch {
       /* storage unavailable */
     }
   }, [expanded])
 
-  const liveBySession = useMemo(() => new Map(chats.filter((c) => c.sessionId).map((c) => [c.sessionId!, c])), [chats])
-  const activeSession = chats.find((c) => c.id === activeChatId)?.sessionId
-
-  // Open chats the session store doesn't list (yet) go under their project, adding the project when
-  // it has no Claude history: Codex / Grok / Gemini… chats, and new Claude chats until Claude writes
-  // their transcript (only after the first message; a missed file event could delay it further).
+  // Open chats the session store doesn't list (yet) still need their project: Codex / Grok / Gemini… chats,
+  // and new Claude chats until Claude writes their transcript (only after the first message).
   const slashKey = (p: string): string => normKey(p).replace(/\//g, '\\')
   const known = useMemo(() => new Set(projects.flatMap((g) => g.sessions.map((s) => s.id))), [projects])
   const agentChats = chats.filter((c) => agentDef(c.agent).id !== 'claude' || (!!c.sessionId && !known.has(c.sessionId)))
@@ -320,31 +267,26 @@ function ProjectsTree(): React.JSX.Element {
   }
   const shownProjects = allProjects.filter((g) => !hidden.has(g.key))
   const needle = q.trim().toLowerCase()
-  const recent = useMemo(() => recentItems(projects.filter((g) => !hidden.has(g.key)), chats), [projects, chats, hidden])
-  const agentRows = (g: ProjectGroup): typeof agentChats =>
-    agentChats.filter(
-      (c) => slashKey(c.cwd) === slashKey(g.key) && (!needle || g.name.toLowerCase().includes(needle) || c.title.toLowerCase().includes(needle))
-    )
-  const visible = needle
-    ? shownProjects
-        .map((g) => ({
-          ...g,
-          sessions: g.name.toLowerCase().includes(needle) ? g.sessions : g.sessions.filter((s) => s.title.toLowerCase().includes(needle))
-        }))
-        .filter((g) => g.sessions.length > 0 || agentRows(g).length > 0)
-    : shownProjects
-
-  const flip = (set: (f: (s: Set<string>) => Set<string>) => void, key: string): void =>
-    set((e) => {
-      const n = new Set(e)
-      if (n.has(key)) n.delete(key)
-      else n.add(key)
-      return n
-    })
+  const visible = needle ? shownProjects.filter((g) => g.name.toLowerCase().includes(needle)) : shownProjects
 
   return (
     <div className="side-group" ref={rootRef} onKeyDown={onKey}>
-      <SlidePill selector=".sess-row.active" className="sess-pill" />
+      {/* the filter on top, the add button on its right; both stay put while the list scrolls */}
+      <div className="tree-filter-row">
+        <div className="tree-filter">
+          <Search size={12} />
+          <input
+            ref={inputRef}
+            placeholder="Filter projects…  ↑↓ Enter"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value)
+              mark(null)
+            }}
+          />
+        </div>
+        {action}
+      </div>
       <div className="side-group-label">
         Projects
         <span className="sync-pill" title="Read live from ~/.claude/projects — the same store the Claude app uses">
@@ -354,56 +296,28 @@ function ProjectsTree(): React.JSX.Element {
           <RefreshCw size={12} />
         </button>
       </div>
-      <div className="tree-filter">
-        <Search size={12} />
-        <input
-          ref={inputRef}
-          placeholder="Filter chats…  ↑↓ Enter"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value)
-            mark(null)
-          }}
-        />
-      </div>
 
-      {/* the 5 newest chats across every project */}
-      {!needle && recent.length > 0 && (
-        <div className="proj recent-group">
-          <div className="proj-row recent-head">
-            <span className="proj-name">Recent</span>
-          </div>
-          {recent.map((it) => (
-            <RecentRow
-              key={it.key}
-              title={it.title}
-              project={it.project}
-              updated={it.updated}
-              chatId={it.chat?.id}
-              status={it.chat?.status}
-              attention={it.chat?.attention}
-              session={it.session}
-              active={!!it.chat && it.chat.id === activeChatId}
-            />
-          ))}
-        </div>
-      )}
-      <div className="agent-groups-sep" />
-
-      {visible.length === 0 && <div className="tree-empty">{projects.length ? 'No matching chats' : 'No Claude Code history found yet.'}</div>}
+      {visible.length === 0 && <div className="tree-empty">{projects.length ? 'No matching projects' : 'No Claude Code history found yet.'}</div>}
 
       {visible.map((g) => {
-        const open = needle ? true : expanded.has(g.key)
+        const open = expanded === g.key
         const isRoot = !!root && normKey(root) === g.key
-        const others = agentRows(g)
-        const liveCount = g.sessions.filter((s) => liveBySession.has(s.id)).length + others.length
-        const shown = needle || more.has(g.key) ? g.sessions : g.sessions.slice(0, PAGE)
+        const openCount = chats.filter((c) => slashKey(c.cwd) === slashKey(g.key)).length
         return (
           <div key={g.key} className="proj">
-            <div className={`proj-row${isRoot ? ' current' : ''}`} onClick={() => flip(setExpanded, g.key)} title={g.cwd}>
+            <div
+              className={`proj-row${isRoot ? ' current' : ''}`}
+              onClick={() => setExpanded((e) => (e === g.key ? null : g.key))}
+              onMouseEnter={() => {
+                window.clearTimeout(hoverTimer.current)
+                hoverTimer.current = window.setTimeout(() => setExpanded(g.key), HOVER_DWELL_MS)
+              }}
+              onMouseLeave={() => window.clearTimeout(hoverTimer.current)}
+              title={g.cwd}
+            >
               <span className="proj-name">{g.name}</span>
               <ChevronRight size={13} className={`proj-chev${open ? ' open' : ''}`} />
-              {liveCount > 0 && <span className="proj-live" title={`${liveCount} open`} />}
+              {openCount > 0 && <span className="proj-live" title={`${openCount} open`} />}
               <span className="proj-spacer" />
               <button
                 className="icon-btn tiny proj-add"
@@ -423,27 +337,7 @@ function ProjectsTree(): React.JSX.Element {
               />
             </div>
             <Collapse open={open}>
-            {others.map((c) => (
-              <div
-                key={c.id}
-                className={`sess-row${c.id === activeChatId ? ' active' : ''}`}
-                onClick={() => selectChat(c.id)}
-                title={`${c.title}\n${agentDef(c.agent).label} · ${c.cwd}`}
-              >
-                <StatusDot status={c.status} attention={c.attention} />
-                <span className="sess-title">{c.title}</span>
-                <span className="sess-time">{agentDef(c.agent).id === 'claude' ? shortAgo(c.createdAt) : agentDef(c.agent).label}</span>
-              </div>
-            ))}
-            {shown.map((s) => {
-              const live = liveBySession.get(s.id)
-              return <SessRow key={s.id} s={s} active={activeSession === s.id} status={live?.status} attention={live?.attention} />
-            })}
-            {!needle && g.sessions.length > PAGE && (
-              <button className="sess-more" onClick={() => flip(setMore, g.key)}>
-                {more.has(g.key) ? 'Show less' : `Show ${g.sessions.length - PAGE} more`}
-              </button>
-            )}
+              <ProjectFiles cwd={g.cwd} isRoot={isRoot} />
             </Collapse>
           </div>
         )
@@ -457,25 +351,6 @@ function ProjectsTree(): React.JSX.Element {
     </div>
   )
 }
-
-/**
- * One conversation under its project. Memoized: the tree re-renders on every sessions ping while a
- * chat works; rows whose session object loadSessions kept (unchanged) skip it.
- */
-const SessRow = memo(function SessRow(props: { s: SessionInfo; active: boolean; status?: Chat['status']; attention?: boolean }): React.JSX.Element {
-  const { s, active, status, attention } = props
-  return (
-    <div
-      className={`sess-row${active ? ' active' : ''}${s.cwdExists ? '' : ' gone'}`}
-      onClick={() => openSession(s)}
-      title={`${s.title}\n${s.cwd}\nUpdated ${new Date(s.updated).toLocaleString()}`}
-    >
-      {status ? <StatusDot status={status} attention={attention} /> : <span className="sess-bullet" />}
-      <span className="sess-title">{s.title}</span>
-      <span className="sess-time">{shortAgo(s.updated)}</span>
-    </div>
-  )
-})
 
 /** "now", "5m", "3h", "2d", then the date. */
 export function shortAgo(t: number): string {
@@ -491,7 +366,7 @@ export function shortAgo(t: number): string {
 
 /* ================================ Explorer ================================ */
 
-function useGitDecorations(): Map<string, GitFile['status']> {
+export function useGitDecorations(): Map<string, GitFile['status']> {
   // only paths + statuses matter here; +/- counts change on every edit Claude makes, and a new map
   // re-rendered the whole tree each time
   const sig = useStore((s) => s.git.files.map((f) => f.status + f.abs).join('\n'))
@@ -513,120 +388,6 @@ function useGitDecorations(): Map<string, GitFile['status']> {
   }, [sig])
 }
 
-/** `embedded`: inside a sidebar group that already has the title (the agent sidebar). */
-export function ExplorerView({ embedded }: { embedded?: boolean }): React.JSX.Element | null {
-  const root = useStore((s) => s.root)
-  const [collapseKey, setCollapseKey] = useState(0)
-  const deco = useGitDecorations()
-  if (!root) return null
-  return <ExplorerTree root={root} collapseKey={collapseKey} setCollapseKey={setCollapseKey} deco={deco} embedded={!!embedded} />
-}
-
-interface CtxTarget {
-  x: number
-  y: number
-  path: string
-  isDir: boolean
-}
-type OpenCtx = (e: React.MouseEvent, path: string, isDir: boolean) => void
-
-function ExplorerTree(props: { root: string; collapseKey: number; setCollapseKey: (f: (k: number) => number) => void; deco: Map<string, string>; embedded: boolean }): React.JSX.Element {
-  const { root, collapseKey, setCollapseKey, deco, embedded } = props
-  const [ctx, setCtx] = useState<CtxTarget | null>(null)
-  // stable, so the memoized tree nodes don't all re-render with this one
-  const openCtx = useCallback<OpenCtx>((e, path, isDir) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setCtx({ x: e.clientX, y: e.clientY, path, isDir })
-  }, [])
-  return (
-    <>
-      <SectionHeader title={embedded ? '' : 'Explorer'}>
-        <button className="icon-btn" title="Refresh" onClick={() => useStore.setState((s) => ({ fsTick: s.fsTick + 1 }))}>
-          <RefreshCw size={14} />
-        </button>
-        <button className="icon-btn" title="Collapse all" onClick={() => setCollapseKey((k) => k + 1)}>
-          <ChevronsDownUp size={14} />
-        </button>
-      </SectionHeader>
-      {!embedded && (
-        <div className="tree-root-label" onContextMenu={(e) => openCtx(e, root, true)}>
-          {basename(root)}
-        </div>
-      )}
-      <div className="scroll tree" key={collapseKey}>
-        <DirChildren dir={root} depth={0} deco={deco} openCtx={openCtx} />
-      </div>
-      {ctx && <ExplorerMenu target={ctx} root={root} onClose={() => setCtx(null)} />}
-    </>
-  )
-}
-
-/** Right-click menu on a file or folder in the explorer. */
-function ExplorerMenu({ target, root, onClose }: { target: CtxTarget; root: string; onClose: () => void }): React.JSX.Element {
-  const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<React.CSSProperties>({ left: target.x, top: target.y, visibility: 'hidden' })
-
-  // keep the menu on screen — measured before paint so it never jumps
-  useLayoutEffect(() => {
-    const r = ref.current?.getBoundingClientRect()
-    if (!r) return
-    setPos({
-      left: Math.max(4, Math.min(target.x, window.innerWidth - r.width - 4)),
-      top: Math.max(4, Math.min(target.y, window.innerHeight - r.height - 4))
-    })
-  }, [target])
-
-  useEffect(() => {
-    const down = (e: MouseEvent): void => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
-    }
-    const key = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('mousedown', down, true)
-    window.addEventListener('keydown', key, true)
-    window.addEventListener('blur', onClose)
-    window.addEventListener('resize', onClose)
-    document.addEventListener('scroll', onClose, true)
-    return () => {
-      window.removeEventListener('mousedown', down, true)
-      window.removeEventListener('keydown', key, true)
-      window.removeEventListener('blur', onClose)
-      window.removeEventListener('resize', onClose)
-      document.removeEventListener('scroll', onClose, true)
-    }
-  }, [onClose])
-
-  const rel = target.path.slice(root.length).replace(/^[\\/]+/, '').replace(/\\/g, '/') || '.'
-  const run = (f: () => unknown) => (): void => {
-    onClose()
-    void f()
-  }
-  const items: [React.JSX.Element, string, () => void][] = [
-    target.isDir
-      ? [<FolderOpen size={14} key="o" />, 'Open folder in File Explorer', run(() => window.api.fs.openPath(target.path))]
-      : [<FolderOpen size={14} key="o" />, 'Reveal in File Explorer', run(() => window.api.fs.reveal(target.path))],
-    [<Copy size={14} key="p" />, 'Copy path', run(() => navigator.clipboard.writeText(target.path))],
-    [<Copy size={14} key="r" />, 'Copy relative path', run(() => navigator.clipboard.writeText(rel))]
-  ]
-  if (target.isDir && target.path !== root)
-    items.splice(1, 0, [<FolderOpen size={14} key="s" />, 'Reveal in parent folder', run(() => window.api.fs.reveal(target.path))])
-
-  // portal to <body>: inside the sidebar a transformed/blurred ancestor breaks position:fixed
-  return createPortal(
-    <div ref={ref} className="menu ctx-menu" style={pos} onContextMenu={(e) => e.preventDefault()}>
-      {items.map(([icon, label, act]) => (
-        <button key={label} className="menu-item" onClick={act}>
-          {icon}
-          <span className="menu-item-main">{label}</span>
-        </button>
-      ))}
-    </div>,
-    document.body
-  )
-}
-
 const normDir = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
 
 /** Parent folder of `p`, normalized like normDir. */
@@ -636,7 +397,7 @@ const parentOf = (p: string): string => {
 }
 
 /** Re-renders when a file event touches something directly inside `dir` (not on every change anywhere). */
-function useDirChanges(dir: string): number {
+export function useDirChanges(dir: string): number {
   const [n, setN] = useState(0)
   useEffect(() => {
     const key = normDir(dir)
@@ -656,65 +417,8 @@ function useDirChanges(dir: string): number {
   return n
 }
 
-const sameEntries = (a: DirEntry[] | null, b: DirEntry[]): boolean =>
+export const sameEntries = (a: DirEntry[] | null, b: DirEntry[]): boolean =>
   !!a && a.length === b.length && a.every((x, i) => x.path === b[i].path && x.isDir === b[i].isDir && x.name === b[i].name)
-
-function DirChildren({ dir, depth, deco, openCtx }: { dir: string; depth: number; deco: Map<string, string>; openCtx: OpenCtx }): React.JSX.Element {
-  const [items, setItems] = useState<DirEntry[] | null>(null)
-  const [limit, setLimit] = useState(LIST_PAGE)
-  const more = useCallback(() => setLimit((n) => n + LIST_PAGE), [])
-  // the Refresh button bumps fsTick; file events only reach the folders they touch
-  const tick = useStore((s) => s.fsTick)
-  const changed = useDirChanges(dir)
-  useEffect(() => {
-    let live = true
-    window.api.fs
-      .readDir(dir)
-      .then((r) => live && setItems((prev) => (sameEntries(prev, r) ? prev : r)))
-      .catch(() => live && setItems([]))
-    return () => {
-      live = false
-    }
-  }, [dir, tick, changed])
-  if (!items) return <div className="tree-loading" style={{ paddingLeft: 12 + depth * 12 }} />
-  return (
-    <>
-      {items.slice(0, limit).map((it) => (
-        <TreeNode key={it.path} item={it} depth={depth} deco={deco} openCtx={openCtx} />
-      ))}
-      {items.length > limit && <LoadMore key={limit} onVisible={more} />}
-    </>
-  )
-}
-
-const TreeNode = memo(function TreeNode({ item, depth, deco, openCtx }: { item: DirEntry; depth: number; deco: Map<string, string>; openCtx: OpenCtx }): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  // a boolean: re-renders only when this row starts / stops being the open file
-  const isActive = useStore((s) => s.activeTabId === 'f:' + item.path.toLowerCase())
-  const status = deco.get(item.path.replace(/\\/g, '/').toLowerCase())
-  return (
-    <>
-      <div
-        className={`tree-row${isActive ? ' active' : ''}${status ? ` git-${status === '?' ? 'U' : status}` : ''}`}
-        style={{ paddingLeft: 10 + depth * 12 }}
-        onClick={() => (item.isDir ? setOpen(!open) : openFile(item.path))}
-        onContextMenu={(e) => openCtx(e, item.path, item.isDir)}
-        title={item.path}
-      >
-        {item.isDir ? (
-          <ChevronRight size={13} className={`chev${open ? ' open' : ''}`} />
-        ) : (
-          <span className="chev-spacer" />
-        )}
-        {item.isDir ? <FolderIcon open={open} /> : <FileIcon name={item.name} />}
-        <span className="tree-name">{item.name}</span>
-        {status && !item.isDir && <span className="tree-status">{status === '?' ? 'U' : status}</span>}
-        {status && item.isDir && <span className="tree-dot" />}
-      </div>
-      {item.isDir && open && <DirChildren dir={item.path} depth={depth + 1} deco={deco} openCtx={openCtx} />}
-    </>
-  )
-})
 
 /* ================================ Changes ================================ */
 
@@ -728,10 +432,50 @@ const statusName: Record<string, string> = {
   C: 'Copied'
 }
 
+/** Sent to the agent by "Agent commit": commit only, with the same message rules as the Claude panel's commit button. */
+const COMMIT_ONLY =
+  'Commit all current changes, without pushing. Commit message rules: English, one short subject line only ' +
+  '(no body or description), and no Co-Authored-By or any other author/attribution trailer.\r'
+
 /** `embedded`: inside a sidebar group that already has the title (the agent sidebar). */
-export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Element {
+export function ChangesView({ embedded, focusSearch }: { embedded?: boolean; focusSearch?: boolean }): React.JSX.Element {
   const git = useStore((s) => s.git)
   const root = useStore((s) => s.root)!
+  const activeChatId = useStore((s) => s.activeChatId)
+  const [q, setQ] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (focusSearch) searchRef.current?.focus()
+  }, [focusSearch])
+  const needle = q.trim().toLowerCase()
+  // files whose changed lines (added or removed against HEAD) contain the text, found for one needle at a time
+  const [contentHits, setContentHits] = useState<{ needle: string; rels: Set<string> } | null>(null)
+  useEffect(() => {
+    if (!needle) return
+    let live = true
+    const timer = window.setTimeout(() => {
+      Promise.all(
+        git.files.map(async (f) => {
+          const [before, now] = await Promise.all([
+            window.api.git.original(git.root ?? root, f.rel).catch(() => ''),
+            f.status === 'D' ? Promise.resolve('') : window.api.fs.readFile(f.abs).then((r) => (r.binary || r.tooLarge ? '' : r.content), () => '')
+          ])
+          const a = new Set(before.split('\n'))
+          const b = new Set(now.split('\n'))
+          const changed = [...b.keys()].filter((l) => !a.has(l)).concat([...a.keys()].filter((l) => !b.has(l)))
+          return changed.some((l) => l.toLowerCase().includes(needle)) ? f.rel : null
+        })
+      ).then((rels) => {
+        if (live) setContentHits({ needle, rels: new Set(rels.filter((r): r is string => r !== null)) })
+      })
+    }, 200)
+    return () => {
+      live = false
+      window.clearTimeout(timer)
+    }
+  }, [needle, git.files, git.root, root])
+  const contentRels = contentHits?.needle === needle ? contentHits.rels : null
+  const files = needle ? git.files.filter((f) => f.rel.toLowerCase().includes(needle) || !!contentRels?.has(f.rel)) : git.files
   const totals = git.files.reduce((a, f) => ({ add: a.add + f.added, del: a.del + f.deleted }), { add: 0, del: 0 })
 
   if (!git.isRepo) {
@@ -771,6 +515,36 @@ export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Ele
           <span className="del">−{totals.del}</span>
         </div>
       </div>
+      <div className="changes-tools">
+        <input
+          ref={searchRef}
+          className="changes-search"
+          type="search"
+          placeholder="Filter by name or content"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && q) {
+              e.preventDefault()
+              e.stopPropagation()
+              setQ('')
+            }
+          }}
+        />
+        <button
+          className="chip"
+          disabled={!activeChatId || git.files.length === 0}
+          title="Ask the agent in the current chat to commit all changes (no push)"
+          onClick={() => {
+            if (!activeChatId) return
+            writeToTerm(activeChatId, COMMIT_ONLY)
+            focusTerm(activeChatId)
+          }}
+        >
+          <GitCommitHorizontal size={12} />
+          Agent commit
+        </button>
+      </div>
       <div className="scroll">
         {git.files.length === 0 && (
           <div className="empty-hint">
@@ -778,7 +552,9 @@ export function ChangesView({ embedded }: { embedded?: boolean }): React.JSX.Ele
             <p>Working tree clean. Changes Claude makes will show up here instantly.</p>
           </div>
         )}
-        <ChangeList key={git.root ?? root} files={git.files} />
+        {needle && !contentRels && files.length === 0 && <div className="empty-hint"><p>Searching the changes…</p></div>}
+        {needle && contentRels && files.length === 0 && <div className="empty-hint"><p>No changed file has “{q.trim()}” in its name or changed lines.</p></div>}
+        <ChangeList key={git.root ?? root} files={files} />
         <HistoryList key={git.root ?? root} />
       </div>
     </>

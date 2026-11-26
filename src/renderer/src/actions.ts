@@ -1,10 +1,12 @@
+import type { DragEvent } from 'react'
 import { clearAttachments } from './attachments'
-import { PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type WebTab } from './store'
+import { ALL_LAYOUT_KEY, PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type LayoutMode, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
 import { userStore } from './localPref'
+import { appendLayout, gridLayout, joinLayout, layoutIds, layoutKey, mapLeaves, reconcileLayout, removeLayout, replaceLayout, swapLeaves, type Dir, type Layout } from './chatLayout'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -103,7 +105,7 @@ onTerminalEvents({
     if (!chat) return
     // Startup prompts: the trust-folder question is always answered "Yes" (you only open your own
     // projects here); the bypass warning too when the chat or its project runs in bypass mode.
-    const bypass = !!st().projectBypass[folderKey(chat.cwd)] || chat.permissionMode === 'bypassPermissions'
+    const bypass = chat.permissionMode === 'bypassPermissions'
     if (agentDef(chat.agent).id === 'claude' && !settled.has(id)) answerStartupDialog(id, bypass)
     if (pendingDraft.has(id)) typeDraftWhenReady(id)
     const text = ((outTail.get(id) ?? '') + data.replace(ANSI, '')).slice(-400)
@@ -119,40 +121,6 @@ onTerminalEvents({
   }
 })
 
-/* ---------------- Bypass permissions for a whole project ---------------- */
-
-export const folderKey = (p: string): string => p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
-
-export async function loadProjectBypass(folder: string): Promise<void> {
-  const on = await window.api.claude.getProjectBypass(folder).catch(() => false)
-  useStore.setState((s) => ({ projectBypass: { ...s.projectBypass, [folderKey(folder)]: on } }))
-}
-
-/**
- * Turn bypass on/off for the chat's project: Claude Code's own per-project setting, then restart
- * that project's open chats so they pick it up.
- */
-export async function toggleProjectBypass(chatId: string): Promise<void> {
-  const chat = st().chats.find((c) => c.id === chatId)
-  if (!chat) return
-  const key = folderKey(chat.cwd)
-  const on = !st().projectBypass[key]
-  const msg = on
-    ? `Bypass permissions for the whole project?\n\n${chat.cwd}\n\nClaude will run commands and edit files here without asking. The trust-folder and bypass warnings are answered "Yes" for you. Saved in .claude/settings.local.json, so it also applies when you run claude from a terminal.\n\nOpen chats in this project restart.`
-    : `Turn off bypass for ${chat.cwd}?\n\nClaude asks for permission again. Open chats in this project restart.`
-  if (!window.confirm(msg)) return
-  try {
-    await window.api.claude.setProjectBypass(chat.cwd, on)
-  } catch (e) {
-    window.alert(`Couldn't update .claude/settings.local.json in this project:\n${(e as Error).message}`)
-    return
-  }
-  useStore.setState((s) => ({ projectBypass: { ...s.projectBypass, [key]: on } }))
-  for (const c of st().chats.filter((x) => folderKey(x.cwd) === key)) {
-    st().patchChat(c.id, { permissionMode: on ? 'bypassPermissions' : undefined })
-    restartChat(c.id)
-  }
-}
 
 const dialogTimer = new Map<string, ReturnType<typeof setTimeout>>()
 /**
@@ -554,9 +522,7 @@ export function newChat(opts: NewChatOpts = {}): void {
     sessionId = crypto.randomUUID()
     args = [...args, '--session-id', sessionId]
   }
-  // New chats start with the model last picked in this project (else the default chosen in the status
-  // bar), and the effort and permission mode last picked in any chat.
-  const model = opts.model ?? rememberedModel(cwd)
+  const model = 'model' in opts ? opts.model || undefined : defaultModel()
   const effort = opts.effort ?? remembered(EFFORT_KEY, NEW_CHAT_DEFAULTS.effort)
   const permissionMode = opts.permissionMode ?? remembered(PERMISSION_KEY, NEW_CHAT_DEFAULTS.permissionMode)
   args = [...args, ...launchFlags({ model, effort, permissionMode })]
@@ -614,17 +580,16 @@ const agentFlags = (agentId: AgentId | undefined, permissionMode?: string): stri
   permissionMode === 'bypassPermissions' ? agentDef(agentId).yolo : []
 
 /** What every new chat starts with, unless another value was picked last: Opus 5.5, medium effort, bypass permissions. */
-const NEW_CHAT_DEFAULTS = { model: 'claude-opus-5-5', effort: 'medium', permissionMode: 'bypassPermissions' }
+const NEW_CHAT_DEFAULTS = { effort: 'medium', permissionMode: 'bypassPermissions' }
 
 const MODEL_KEY = 'vibe.newChatModel'
-const projectModelKey = (cwd: string): string => `${MODEL_KEY}:${folderKey(cwd)}`
-/** The default model for new chats, chosen in the status bar ('' = Claude Code's default). */
-function defaultModel(): string | undefined {
-  const m = st().settings?.model
-  return m === undefined ? NEW_CHAT_DEFAULTS.model : m || undefined
+export function defaultModel(): string | undefined {
+  return remembered(MODEL_KEY, '')
 }
-/** The model last picked in this project, else the status bar's default. */
-const rememberedModel = (cwd: string): string | undefined => remembered(projectModelKey(cwd), defaultModel() ?? '')
+export function setDefaultModel(model: string): void {
+  remember(MODEL_KEY, model)
+  useStore.setState({ newChatModel: model })
+}
 const EFFORT_KEY = 'vibe.newChatEffort'
 const PERMISSION_KEY = 'vibe.newChatPermission'
 /** The value last picked in a chat's menu ('' = Claude Code's default), else the fallback. */
@@ -656,38 +621,83 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
   return out
 }
 
-/** Switch model live (`/model`) for this chat. */
-export function setChatModel(id: string, model: string): void {
-  writeToTerm(id, `/model ${model || 'default'}\r`)
-  st().patchChat(id, { model: model || undefined })
-  // new chats in this project start with it too (elsewhere: the status bar's default)
-  const c = st().chats.find((x) => x.id === id)
-  if (c) remember(projectModelKey(c.cwd), model)
-  focusTerm(id)
+export const CHAT_DRAG = 'application/x-vibe-chat'
+
+export function chatDragSource(id: string): { draggable: true; onDragStart: (e: DragEvent) => void } {
+  return {
+    draggable: true,
+    onDragStart: (e) => {
+      e.dataTransfer.setData(CHAT_DRAG, id)
+      e.dataTransfer.effectAllowed = 'move'
+    },
+  }
 }
 
-/** Switch reasoning effort live (`/effort`) for this chat. */
-export function setChatEffort(id: string, effort: string): void {
-  writeToTerm(id, `/effort ${effort || 'auto'}\r`)
-  st().patchChat(id, { effort: effort || undefined })
-  remember(EFFORT_KEY, effort)
-  focusTerm(id)
+export function chatDropTarget(id: string): { onDragOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void } {
+  return {
+    onDragOver: (e) => {
+      if (!e.dataTransfer.types.includes(CHAT_DRAG)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+    },
+    onDrop: (e) => {
+      const from = e.dataTransfer.getData(CHAT_DRAG)
+      if (!from) return
+      e.preventDefault()
+      swapChats(from, id)
+    },
+  }
 }
 
-/** Permission mode is a launch flag: resume the same conversation with the new mode. */
-export function setChatPermission(id: string, mode: string): void {
-  const c = st().chats.find((x) => x.id === id)
-  if (!c) return
-  if (c.status === 'working' && !window.confirm(`${agentDef(c.agent).label} is still working. Restart this chat with the new permission mode?`)) return
-  st().patchChat(id, { permissionMode: mode || undefined })
-  remember(PERMISSION_KEY, mode)
-  restartChat(id)
+export function swapChats(a: string, b: string): void {
+  const s = st()
+  const ca = s.chats.find((c) => c.id === a)
+  const cb = s.chats.find((c) => c.id === b)
+  if (!ca || !cb || a === b) return
+  if (s.layoutMode === 'merged') {
+    const ids = s.chats.map((c) => c.id)
+    const stored = s.chatLayouts[ALL_LAYOUT_KEY]
+    const cur = stored ? reconcileLayout(stored, ids) : gridLayout(ids)
+    if (cur === null) return
+    useStore.setState({ chatLayouts: { ...s.chatLayouts, [ALL_LAYOUT_KEY]: swapLeaves(cur, a, b) } })
+    return
+  }
+  const key = layoutKey(ca.cwd)
+  if (key !== layoutKey(cb.cwd)) return
+  const cur = s.chatLayouts[key]
+  if (!cur) return
+  const ids = layoutIds(cur)
+  if (!ids.includes(a) || !ids.includes(b)) return
+  useStore.setState({ chatLayouts: withLayout(s.chatLayouts, ca.cwd, swapLeaves(cur, a, b)) })
+}
+
+function layoutWith(n: Layout | null, id: string, active: string | null): Layout | string {
+  if (!n) return id
+  const ids = layoutIds(n)
+  if (ids.includes(id)) return n
+  if (active && ids.includes(active)) return replaceLayout(n, active, id)
+  return n
+}
+
+function withLayout(all: Record<string, Layout>, cwd: string, layout: Layout | null): Record<string, Layout> {
+  const key = layoutKey(cwd)
+  const next = { ...all }
+  if (layout === null) delete next[key]
+  else next[key] = layout
+  return next
+}
+
+export function setLayoutMode(mode: LayoutMode): void {
+  remember(LAYOUT_MODE_KEY, mode)
+  useStore.setState({ layoutMode: mode })
 }
 
 export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   // the chat comes on screen: the Agent drop-down floats open unless it is pinned
-  useStore.setState({ activeChatId: id, ...openPatch('agents') })
+  const { chatLayouts, activeChatId } = st()
+  const chatLayoutsNext = chat ? withLayout(chatLayouts, chat.cwd, layoutWith(chatLayouts[layoutKey(chat.cwd)] ?? null, id, activeChatId)) : chatLayouts
+  useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext, ...openPatch('agents') })
   if (chat?.attention) st().patchChat(id, { attention: false })
   // Explorer / Changes follow the chat you're looking at.
   if (chat) {
@@ -696,6 +706,34 @@ export function selectChat(id: string): void {
     if (st().root && !samePath(st().root!, folder) && !samePath(st().root!, chat.cwd)) openFolder(folder, { autoChat: false })
   }
   setTimeout(() => focusTerm(id), 0)
+}
+
+let hoverTimer: number | undefined
+const HOVER_DWELL_MS = 80
+
+export function hoverChat(id: string): void {
+  const chat = st().chats.find((c) => c.id === id)
+  if (!chat || st().activeChatId === id) return
+  const { chatLayouts, activeChatId } = st()
+  const chatLayoutsNext = withLayout(chatLayouts, chat.cwd, layoutWith(chatLayouts[layoutKey(chat.cwd)] ?? null, id, activeChatId))
+  useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext })
+}
+
+export function hoverPane(id: string): void {
+  hoverChat(id)
+  const ae = document.activeElement as HTMLElement | null
+  const typing = !!ae && ae !== document.body && !ae.closest('.xterm') && ae.matches('input, textarea, select, [contenteditable="true"]')
+  if (!typing) focusTerm(id)
+}
+
+export function hoverFocus(id: string, settle: (id: string) => void = hoverChat): { onMouseEnter: () => void; onMouseLeave: () => void } {
+  return {
+    onMouseEnter: () => {
+      window.clearTimeout(hoverTimer)
+      hoverTimer = window.setTimeout(() => settle(id), HOVER_DWELL_MS)
+    },
+    onMouseLeave: () => window.clearTimeout(hoverTimer),
+  }
 }
 
 export function closeChat(id: string): void {
@@ -714,6 +752,14 @@ export function closeChat(id: string): void {
     const chats = s.chats.filter((c) => c.id !== id)
     const activeChatId =
       s.activeChatId === id ? (chats[Math.min(idx, chats.length - 1)]?.id ?? null) : s.activeChatId
+    let chatLayouts = s.chatLayouts
+    const closing = s.chats.find((c) => c.id === id)
+    const cur = closing ? (chatLayouts[layoutKey(closing.cwd)] ?? null) : null
+    if (closing && cur && layoutIds(cur).includes(id)) {
+      const activeChat = chats.find((c) => c.id === activeChatId)
+      const takes = !!activeChat && layoutKey(activeChat.cwd) === layoutKey(closing.cwd) && !layoutIds(cur).includes(activeChat.id)
+      chatLayouts = withLayout(chatLayouts, closing.cwd, takes ? replaceLayout(cur, id, activeChat!.id) : removeLayout(cur, id))
+    }
     // the chat's browser page goes with it; torn-off pages are user data and stay
     const browsers = { ...s.browsers }
     const kept = (browsers[id]?.tabs ?? []).filter((t) => t.detached)
@@ -722,8 +768,51 @@ export function closeChat(id: string): void {
       const pool = browsers[PAGES_KEY]
       browsers[PAGES_KEY] = { tabs: [...(pool?.tabs ?? []), ...kept], active: pool?.active ?? kept[0].id }
     }
-    return { chats, activeChatId, browsers }
+    return { chats, activeChatId, browsers, chatLayouts }
   })
+}
+
+/** Where a chat that was just created goes in the layout: beside / below `anchor`, or at the outer edge (`whole`). */
+function placedLayouts(prev: Record<string, Layout>, mode: LayoutMode, cwd: string, anchor: string | null, idsBefore: string[], id: string, dir: Dir, whole: boolean): Record<string, Layout> {
+  if (mode === 'merged') {
+    const base = prev[ALL_LAYOUT_KEY] ?? gridLayout(idsBefore)
+    if (base && layoutIds(base).includes(id)) return prev
+    const next = whole || anchor === null ? appendLayout(base, id, dir) : joinLayout(base, anchor, id, dir)
+    return { ...prev, [ALL_LAYOUT_KEY]: next }
+  }
+  const key = layoutKey(cwd)
+  const cur = prev[key] ?? null
+  if (cur && layoutIds(cur).includes(id)) return prev
+  const next = whole ? appendLayout(cur ?? anchor, id, dir) : anchor !== null ? joinLayout(cur, anchor, id, dir) : appendLayout(cur, id, dir)
+  return { ...prev, [key]: next }
+}
+
+export function duplicateChat(dir: Dir = 'row', whole = false): void {
+  const s = st()
+  const c = s.chats.find((x) => x.id === s.activeChatId)
+  if (!c) return
+  const original = c.id
+  const before = s.chatLayouts
+  const idsBefore = s.chats.map((x) => x.id)
+  newChat({ agent: agentDef(c.agent).id, cwd: c.cwd, title: `${c.title} copy` })
+  const id = st().activeChatId
+  if (!id || id === original) return
+  useStore.setState({ chatLayouts: placedLayouts(before, s.layoutMode, c.cwd, original, idsBefore, id, dir, whole) })
+}
+
+export function newLayoutChat(dir: Dir = 'row', whole = false): void {
+  const s = st()
+  const active = s.chats.find((c) => c.id === s.activeChatId)
+  const before = s.activeChatId
+  const prev = s.chatLayouts
+  const idsBefore = s.chats.map((x) => x.id)
+  newChat(active ? { cwd: active.cwd } : {})
+  const id = st().activeChatId
+  if (!id || id === before) return
+  const chat = st().chats.find((c) => c.id === id)
+  if (!chat) return
+  const sameProject = !!active && layoutKey(active.cwd) === layoutKey(chat.cwd)
+  useStore.setState({ chatLayouts: placedLayouts(prev, s.layoutMode, chat.cwd, sameProject ? active!.id : null, idsBefore, id, dir, whole) })
 }
 
 export function restartChat(id: string): void {
@@ -804,7 +893,22 @@ const vscodeReady = (): boolean => panelPlugins(st().plugins).some((p) => p.id =
 function showInPopup(tab: EditorTab): void {
   const shown = st().tabs[0]
   if (shown && shown.id !== tab.id && !closeTab(shown.id)) return
-  useStore.setState({ tabs: [tab], activeTabId: tab.id })
+  useStore.setState({ tabs: [tab], activeTabId: tab.id, inlineTab: null })
+}
+
+/**
+ * A file for the popup beside the Files explorer: always in the app (never VS Code), and not in the
+ * overlay. Returns the tab's id, or null when the shown file's unsaved edits were not discarded.
+ */
+export function openInlineFile(path: string, preview = false): string | null {
+  const id = 'f:' + path.toLowerCase()
+  const shown = st().tabs[0]
+  // a hover preview never takes the place of a file with unsaved edits, and never asks about them
+  if (preview && shown?.kind === 'file' && shown.id !== id && hasUnsaved(shown.path)) return null
+  if (shown && shown.id !== id && !closeTab(shown.id)) return null
+  const tab: EditorTab = { id, kind: 'file', path, title: basename(path), dirty: false }
+  useStore.setState({ tabs: [tab], activeTabId: id, inlineTab: id })
+  return id
 }
 
 function showInVSCode(open: { file?: string; diff?: { left: string; right: string } }): void {
@@ -840,6 +944,11 @@ function review(tab: EditorTab): void {
 
 export function openFile(path: string): void {
   review({ id: 'f:' + path.toLowerCase(), kind: 'file', path, title: basename(path), dirty: false })
+}
+
+/** A file in the app's own editor overlay, on top of everything (never VS Code's panel below). */
+export function openFileInOverlay(path: string): void {
+  showInPopup({ id: 'f:' + path.toLowerCase(), kind: 'file', path, title: basename(path), dirty: false })
 }
 
 export const HOME_URL = 'about:blank'
@@ -986,16 +1095,26 @@ export function closeBrowserTab(key: string, id: string): void {
   })
 }
 
-/** Close every tab (torn-off pages included), leaving a single blank one. */
+/**
+ * Close every tab of this chat, leaving a single blank one. Torn-off pages are title-bar buttons
+ * shared by all chats, so the torn-off pages of the other chats go too; their ordinary tabs stay.
+ */
 export function closeAllBrowserTabs(key: string): void {
   useStore.setState((s) => {
-    const pool = key === PAGES_KEY ? undefined : s.browsers[PAGES_KEY]
     const b = s.browsers[key]
     if (!b) return s
-    const pages = new Set([...b.tabs, ...(pool?.tabs ?? [])].map((t) => `page:${t.id}`))
+    const torn = Object.values(s.browsers).flatMap((x) => x.tabs.filter((t) => t.detached))
+    const pages = new Set([...b.tabs, ...torn].map((t) => `page:${t.id}`))
     const blank = blankTab()
     const browsers = { ...s.browsers, [key]: { tabs: [blank], active: blank.id } }
-    if (pool) delete browsers[PAGES_KEY]
+    if (key !== PAGES_KEY) delete browsers[PAGES_KEY]
+    for (const [k, other] of Object.entries(browsers)) {
+      if (k === key) continue
+      const kept = other.tabs.filter((t) => !t.detached)
+      if (kept.length === other.tabs.length) continue
+      const tabs = kept.length ? kept : [blankTab()]
+      browsers[k] = { tabs, active: tabs.some((t) => t.id === other.active) ? other.active : tabs[0].id }
+    }
     return {
       browsers,
       panelOrder: s.panelOrder.filter((p) => !pages.has(p)),
@@ -1119,7 +1238,7 @@ export function closeTab(id: string): boolean {
   }
   useStore.setState((s) => {
     const tabs = s.tabs.filter((t) => t.id !== id)
-    return { tabs, activeTabId: s.activeTabId === id ? (tabs[0]?.id ?? null) : s.activeTabId }
+    return { tabs, activeTabId: s.activeTabId === id ? (tabs[0]?.id ?? null) : s.activeTabId, inlineTab: s.inlineTab === id ? null : s.inlineTab }
   })
   return true
 }
@@ -1136,6 +1255,8 @@ export function cycleChat(step: 1 | -1): void {
 /* ---------------- Open chats survive quitting the app ---------------- */
 
 const OPEN_CHATS_KEY = 'vibe.openChats'
+const CHAT_LAYOUTS_KEY = 'vibe.chatLayouts'
+const LAYOUT_MODE_KEY = 'vibe.layoutMode'
 interface SavedChat {
   /** the chat's id, which is also the id of its terminal in ptyd */
   id?: string
@@ -1169,6 +1290,7 @@ function saveOpenChats(): void {
   }))
   try {
     userStore.setItem(OPEN_CHATS_KEY, JSON.stringify(list))
+    userStore.setItem(CHAT_LAYOUTS_KEY, JSON.stringify(st().chatLayouts))
   } catch {
     /* nothing to restore next time */
   }
@@ -1196,6 +1318,15 @@ export async function restoreChats(): Promise<void> {
   const running = new Set(listed ?? [])
   const claimed = new Set<string>()
   let activeId: string | null = null
+  const came = new Map<string, string>()
+  const modelOf = new Map<string, string>()
+  await Promise.all(
+    saved.map(async (c) => {
+      if (!c.sessionId) return
+      const r = await window.api.sessions.context(c.sessionId).catch(() => null)
+      if (r?.model) modelOf.set(c.sessionId, r.model)
+    })
+  )
   // one chat per session: a session already open (or listed twice) is not opened again
   const opened = new Set(st().chats.map((c) => c.sessionId).filter(Boolean))
   for (const c of saved) {
@@ -1209,19 +1340,33 @@ export async function restoreChats(): Promise<void> {
       if (!alive && (!c.sessionId || !known.has(c.sessionId))) continue
       if (c.sessionId && opened.has(c.sessionId)) continue
       if (c.sessionId) opened.add(c.sessionId)
-      newChat({ ...same, cwd: c.cwd, args: c.sessionId ? ['--resume', c.sessionId] : [], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: c.model, effort: c.effort, permissionMode: c.permissionMode })
+      newChat({ ...same, cwd: c.cwd, args: c.sessionId ? ['--resume', c.sessionId] : [], sessionId: c.sessionId, title: c.title, pinnedTitle: c.pinnedTitle, model: (c.sessionId && modelOf.get(c.sessionId)) || c.model, effort: c.effort, permissionMode: c.permissionMode })
     } else {
       newChat({ ...same, cwd: c.cwd, agent: agent.id, args: [...agent.resume], title: c.title, pinnedTitle: c.pinnedTitle })
     }
     if (c.active) activeId = st().activeChatId
+    if (c.id && st().activeChatId) came.set(c.id, st().activeChatId!)
   }
+  let savedLayouts: Record<string, Layout> = {}
+  try {
+    const v = JSON.parse(userStore.getItem(CHAT_LAYOUTS_KEY) ?? 'null')
+    if (v && typeof v === 'object') savedLayouts = v
+  } catch {
+    savedLayouts = {}
+  }
+  const restoredLayouts: Record<string, Layout> = {}
+  for (const [key, tree] of Object.entries(savedLayouts)) {
+    const r = mapLeaves(tree, (old) => came.get(String(old)) ?? null)
+    if (r) restoredLayouts[key] = r
+  }
+  useStore.setState({ chatLayouts: restoredLayouts, layoutMode: userStore.getItem(LAYOUT_MODE_KEY) === 'merged' ? 'merged' : 'project' })
   if (activeId) selectChat(activeId)
   // terminals no chat claims (the chat was closed while the app was away, or never saved) would run for ever
   if (savedOk && listed) for (const id of running) if (!claimed.has(id) || !st().chats.some((c) => c.id === id)) window.api.pty.kill(id)
   persistChats = true
   saveOpenChats()
   useStore.subscribe((s, prev) => {
-    if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId) saveOpenChats()
+    if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId || s.chatLayouts !== prev.chatLayouts) saveOpenChats()
   })
 }
 

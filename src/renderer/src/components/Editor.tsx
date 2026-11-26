@@ -1,78 +1,18 @@
 import { createPortal } from 'react-dom'
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SiteIcon } from './SiteIcon'
-import { Database, X, Globe, Plus, VolumeX } from 'lucide-react'
+import { X, Globe, Plus, VolumeX } from 'lucide-react'
 import { panelShown, useStore, type WebTab } from '../store'
 import { HOME_URL, browserKey, closeBrowserTab, closeBrowserTabsToRight, closeOtherBrowserTabs, detachBrowserTab, ensureBrowser, moveBrowserTab, newBrowserTab, openBrowser, openTabToRight, reloadBrowserTab, selectBrowserTab, setBrowserTabMuted, toggleBrowserTabPin } from '../actions'
 import { Adopt } from './webHosts'
 import { SlidePill } from './motion'
-// heavy parts load on first use
-const PluginPane = lazy(() => import('./PluginPane').then((m) => ({ default: m.PluginPane })))
-const DatabasePane = lazy(() => import('./Database').then((m) => ({ default: m.DatabasePane })))
 import { revealIn } from '../scroll'
-import { userStore } from '../localPref'
 
 /*
- * Web and Database: two of the title-bar drop-downs (Stack.tsx), each floating over
- * the chat or pinned beside it. A drop-down that isn't on screen stays mounted and laid out, only
- * hidden: display:none would drop scroll positions, make Monaco re-measure on return and replay
- * every animation inside.
+ * Web: one of the title-bar drop-downs (Stack.tsx), floating over the chat or pinned beside it. A
+ * drop-down that isn't on screen stays mounted and laid out, only hidden: display:none would drop
+ * scroll positions, make Monaco re-measure on return and replay every animation inside.
  */
-
-/** Database: mounts the first time it is shown, then stays (keeps its SQL, results and open tree). */
-export function DbPanel(): React.JSX.Element {
-  const shown = useStore((s) => panelShown(s, 'db'))
-  const [seen, setSeen] = useState(shown)
-  useEffect(() => {
-    if (shown) setSeen(true)
-  }, [shown])
-  // a plugin can take the Database panel over (DBX); the built-in SQL Server panel stays one click away
-  const plugin = useStore((s) => s.plugins.find((p) => p.available && p.enabled && p.panel?.replaces === 'db'))
-  const [pick, setPick] = useState<'plugin' | 'builtin' | null>(() => {
-    try {
-      const v = userStore.getItem('vibe.db.engine')
-      return v === 'plugin' || v === 'builtin' ? v : null
-    } catch {
-      return null
-    }
-  })
-  const engine = plugin && pick !== 'builtin' ? 'plugin' : 'builtin'
-  const choose = (e: 'plugin' | 'builtin'): void => {
-    setPick(e)
-    try {
-      userStore.setItem('vibe.db.engine', e)
-    } catch {
-      /* private mode */
-    }
-  }
-  return (
-    <div className="center-area">
-      {seen && (
-        <div className="center-pane db-host on db-engine-host">
-          {plugin && (
-            <div className="db-engine-bar">
-              <button className={engine === 'plugin' ? 'on' : ''} onClick={() => choose('plugin')}>
-                {plugin.name}
-              </button>
-              <button className={engine === 'builtin' ? 'on' : ''} onClick={() => choose('builtin')}>
-                Classic SQL Server
-              </button>
-            </div>
-          )}
-          <div className="db-engine-body">
-            <Suspense fallback={null}>
-              {engine === 'plugin' && plugin ? (
-                <PluginPane id={plugin.id} name={plugin.name} onFallback={() => choose('builtin')} fallbackLabel="Use the classic SQL Server panel" />
-              ) : (
-                <DatabasePane />
-              )}
-            </Suspense>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 /** Web: one browser per chat, every tab kept alive so pages survive switching chats. */
 export function WebPanel(): React.JSX.Element {
@@ -177,7 +117,7 @@ const hostOf = (url: string): string => {
 function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
   const b = useStore((s) => s.browsers[chatKey])
   // a tab being dragged: `out` once the pointer is above the strip (letting go there tears it off)
-  const [tear, setTear] = useState<{ id: string; out: boolean; x: number; y: number } | null>(null)
+  const [tear, setTear] = useState<{ id: string; out: boolean; x: number; y: number; dx: number; to: number; step: number } | null>(null)
   const stripRef = useRef<HTMLDivElement>(null)
   // tabs on their way out: they shrink away first, then really close
   const [closing, setClosing] = useState<Set<string>>(new Set())
@@ -209,25 +149,31 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
     const y0 = e.clientY
     let started = false
     const above = (y: number): boolean => y < (stripRef.current?.getBoundingClientRect().top ?? 0) - 6
-    // along the strip the tab moves to the place under the pointer; above it, it is torn off
-    const reorder = (x: number): void => {
-      const els = Array.from(stripRef.current?.querySelectorAll<HTMLElement>('.tab[data-tab]') ?? [])
-      let to = 0
+    // the slot under the pointer, counted among the other tabs; offsets ignore the shifts the other tabs wear while dragged
+    let to = -1
+    const slotAt = (x: number): { to: number; step: number } => {
+      const strip = stripRef.current
+      if (!strip) return { to: 0, step: 0 }
+      const els = Array.from(strip.querySelectorAll<HTMLElement>('.tab[data-tab]'))
+      const local = x - strip.getBoundingClientRect().left + strip.scrollLeft
+      let n = 0
       for (const el of els) {
         if (el.dataset.tab === id) continue
-        const r = el.getBoundingClientRect()
-        if (x > r.left + r.width / 2) to++
+        if (local > el.offsetLeft + el.offsetWidth / 2) n++
       }
-      moveBrowserTab(chatKey, id, to)
+      return { to: n, step: els.length > 1 ? els[1].offsetLeft - els[0].offsetLeft : els[0]?.offsetWidth ?? 0 }
     }
+    // along the strip the others make room for it; above it, it is torn off
     const move = (ev: PointerEvent): void => {
       if (!started) {
         if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return
         started = true
         document.body.style.cursor = 'grabbing'
       }
-      if (!above(ev.clientY)) reorder(ev.clientX)
-      setTear({ id, out: above(ev.clientY), x: ev.clientX, y: ev.clientY })
+      const out = above(ev.clientY)
+      const slot = slotAt(ev.clientX)
+      if (!out) to = slot.to
+      setTear({ id, out, x: ev.clientX, y: ev.clientY, dx: ev.clientX - x0, to: slot.to, step: slot.step })
     }
     const end = (ev: PointerEvent): void => {
       window.removeEventListener('pointermove', move)
@@ -238,7 +184,9 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
       if (!started) return
       // the click after a drag must not select the tab
       window.addEventListener('click', (c) => c.stopPropagation(), { capture: true, once: true })
-      if (ev.type === 'pointerup' && above(ev.clientY)) detachBrowserTab(chatKey, id)
+      if (ev.type !== 'pointerup') return
+      if (above(ev.clientY)) detachBrowserTab(chatKey, id)
+      else if (to >= 0) moveBrowserTab(chatKey, id, to)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', end)
@@ -248,6 +196,16 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
   if (!b) return null
   const strip = b.tabs.filter((t) => !t.detached)
   const activeIdx = strip.findIndex((t) => t.id === b.active)
+  // the dragged tab follows the pointer; the others slide over to make room for it at its slot
+  const tabShift = (id: string): number => {
+    if (!tear) return 0
+    if (id === tear.id) return tear.out ? 0 : tear.dx
+    if (tear.out) return 0
+    const others = strip.filter((t) => t.id !== tear.id)
+    const from = strip.findIndex((t) => t.id === id)
+    const wi = others.findIndex((t) => t.id === id)
+    return ((wi < tear.to ? wi : wi + 1) - from) * tear.step
+  }
   return (
     <>
       <div className="tab-strip web-tab-strip" ref={stripRef} onWheel={(e) => (e.currentTarget.scrollLeft += e.deltaY)}>
@@ -257,6 +215,7 @@ function WebTabs({ chatKey }: { chatKey: string }): React.JSX.Element | null {
             key={t.id}
             data-tab={t.id}
             className={`tab${t.id === b.active ? ' active' : ''}${t.pinned ? ' pinned' : ''}${closing.has(t.id) ? ' closing' : ''}${tear?.id === t.id ? ' tearing' : ''}`}
+            style={{ transform: tabShift(t.id) ? `translateX(${tabShift(t.id)}px)` : undefined, transition: tear ? 'transform 0.18s ease' : 'none' }}
             onPointerDown={(e) => startTear(e, t.id)}
             onClick={() => selectBrowserTab(chatKey, t.id)}
             onContextMenu={(e) => {

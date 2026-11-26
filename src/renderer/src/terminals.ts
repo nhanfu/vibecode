@@ -181,7 +181,7 @@ const WARM_MAX = 1
 
 /* Terminal font size: Ctrl + / Ctrl − / Ctrl 0 in any terminal, shared by all, remembered. */
 const FONT_KEY = 'tinjs.termFontSize'
-const FONT_DEFAULT = 12
+const FONT_DEFAULT = 14
 const FONT_MIN = 9
 const FONT_MAX = 22
 let fontSize = ((): number => {
@@ -550,12 +550,22 @@ function handleIme(host: HTMLElement, ta: HTMLTextAreaElement, preedit: (text: s
     composing = false
     later()
   })
+  on('paste', () => {
+    setTimeout(() => {
+      if (!composing) ta.value = ''
+    }, 0)
+  })
   on('input', (e) => {
     const ev = e as InputEvent
     log('input', ev.inputType, JSON.stringify(ev.data), ev.isComposing)
     // a key xterm handles itself (a space, a letter typed without the IME) is left to xterm: sending
     // it here too printed it twice
-    if (!imeKey && !composing && !ev.isComposing) return
+    if (!imeKey && !composing && !ev.isComposing) {
+      setTimeout(() => {
+        if (!composing && !imeKey && !timer) ta.value = ''
+      }, 0)
+      return
+    }
     // xterm's own input handling would send the text a second time
     stop(e)
     if (composing || ev.isComposing) return
@@ -615,6 +625,7 @@ export function createTerm({ reuse, ...spawn }: Omit<PtySpawnOptions, 'cols' | '
     // Claude Code keeps the full transcript itself; 5k lines per chat keeps 10+ chats light
     scrollback: 5000,
     smoothScrollDuration: 125,
+    scrollSensitivity: 5,
     theme: shownTheme(),
     minimumContrastRatio: shownContrast(),
     // only see-through mode needs a transparent canvas: with it on, xterm rasterises every glyph

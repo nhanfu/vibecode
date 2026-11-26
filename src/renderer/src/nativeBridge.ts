@@ -33,6 +33,10 @@ export function listen<T extends unknown[]>(name: string, cb: (...args: T) => vo
   return bridge().on(name, (detail) => cb(...(detail as T)))
 }
 
+export function subscribe(name: string, cb: (detail: unknown) => void): () => void {
+  return bridge().on(name, cb)
+}
+
 export function invoke<T = unknown>(command: string, payload?: Record<string, unknown> | null): Promise<T> {
   return bridge().invoke(command, payload ?? null).catch((error: unknown) => {
     throw new Error(`${command}: ${error instanceof Error ? error.message : String(error)}`)

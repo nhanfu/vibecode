@@ -1,239 +1,199 @@
-import { useEffect, useRef, useState } from 'react'
-import { Check, Copy, FolderOpen, GitBranch, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Square, Star, Trash2, X } from 'lucide-react'
-import { basename, useStore, type Chat } from '../store'
-import { agentGroups, closeChat, defaultAgent, detectClaude, newChatWith, restartChat, selectChat, setDefaultAgent } from '../actions'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import { Bot, Check, Copy, FolderOpen, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
+import { basename, shownLayout, useStore, type Chat } from '../store'
+import { chatDragSource, chatDropTarget, defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setLayoutMode } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
-import type { SubAgent } from '../../../shared/types'
-import { writeToTerm } from '../terminals'
-import { StatusDot } from './icons'
-import { useSessionFeed } from './sessionFeed'
+import { COMMANDS } from '../shortcuts'
+import { takeRailRequest, type RailId, type RailRequest } from '../rail'
+import { gridLayout, joinLayout, layoutIds, layoutKey, type Layout } from '../chatLayout'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
-import { SessionChanges } from './SessionChanges'
-import { ChangesView, ExplorerView } from './Sidebar'
-import { load, save } from '../localPref'
+import { ChatsView } from './Sidebar'
+import { StatusDot } from './icons'
 
-const SIDE_W_KEY = 'vibe.agentSideWidth'
-const SIDE_OPEN_KEY = 'vibe.agentSideOpen'
-const SIDE_W = 230
-/** sub-agents removed from the list (the transcript keeps them) */
-const HIDDEN_SUB_KEY = 'vibe.hiddenSubAgents'
+/** what counts as "on the rail": its icons, the flyout, and the popups beside the flyout */
+const RAIL_PARTS = '.agent-rail, .agent-flyout, .explorer-pop, .plan-pop, .menu, .ctx-menu, .overlay'
 
 /**
- * The Agent drop-down: the agents on the left, the chat (`children`) on the right. The list can be
- * hidden (a thin rail brings it back) and resized from its right edge; both are remembered. The
- * chat stays the same element whatever the list does, so its terminals are never rebuilt.
+ * The Agent drop-down: a rail of icons on the left, the chat (`children`) on the right. Each icon
+ * opens its group as a flyout beside the rail: while the pointer is on an icon, the flyout follows
+ * it; a click or a hotkey keeps it open until you click elsewhere, press Esc, or pick the icon again.
+ * The chat stays the same element whatever the rail does, so its terminals are never rebuilt.
  */
 export function AgentSplit({ children }: { children: React.ReactNode }): React.JSX.Element {
-  const [open, setOpen] = useState(() => load(SIDE_OPEN_KEY, (v) => v !== '0', true))
-  const [width, setWidth] = useState(() => load(SIDE_W_KEY, (v) => Number(v) || SIDE_W, SIDE_W))
-  const show = (on: boolean): void => {
-    setOpen(on)
-    save(SIDE_OPEN_KEY, on ? '1' : '0')
+  const [pinned, setPinned] = useState<RailId | null>(null)
+  const [hover, setHover] = useState<RailId | null>(null)
+  const shown = hover ?? pinned
+  // read by the window listeners below, which are set up once per hover or pin
+  const hoverRef = useRef<RailId | null>(null)
+  const pinnedRef = useRef<RailId | null>(null)
+  hoverRef.current = hover
+  pinnedRef.current = pinned
+  // a file open in the project's Files popup keeps its flyout: leaving or clicking elsewhere would close the file
+  const fileOpen = (id: RailId | null): boolean => id === 'project' && useStore.getState().inlineTab !== null
+
+  const apply = (req: RailRequest): void => {
+    setHover(null)
+    setPinned((p) => (req.mode === 'toggle' && p === req.id ? null : req.id))
   }
-  // Show Explorer / Show Source Control: the sidebar has to be open for its group to show. A closed
-  // sidebar has no groups to hear the request, so it is made again once they exist.
-  const openNow = useRef(open)
-  openNow.current = open
+
+  // hotkeys and other parts of the app; a request made before this mounted waits for it
   useEffect(() => {
-    const reveal = (e: Event): void => {
-      if (openNow.current) return
-      show(true)
-      setTimeout(() => window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: (e as CustomEvent<string>).detail })), 60)
+    const onRequest = (e: Event): void => {
+      takeRailRequest()
+      apply((e as CustomEvent<RailRequest>).detail)
     }
-    window.addEventListener('side-group-reveal', reveal)
-    return () => window.removeEventListener('side-group-reveal', reveal)
+    const waiting = takeRailRequest()
+    if (waiting) apply(waiting)
+    const onClose = (e: Event): void => {
+      const id = (e as CustomEvent<RailId | undefined>).detail
+      setHover((h) => (id === undefined || h === id ? null : h))
+      setPinned((p) => (id === undefined || p === id ? null : p))
+    }
+    window.addEventListener('rail-open', onRequest)
+    window.addEventListener('rail-close', onClose)
+    return () => {
+      window.removeEventListener('rail-open', onRequest)
+      window.removeEventListener('rail-close', onClose)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  const resize = (e: React.PointerEvent<HTMLDivElement>): void => {
-    e.preventDefault()
-    const handle = e.currentTarget
-    handle.setPointerCapture(e.pointerId)
-    handle.classList.add('dragging')
-    const left = handle.parentElement!.getBoundingClientRect().left
-    let w = width
-    const move = (ev: PointerEvent): void => {
-      w = Math.round(Math.min(480, Math.max(170, ev.clientX - left)))
-      setWidth(w)
+
+  // a hovered icon's flyout closes once the pointer is off the rail and its popups
+  useEffect(() => {
+    if (hover === null) return
+    let timer = 0
+    const move = (e: PointerEvent): void => {
+      window.clearTimeout(timer)
+      const t = e.target
+      if (t instanceof Element && t.closest(RAIL_PARTS)) return
+      if (fileOpen(hoverRef.current)) return
+      timer = window.setTimeout(() => setHover(null), 180)
     }
-    const up = (): void => {
-      handle.classList.remove('dragging')
-      handle.removeEventListener('pointermove', move)
-      handle.removeEventListener('pointerup', up)
-      handle.removeEventListener('pointercancel', up)
-      save(SIDE_W_KEY, String(w))
+    window.addEventListener('pointermove', move, true)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('pointermove', move, true)
     }
-    handle.addEventListener('pointermove', move)
-    handle.addEventListener('pointerup', up)
-    handle.addEventListener('pointercancel', up)
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hover !== null])
+
+  // a pinned flyout closes on a click elsewhere, and on Esc (not while typing in a popup or the chat)
+  useEffect(() => {
+    if (pinned === null) return
+    const down = (e: MouseEvent): void => {
+      const t = e.target
+      if (t instanceof Element && t.closest(RAIL_PARTS)) return
+      if (fileOpen(pinnedRef.current)) return
+      setPinned(null)
+    }
+    const key = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || document.activeElement?.closest('.explorer-nav, .xterm')) return
+      setPinned(null)
+    }
+    window.addEventListener('mousedown', down, true)
+    window.addEventListener('keydown', key)
+    return () => {
+      window.removeEventListener('mousedown', down, true)
+      window.removeEventListener('keydown', key)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinned !== null])
+
   return (
     <div className="agent-split">
-      {open && (
-        <div className="agent-side" style={{ width }}>
-          <AgentsList onHide={() => show(false)} />
-          <div
-            className="sidebar-resize"
-            title="Drag to resize · double-click to reset"
-            onPointerDown={resize}
-            onDoubleClick={() => {
-              setWidth(SIDE_W)
-              save(SIDE_W_KEY, null)
-            }}
-          />
-        </div>
-      )}
-      {!open && (
-        <button className="agent-rail" title="Show the agents" onClick={() => show(true)}>
-          <PanelLeftOpen size={14} />
-        </button>
-      )}
+      <AgentRail
+        shown={shown}
+        pinned={pinned}
+        onHover={setHover}
+        onPick={(id) => apply({ id, mode: 'toggle' })}
+      />
       <div className="agent-chat">{children}</div>
     </div>
   )
 }
 
-const readSubAgents = (sessionId: string): Promise<SubAgent[]> =>
-  typeof window.api.sessions.subagents === 'function' ? window.api.sessions.subagents(sessionId) : Promise.resolve([])
-const anyRunningSub = (list: SubAgent[]): boolean => list.some((a) => a.status === 'running')
+/** One icon per group. `cmd` is the command that opens it, so the tooltip can show its hotkey. */
+const RAIL: { id: RailId; label: string; icon: LucideIcon; cmd: string }[] = [
+  { id: 'project', label: 'Project', icon: FolderOpen, cmd: 'railProject' },
+  { id: 'agents', label: 'Agents', icon: Bot, cmd: 'railAgents' },
+  { id: 'plans', label: 'Plans & tasks', icon: ListTodo, cmd: 'railPlans' }
+]
 
-function loadHidden(): string[] {
-  return load(HIDDEN_SUB_KEY, (v) => {
-    const list: unknown = JSON.parse(v)
-    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : []
-  }, [])
-}
-
-/**
- * A sub-agent one chat started, one level under that chat. Stop sends Esc to the chat: Claude Code
- * has no way to stop one sub-agent alone, so this stops the chat's whole turn. Remove only hides it
- * from this list.
- */
-function SubAgentRow({ agent, onStop, onRemove }: { agent: SubAgent; onStop: () => void; onRemove: () => void }): React.JSX.Element {
-  const dot = agent.status === 'running' ? 'working' : agent.status === 'failed' ? 'exited' : 'idle'
-  return (
-    <div className="sub-agent-row" title={`${agent.kind}\n${agent.description}`}>
-      <StatusDot status={dot} />
-      <span className="sub-agent-kind">{agent.kind}</span>
-      <span className="sub-agent-desc">{agent.description}</span>
-      {agent.status === 'running' && (
-        <button
-          className="icon-btn tiny agent-chat-act always"
-          title="Stop: Esc stops this chat's whole turn, sub-agents included"
-          onClick={onStop}
-        >
-          <Square size={10} fill="currentColor" />
-        </button>
-      )}
-      <button className="icon-btn tiny agent-chat-act" title="Remove from the list (the transcript keeps it)" onClick={onRemove}>
-        <Trash2 size={12} />
-      </button>
-    </div>
-  )
-}
-
-/** A chat under its agent in the Running tree, with the sub-agents it started under it. */
-function ChatBranch({ chat: c }: { chat: Chat }): React.JSX.Element {
-  const activeChatId = useStore((s) => s.activeChatId)
-  const subs = useSessionFeed(c.sessionId, readSubAgents, anyRunningSub)
-  const [hidden, setHidden] = useState<string[]>(loadHidden)
-  const remove = (id: string): void => {
-    // read again: another chat may have hidden some since this one loaded
-    const next = [...new Set([...loadHidden(), id])]
-    setHidden(next)
-    save(HIDDEN_SUB_KEY, JSON.stringify(next))
-  }
-  return (
-    <>
-      <div
-        className={`sess-row${c.id === activeChatId ? ' active' : ''}`}
-        onClick={() => selectChat(c.id)}
-        title={`${c.title}\n${c.cwd}`}
-      >
-        <StatusDot status={c.status} attention={c.attention} />
-        <span className="sess-title">{c.title}</span>
-        <span className="sess-time">{basename(c.cwd)}</span>
-        <button
-          className="icon-btn tiny agent-chat-act"
-          title="Restart"
-          onClick={(e) => {
-            e.stopPropagation()
-            restartChat(c.id)
-          }}
-        >
-          <RotateCcw size={12} />
-        </button>
-        <button
-          className="icon-btn tiny agent-chat-act"
-          title="Close"
-          onClick={(e) => {
-            e.stopPropagation()
-            closeChat(c.id)
-          }}
-        >
-          <X size={12} />
-        </button>
-      </div>
-      {subs
-        .filter((a) => !hidden.includes(a.id))
-        .map((a) => (
-          <SubAgentRow key={a.id} agent={a} onStop={() => writeToTerm(c.id, '\x1b')} onRemove={() => remove(a.id)} />
-        ))}
-    </>
-  )
-}
-
-/**
- * Which project and folder the agents work in: the opened folder (name, git branch, full path) and,
- * when the chat you are in runs somewhere else under it, that folder. The hide button lives here.
- */
-function ProjectHead({ onHide }: { onHide: () => void }): React.JSX.Element {
+function AgentRail({
+  shown,
+  pinned,
+  onHover,
+  onPick
+}: {
+  shown: RailId | null
+  pinned: RailId | null
+  onHover: (id: RailId) => void
+  onPick: (id: RailId) => void
+}): React.JSX.Element {
   const root = useStore((s) => s.root)
-  const branch = useStore((s) => s.git.branch)
-  const chatCwd = useStore((s) => s.chats.find((c) => c.id === s.activeChatId)?.cwd)
-  const norm = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '')
-  const elsewhere = root && chatCwd && norm(chatCwd).toLowerCase() !== norm(root).toLowerCase() ? chatCwd : null
-  const rel = elsewhere && root && norm(elsewhere).toLowerCase().startsWith(norm(root).toLowerCase() + '/') ? norm(elsewhere).slice(norm(root).length + 1) : elsewhere
+  const railRef = useRef<HTMLDivElement>(null)
+  const [top, setTop] = useState(0)
+  const items = RAIL
+  const flyoutOpen = shown !== null && items.some((r) => r.id === shown)
+
+  // the flyout hangs from its icon
+  useLayoutEffect(() => {
+    if (!shown) return
+    const btn = railRef.current?.querySelector<HTMLElement>(`[data-rail="${shown}"]`)
+    if (btn && btn.offsetTop !== top) setTop(btn.offsetTop)
+  }, [shown, top])
+
   return (
-    <div className="project-head" title={root ?? undefined}>
-      <FolderOpen size={14} className="project-icon" />
-      <div className="project-main">
-        <div className="project-name">
-          <span>{root ? basename(root) : 'No folder open'}</span>
-          {branch && (
-            <span className="project-branch" title="Git branch">
-              <GitBranch size={10} />
-              {branch}
-            </span>
-          )}
+    <div className="agent-rail" ref={railRef}>
+      {items.map((r) => {
+        const Icon = r.icon
+        const keys = COMMANDS.find((c) => c.id === r.cmd)?.keys
+        return (
+          <button
+            key={r.id}
+            data-rail={r.id}
+            className={`agent-rail-btn${shown === r.id ? ' on' : ''}${pinned === r.id ? ' pinned' : ''}`}
+            title={keys ? `${r.label}  (${keys})` : r.label}
+            onMouseEnter={() => onHover(r.id)}
+            onClick={() => onPick(r.id)}
+          >
+            <Icon size={15} />
+          </button>
+        )
+      })}
+      {flyoutOpen && shown && (
+        <div className="agent-flyout" style={{ top, maxHeight: `calc(100% - ${top + 8}px)` }}>
+          <RailBody id={shown} />
         </div>
-        <div className="project-path">{root ?? 'Open a folder to start chats'}</div>
-        {rel && (
-          <div className="project-path chat" title={elsewhere ?? undefined}>
-            chat in {rel}
-          </div>
-        )}
-      </div>
-      <button className="icon-btn tiny" title="Hide the agents" onClick={onHide}>
-        <PanelLeftClose size={12} />
-      </button>
+      )}
     </div>
   )
 }
 
-/**
- * Every coding agent the app can run (installed or not, which one a plain New chat uses), and the
- * chats running now, by agent.
- */
-function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
+/** The Project flyout: the filter with New project beside it, then the chats of every project. Opening it puts the cursor in the filter. */
+function ProjectBody(): React.JSX.Element {
+  return <ChatsView />
+}
+
+function RailBody({ id }: { id: RailId }): React.JSX.Element {
+  return (
+    <div className="agents-panel agent-flyout-body">
+      {id === 'project' && <ProjectBody />}
+      {id === 'agents' && <AgentsGroup always />}
+      {id === 'plans' && <PlansGroup always />}
+    </div>
+  )
+}
+
+export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element {
   const claude = useStore((s) => s.claude)
   const found = useStore((s) => s.agents)
   const chats = useStore((s) => s.chats)
-  const activeChatId = useStore((s) => s.activeChatId)
-  const root = useStore((s) => s.root)
-  const gitChanged = useStore((s) => s.git.files.length)
   // re-render when the default changes (defaultAgent() reads it)
   useStore((s) => s.preferredAgent)
+  const root = useStore((s) => s.root)
   const fallback = defaultAgent()
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState<AgentId | null>(null)
@@ -250,94 +210,138 @@ function AgentsList({ onHide }: { onHide: () => void }): React.JSX.Element {
     setCopied(id)
     setTimeout(() => setCopied((c) => (c === id ? null : c)), 1200)
   }
-  const groups = agentGroups(chats)
 
   return (
-    <div className="agents-panel">
-      <ProjectHead onHide={onHide} />
-      <SideGroup
-        id="agents"
-        label="Agents"
-        actions={
-          <button className="icon-btn tiny" title="Look for installed agents again" onClick={() => void refresh()}>
-            <RefreshCw size={12} className={busy ? 'spin' : ''} />
-          </button>
-        }
-      >
-        {AGENTS.map((a) => {
-          const ok = installed(a.id)
-          const n = chatsOf(a.id).length
-          const isDefault = ok && fallback === a.id
-          return (
-            <div key={a.id} className={`agent-row${ok ? '' : ' missing'}`}>
-              <button
-                className={`icon-btn tiny agent-default${isDefault ? ' on' : ''}`}
-                title={isDefault ? 'New chats start with this agent' : ok ? 'Start new chats with this agent' : 'Not installed'}
-                disabled={!ok}
-                onClick={() => setDefaultAgent(a.id)}
-              >
-                <Star size={13} />
-              </button>
-              <div className="agent-main">
-                <span className="agent-name">{a.label}</span>
-                {ok ? (
-                  <span className="agent-sub">
-                    {a.cmd}
-                    {n > 0 && ` · ${n} open`}
-                  </span>
-                ) : (
-                  <button className="agent-install" title="Copy the install command" onClick={() => copy(a.id, a.install)}>
-                    {copied === a.id ? <Check size={11} /> : <Copy size={11} />}
-                    <code>{a.install}</code>
-                  </button>
-                )}
-              </div>
-              <button
-                className="icon-btn tiny"
-                title={!root ? 'Open a folder first' : ok ? `New ${a.label} chat in ${basename(root)}` : 'Not installed'}
-                disabled={!ok || !root}
-                onClick={() => newChatWith(a.id)}
-              >
-                <Plus size={14} />
-              </button>
+    <SideGroup
+      id="agents"
+      label="Agents"
+      always={always}
+      actions={
+        <button className="icon-btn tiny" title="Look for installed agents again" onClick={() => void refresh()}>
+          <RefreshCw size={12} className={busy ? 'spin' : ''} />
+        </button>
+      }
+    >
+      <LayoutMap />
+      {AGENTS.map((a) => {
+        const ok = installed(a.id)
+        const n = chatsOf(a.id).length
+        const isDefault = ok && fallback === a.id
+        return (
+          <div key={a.id} className={`agent-row${ok ? '' : ' missing'}`}>
+            <button
+              className={`icon-btn tiny agent-default${isDefault ? ' on' : ''}`}
+              title={isDefault ? 'New chats start with this agent' : ok ? 'Start new chats with this agent' : 'Not installed'}
+              disabled={!ok}
+              onClick={() => setDefaultAgent(a.id)}
+            >
+              <Star size={13} />
+            </button>
+            <div className="agent-main">
+              <span className="agent-name">{a.label}</span>
+              {ok ? (
+                <span className="agent-sub">
+                  {a.cmd}
+                  {n > 0 && ` · ${n} open`}
+                </span>
+              ) : (
+                <button className="agent-install" title="Copy the install command" onClick={() => copy(a.id, a.install)}>
+                  {copied === a.id ? <Check size={11} /> : <Copy size={11} />}
+                  <code>{a.install}</code>
+                </button>
+              )}
             </div>
-          )
-        })}
-      </SideGroup>
-
-      <PlansGroup />
-
-      <SideGroup id="running" label="Running" count={chats.length}>
-        {groups.length === 0 && <div className="tree-empty">No chats open.</div>}
-        {groups.map((g) => (
-          <div key={g.key} className="agent-chats">
-            <div className="agent-chats-head" title={g.cwd}>
-              {agentDef(g.agent).label} · {basename(g.cwd)}
-            </div>
-            {g.chats.map((c) => (
-              <ChatBranch key={c.id} chat={c} />
-            ))}
+            <button
+              className="icon-btn tiny"
+              title={!root ? 'Open a folder first' : ok ? `New ${a.label} chat in ${basename(root)}` : 'Not installed'}
+              disabled={!ok || !root}
+              onClick={() => newChatWith(a.id)}
+            >
+              <Plus size={14} />
+            </button>
           </div>
-        ))}
-      </SideGroup>
+        )
+      })}
+    </SideGroup>
+  )
+}
 
-      <SessionChanges chat={chats.find((c) => c.id === activeChatId)} />
-
-      {root && (
-        <>
-          <SideGroup id="git-changes" label="Git changes" count={gitChanged}>
-            <div className="embedded-view">
-              <ChangesView embedded />
-            </div>
-          </SideGroup>
-
-          <SideGroup id="files" label="Files">
-            <div className="embedded-view">
-              <ExplorerView embedded />
-            </div>
-          </SideGroup>
-        </>
-      )}
+function LayoutTree({ node, chats, activeId }: { node: Layout | string; chats: Chat[]; activeId: string | null }): React.JSX.Element | null {
+  if (typeof node === 'string') {
+    const c = chats.find((x) => x.id === node)
+    if (!c) return null
+    return (
+      <button className={`layout-map-cell${c.id === activeId ? ' on' : ''}`} title={c.title} onClick={() => selectChat(c.id)} {...hoverFocus(c.id)} {...chatDragSource(c.id)} {...chatDropTarget(c.id)}>
+        <StatusDot status={c.status} attention={c.attention} />
+        <span className="layout-map-title">{c.title}</span>
+      </button>
+    )
+  }
+  return (
+    <div className={`layout-map-split ${node.dir}`}>
+      {node.kids.map((k, i) => (
+        <LayoutTree key={i} node={k} chats={chats} activeId={activeId} />
+      ))}
     </div>
+  )
+}
+
+function runningLayouts(chats: Chat[], chatLayouts: Record<string, Layout>): { key: string; name: string; cwd: string; layout: Layout }[] {
+  const groups = new Map<string, Chat[]>()
+  for (const c of chats) {
+    if (c.status === 'exited') continue
+    const k = layoutKey(c.cwd)
+    groups.set(k, [...(groups.get(k) ?? []), c])
+  }
+  return [...groups].map(([key, cs]) => {
+    const ids = cs.map((c) => c.id)
+    const cur = chatLayouts[key]
+    const shown = new Set(layoutIds(cur ?? null))
+    const layout = cur ? ids.filter((id) => !shown.has(id)).reduce<Layout>((l, id) => joinLayout(l, null, id, 'row'), cur) : (gridLayout(ids) as Layout)
+    return { key, name: basename(cs[0].cwd), cwd: cs[0].cwd, layout }
+  })
+}
+
+function LayoutMap(): React.JSX.Element {
+  const activeId = useStore((s) => s.activeChatId)
+  const chats = useStore((s) => s.chats)
+  const chatLayouts = useStore((s) => s.chatLayouts)
+  const mode = useStore((s) => s.layoutMode)
+  const merged = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode: 'merged' }), [chats, activeId, chatLayouts])
+  const projects = useMemo(() => (mode === 'merged' ? [] : runningLayouts(chats, chatLayouts)), [chats, chatLayouts, mode])
+  return (
+    <>
+      <div className="layout-bar">
+        <div className="layout-seg">
+          <button className={`layout-seg-btn${mode === 'project' ? ' on' : ''}`} title="One layout per project" onClick={() => setLayoutMode('project')}>
+            By project
+          </button>
+          <button className={`layout-seg-btn${mode === 'merged' ? ' on' : ''}`} title="All open chats in one grid" onClick={() => setLayoutMode('merged')}>
+            All
+          </button>
+        </div>
+        <button className="icon-btn tiny" title="New chat in the layout (Alt+Shift+C)" onClick={() => newLayoutChat()}>
+          <Plus size={14} />
+        </button>
+      </div>
+      {mode === 'merged' ? (
+        merged !== null && (
+          <div className="layout-map">
+            <LayoutTree node={merged} chats={chats} activeId={activeId} />
+          </div>
+        )
+      ) : (
+        projects.map((p) => (
+          <div key={p.key} className="layout-proj">
+            <div className="layout-proj-name" title={p.cwd}>
+              {p.name}
+            </div>
+            <div className="layout-map">
+              <LayoutTree node={p.layout} chats={chats} activeId={activeId} />
+            </div>
+          </div>
+        ))
+      )}
+    </>
   )
 }

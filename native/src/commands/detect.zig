@@ -34,3 +34,24 @@ pub fn claudeDetect(_: cmd.Invocation, output: []u8) ![]const u8 {
         .shell = defaultShell(),
     });
 }
+
+const agents = [_]struct { id: []const u8, command: []const u8 }{
+    .{ .id = "claude", .command = "claude" },
+    .{ .id = "codex", .command = "codex" },
+    .{ .id = "grok", .command = "grok" },
+    .{ .id = "gemini", .command = "gemini" },
+    .{ .id = "qwen", .command = "qwen" },
+    .{ .id = "copilot", .command = "copilot" },
+    .{ .id = "opencode", .command = "opencode" },
+};
+
+pub fn agentsDetect(_: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var infos: [agents.len]struct { id: []const u8, found: bool } = undefined;
+    for (agents, 0..) |agent, index| {
+        infos[index] = .{ .id = agent.id, .found = (try which(a, agent.command)) != null };
+    }
+    return cmd.json(output, infos);
+}

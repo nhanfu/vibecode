@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Clock, Code2, Database, FolderOpen, Globe, Layers, MoveHorizontal, PanelTop, Pin, PinOff, Puzzle, Terminal, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Code2, Database, FolderOpen, Globe, Layers, MoveHorizontal, PanelTop, Pin, PinOff, Power, Puzzle, Terminal, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
@@ -20,12 +20,11 @@ import {
   type PanelId,
   type StaticPanelId
 } from '../store'
-import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, openFolder, setBrowserMode } from '../actions'
+import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, loadPlugins, openFolder, setBrowserMode } from '../actions'
 import { SiteIcon } from './SiteIcon'
 import { Adopt, TabHosts } from './webHosts'
 import { COMMANDS } from '../shortcuts'
-import { Sidebar } from './Sidebar'
-import { DbPanel, WebPanel } from './Editor'
+import { WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
 import { PluginManager } from './PluginManager'
@@ -57,9 +56,7 @@ interface FloatSize {
 }
 
 const PANELS: Record<StaticPanelId, PanelMeta> = {
-  project: { label: 'Project', icon: FolderOpen, command: 'sidebar', size: { key: 'vibe.sidebarWidth', initial: () => 300, min: 220 } },
   web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
-  db: { label: 'Database', icon: Database, command: 'viewDb', size: { key: 'vibe.dbWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 360 } },
   plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
   agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
 }
@@ -91,43 +88,77 @@ const DRAG_START = 5
 /** A click waits this long for a second one (a double-click pins instead). */
 const CLICK_WAIT = 220
 
+/** A title-bar button's place on screen when a drag began. */
+type Spot = { id: string; left: number; width: number }
+
 export function StackBar(): React.JSX.Element {
   const order = useStore((s) => s.panelOrder)
   const barRef = useRef<HTMLDivElement>(null)
-  // the button being dragged, and where it would land (index in the order without it)
-  const [drag, setDrag] = useState<{ id: PanelId; to: number } | null>(null)
+  // the button being dragged: where it would land (index among the others), the pointer, and the drag's start
+  const [drag, setDrag] = useState<{ id: PanelId; to: number; x: number; y: number; spots: Spot[] } | null>(null)
+  // read by the pointer handlers, which were created before the state changed
+  const dragRef = useRef<{ id: PanelId; spots: Spot[] } | null>(null)
 
-  /** Where a button dropped at `x` lands: before the first other button whose middle is right of x. */
-  const dropIndex = (id: PanelId, x: number): number => {
-    const others = [...(barRef.current?.querySelectorAll<HTMLElement>('.stack-btn') ?? [])].filter((b) => b.dataset.panel !== id)
-    const i = others.findIndex((b) => {
+  /** Measured before any button moves: the drag starts from these places. */
+  const measure = (): Spot[] =>
+    [...(barRef.current?.querySelectorAll<HTMLElement>('.stack-btn') ?? [])].map((b) => {
       const r = b.getBoundingClientRect()
-      return x < r.left + r.width / 2
+      return { id: b.dataset.panel ?? '', left: r.left, width: r.width }
     })
+
+  /** Where a button released at `x` lands among the others: before the first one whose middle is right of x. */
+  const slotAt = (spots: Spot[], id: PanelId, x: number): number => {
+    const others = spots.filter((s) => s.id !== id)
+    const i = others.findIndex((s) => x < s.left + s.width / 2)
     return i < 0 ? others.length : i
+  }
+
+  const dropAt = (id: PanelId, x: number): number => slotAt(dragRef.current?.spots ?? measure(), id, x)
+
+  const step = drag ? (drag.spots.length > 1 ? drag.spots[1].left - drag.spots[0].left : drag.spots[0]?.width ?? 0) : 0
+
+  /** How far a button moves while another is dragged: it takes the slot it would have after the drop. */
+  const shiftOf = (id: PanelId): number => {
+    if (!drag) return 0
+    const others = order.filter((p) => p !== drag.id)
+    const from = order.indexOf(id)
+    const wi = others.indexOf(id)
+    const to = id === drag.id ? drag.to : wi < drag.to ? wi : wi + 1
+    return (to - from) * step
   }
 
   return (
     <div className={`stack-bar${drag ? ' dragging' : ''}`} ref={barRef} onMouseDown={(e) => e.stopPropagation()}>
-      {order.map((id) => {
-        const without = order.filter((p) => p !== id)
-        // the drop mark goes before the button that will follow the dragged one
-        const markBefore = drag && drag.id !== id && without[drag.to] === id
-        const markAfter = drag && drag.id !== id && drag.to === without.length && without[without.length - 1] === id
-        return (
-          <StackButton
-            key={id}
-            id={id}
-            dragging={drag?.id === id}
-            mark={markBefore ? 'before' : markAfter ? 'after' : null}
-            onDrag={(x) => setDrag({ id, to: dropIndex(id, x) })}
-            onDrop={(x) => {
-              setDrag(null)
-              if (x !== null) movePanel(id, dropIndex(id, x))
-            }}
-          />
-        )
-      })}
+      {order.map((id) => (
+        <StackButton
+          key={id}
+          id={id}
+          dragging={drag?.id === id}
+          shift={shiftOf(id)}
+          moving={drag !== null}
+          onDrag={(x, y) => {
+            if (dragRef.current?.id !== id) dragRef.current = { id, spots: measure() }
+            const spots = dragRef.current.spots
+            setDrag({ id, to: slotAt(spots, id, x), x, y, spots })
+          }}
+          onDrop={(x) => {
+            const to = x === null ? null : dropAt(id, x)
+            dragRef.current = null
+            setDrag(null)
+            if (to !== null) movePanel(id, to)
+          }}
+        />
+      ))}
+      {drag &&
+        createPortal(
+          <div className="stack-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden>
+            {(() => {
+              const Icon = metaOf(drag.id).icon
+              return <Icon size={13} />
+            })()}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
@@ -135,13 +166,16 @@ export function StackBar(): React.JSX.Element {
 function StackButton(props: {
   id: PanelId
   dragging: boolean
-  mark: 'before' | 'after' | null
-  /** the pointer moved to x while dragging this button */
-  onDrag: (x: number) => void
+  /** px it moves to make room (or to take the dragged button's slot) */
+  shift: number
+  /** a drag is on: moves animate */
+  moving: boolean
+  /** the pointer moved to (x, y) while dragging this button */
+  onDrag: (x: number, y: number) => void
   /** released at x (null: cancelled) */
   onDrop: (x: number | null) => void
 }): React.JSX.Element {
-  const { id, dragging, mark, onDrag, onDrop } = props
+  const { id, dragging, shift, moving, onDrag, onDrop } = props
   const meta = metaOf(id)
   const root = useStore((s) => s.root)
   const page = useStore((s) => (isPage(id) ? pageTab(s, id) : undefined))
@@ -150,20 +184,11 @@ function StackButton(props: {
   const running = useStore((s) => (id === 'agents' ? s.chats.filter((c) => c.status === 'working').length : 0))
   // Agent: named after the agent of the chat you are in ("Claude Code", "Codex"…)
   const agent = useStore((s) => (id === 'agents' ? agentDef(s.chats.find((c) => c.id === s.activeChatId)?.agent).label : ''))
-  const [menu, setMenu] = useState(false)
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
   const clickTimer = useRef<number | undefined>(undefined)
   // a drag ends with a click on the button: that one is not a click
   const dragged = useRef(false)
 
-  useEffect(() => {
-    if (!menu) return
-    const close = (e: MouseEvent): void => {
-      if (!(e.target instanceof Element && e.target.closest('.stack-menu'))) setMenu(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [menu])
 
   const press = (e: React.PointerEvent<HTMLButtonElement>): void => {
     if (e.button !== 0) return
@@ -180,7 +205,7 @@ function StackButton(props: {
         window.clearTimeout(clickTimer.current)
         closeFloat()
       }
-      onDrag(ev.clientX)
+      onDrag(ev.clientX, ev.clientY)
     }
     const end = (ev: PointerEvent): void => {
       btn.removeEventListener('pointermove', move)
@@ -200,29 +225,24 @@ function StackButton(props: {
     }
     window.clearTimeout(clickTimer.current)
     if (e.detail >= 2) {
-      setMenu(false)
       togglePin(id)
       return
     }
     // wait: this may be the first half of a double-click
-    clickTimer.current = window.setTimeout(() => {
-      if (id === 'project') setMenu((m) => !m)
-      else togglePanel(id)
-    }, CLICK_WAIT)
+    clickTimer.current = window.setTimeout(() => togglePanel(id), CLICK_WAIT)
   }
 
   const Icon = meta.icon
-  const label = id === 'project' && root ? basename(root) : id === 'agents' && agent ? agent : page ? page.title || page.url.replace(/^https?:\/\//, '') || meta.label : meta.label
+  const label = id === 'agents' && agent ? agent : page ? page.title || page.url.replace(/^https?:\/\//, '') || meta.label : meta.label
   const keys = keysOf(id)
-  const what = id === 'project' ? 'click for folders' : 'click to open'
+  const what = 'click to open'
   const openMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
     window.clearTimeout(clickTimer.current)
-    setMenu(false)
     setCtx({ x: e.clientX, y: e.clientY })
   }
   return (
-    <div className={`stack-btn-wrap${mark ? ` mark-${mark}` : ''}`}>
+    <div className="stack-btn-wrap" style={{ transform: shift ? `translateX(${shift}px)` : undefined, transition: moving ? 'transform 0.18s ease' : 'none' }}>
       <button
         className={`stack-btn${shown ? ' on' : ''}${pinned ? ' pinned' : ''}${dragging ? ' dragging' : ''}`}
         data-panel={id}
@@ -236,7 +256,6 @@ function StackButton(props: {
         {page ? <SiteIcon url={page.url} size={14} /> : <Icon size={13} />}
         {running > 0 && <span className="center-count">{running}</span>}
       </button>
-      {menu && <FolderMenu close={() => setMenu(false)} />}
       {ctx && <StackMenu id={id} x={ctx.x} y={ctx.y} onClose={() => setCtx(null)} />}
     </div>
   )
@@ -254,6 +273,8 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   const at = order.indexOf(id)
   const shared = useStore((s) => s.browserShared)
   const keys = keysOf(id)
+  const pluginId = id.startsWith('plugin:') ? id.slice('plugin:'.length) : null
+  const pluginRunning = useStore((s) => (pluginId ? s.plugins.find((p) => p.id === pluginId)?.status === 'running' : false))
 
   // kept on screen, measured before paint so it never jumps
   useLayoutEffect(() => {
@@ -310,6 +331,18 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
           { icon: <X size={14} />, label: 'Close this page', act: () => closeBrowserTab(key, id.slice(5)) }
         ]
       : []),
+    ...(pluginId
+      ? [
+          'sep' as const,
+          {
+            icon: <Power size={14} />,
+            label: 'Stop process',
+            tip: 'Stops this plugin’s server. Start it again from Plugins.',
+            off: !pluginRunning,
+            act: () => void window.api.plugins.stop(pluginId).then(loadPlugins, () => {})
+          }
+        ]
+      : []),
     ...(id === 'web' || isPage(id)
       ? [
           'sep' as const,
@@ -345,47 +378,9 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   )
 }
 
-/** The project button's menu: open another folder. */
-function FolderMenu({ close }: { close: () => void }): React.JSX.Element {
-  const root = useStore((s) => s.root)
-  const recent = useStore((s) => s.recent)
-  return (
-    <div className="menu stack-menu">
-      <button
-        className="menu-item"
-        onClick={() => {
-          close()
-          openFolder()
-        }}
-      >
-        <FolderOpen size={14} /> Open folder…
-      </button>
-      {recent.length > 1 && <div className="menu-sep">Recent</div>}
-      {recent
-        .filter((r) => r !== root)
-        .map((r) => (
-          <button
-            key={r}
-            className="menu-item"
-            onClick={() => {
-              close()
-              openFolder(r)
-            }}
-          >
-            <Clock size={14} />
-            <span className="menu-item-main">{basename(r)}</span>
-            <span className="menu-item-sub">{r}</span>
-          </button>
-        ))}
-    </div>
-  )
-}
-
-/* ---------------- the stack ---------------- */
-
 /** What counts as "on the floating drop-down": it, the title-bar buttons, and menus / dialogs opened from it. */
 const FLOAT_PARTS =
-  '.stack-panel.floating, .stack-bar, .menu, .ctx-menu, .overlay, .context-view, .monaco-menu-container, .image-lightbox, .bm-menu, .browser-sugg, .term-image-hover, .plan-pop'
+  '.stack-panel.floating, .stack-bar, .menu, .ctx-menu, .overlay, .context-view, .monaco-menu-container, .image-lightbox, .bm-menu, .browser-sugg, .term-image-hover, .plan-pop, .explorer-pop'
 
 /**
  * A hovered drop-down follows the pointer: it hides a moment after the pointer moves onto the rest
@@ -446,8 +441,11 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   const pinned = useStore((s) => s.pinned)
   const order = useStore((s) => s.panelOrder)
   const browsers = useStore((s) => s.browsers)
+  const fullscreen = useStore((s) => s.fullscreen)
   // the torn-off tabs that still exist
   const pageExists = new Set<string>(Object.values(browsers).flatMap((b) => b.tabs.filter((t) => t.detached).map((t) => `page:${t.id}`)))
+  const panels: PanelId[] = [...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id)), ...order.filter(isPluginPanel)]
+  const full = fullscreen && panels.includes(fullscreen) ? fullscreen : null
   // the one that takes the room left: the chat if pinned, else the last pinned one
   const fill = pinned.includes('agents') ? 'agents' : [...order].reverse().find((p) => pinned.includes(p))
   /*
@@ -465,13 +463,14 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   return (
     <div className="workbench stack">
       <TabHosts />
-      {[...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id)), ...order.filter(isPluginPanel)].map((id) => (
+      {panels.map((id) => (
         <StackPanel
           key={id}
           id={id}
           fill={id === fill}
           afterFill={pinned.includes(id) && fillAt >= 0 && line.indexOf(id) > fillAt}
-          controls={pinned.includes(id) ? controls(id) : null}
+          controls={!full && pinned.includes(id) ? controls(id) : null}
+          full={full === null ? null : full === id ? 'self' : 'behind'}
         >
           {id === 'agents' ? (
             <AgentSplit>{children}</AgentSplit>
@@ -484,7 +483,7 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
           )}
         </StackPanel>
       ))}
-      {!fill && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
+      {!fill && !full && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
       {/* dims what is behind a floating drop-down; a click on it closes it (useFloatTracking) */}
       <div className={`stack-backdrop${shown ? ' shown' : ''}`} />
     </div>
@@ -498,12 +497,13 @@ function StackPanel(props: {
   afterFill: boolean
   /** the pinned drop-down whose left edge is this one's right edge */
   controls: PanelId | null
+  full: 'self' | 'behind' | null
   children: React.ReactNode
 }): React.JSX.Element {
-  const { id, fill, afterFill, controls, children } = props
+  const { id, fill, afterFill, controls, full, children } = props
   const meta = metaOf(id)
   const pinned = useStore((s) => s.pinned.includes(id))
-  const shown = useStore((s) => floating(s) === id)
+  const shown = useStore((s) => floating(s) === id) || full === 'self'
   const order = useStore((s) => s.panelOrder.indexOf(id))
   const [width, startResize, resetWidth] = useWidth(meta.size)
   const ref = useRef<HTMLDivElement>(null)
@@ -546,14 +546,14 @@ function StackPanel(props: {
   return (
     <div
       ref={ref}
-      className={`stack-panel ${pinned ? 'pinned' : 'floating'}${shown ? ' shown' : ''}${pinned && fill ? ' fill' : ''}`}
+      className={`stack-panel ${pinned ? 'pinned' : 'floating'}${shown ? ' shown' : ''}${pinned && fill ? ' fill' : ''}${full === 'self' ? ' fullscreen' : full === 'behind' ? ' behind' : ''}`}
       data-panel={id}
-      style={pinned ? { order, flexBasis: width, minWidth: meta.size.min } : { width, left }}
+      style={full === 'self' ? undefined : pinned ? { order, flexBasis: width, minWidth: meta.size.min } : { width, left }}
       onMouseEnter={() => !pinned && shown && peekPanel(id)}
     >
       <div className="stack-body">{children}</div>
       {/* the stretched one has no width of its own to drag; one right of it is dragged from the panel before it */}
-      {!(pinned && (fill || afterFill)) && (
+      {!full && !(pinned && (fill || afterFill)) && (
         <div className="sidebar-resize" title="Drag to resize · double-click to reset" onPointerDown={(e) => startResize(e)} onDoubleClick={resetWidth} />
       )}
       {controls && (
@@ -570,12 +570,8 @@ function StackPanel(props: {
 
 function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.Element {
   switch (id) {
-    case 'project':
-      return <Sidebar />
     case 'web':
       return <WebPanel />
-    case 'db':
-      return <DbPanel />
     case 'plugins':
       return <PluginManager />
   }

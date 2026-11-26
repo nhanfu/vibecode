@@ -2,6 +2,9 @@ import { create } from 'zustand'
 import type { AgentId } from '../../shared/agents'
 import type { AgentInfo, AppSettings, ClaudeInfo, GitState, PluginInfo, ProjectGroup, WindowState } from '../../shared/types'
 import { userStore } from './localPref'
+import { gridLayout, layoutIds, layoutKey, reconcileLayout, type Layout } from './chatLayout'
+
+export type LayoutMode = 'project' | 'merged'
 
 export type ChatStatus = 'starting' | 'working' | 'idle' | 'exited'
 
@@ -77,6 +80,9 @@ interface State {
   floatOpen: PanelId | null
   /** the drop-down floating while the pointer is on its button or on it (wins over floatOpen) */
   peek: PanelId | null
+  fullscreen: PanelId | null
+  /** the file tab shown in a popup beside the Files explorer, not in the overlay (null: none) */
+  inlineTab: string | null
   bottomOpen: boolean
   quickOpen: boolean
   /** what the palette starts with: '' files, '>' commands (Ctrl+Shift+P) */
@@ -84,6 +90,9 @@ interface State {
 
   chats: Chat[]
   activeChatId: string | null
+  chatLayouts: Record<string, Layout>
+  layoutMode: LayoutMode
+  newChatModel: string | null
 
   shells: ShellTab[]
   activeShellId: string | null
@@ -94,8 +103,6 @@ interface State {
 
   /** each chat has its own browser tabs: chat id ('_' with no chat open) → its tabs */
   browsers: Record<string, ChatBrowser>
-  /** project folder (lower-cased, no trailing slash) → Claude runs it in bypass-permissions mode */
-  projectBypass: Record<string, boolean>
   /** the Browser mini-app: one set of tabs for all chats (true) or one set per chat (false) */
   browserShared: boolean
 
@@ -124,23 +131,23 @@ export interface ChatBrowser {
 }
 
 /**
- * The title-bar drop-downs: Project (chats), Source code, Web, Database and Agent (the chat with the
+ * The title-bar drop-downs: Project (chats), Source code, Web, Plugins and Agent (the chat with the
  * agent you are talking to). Each one floats while hovered or opened (a click, its key); a
  * double-click pins it into the horizontal stack, where it stays. Dragging the buttons reorders the
  * stack. Agent starts pinned, so the chat is on screen.
  */
-export type StaticPanelId = 'project' | 'web' | 'db' | 'plugins' | 'agents'
+export type StaticPanelId = 'web' | 'plugins' | 'agents'
 /** A web tab torn off the Web drop-down: its own button and panel, for as long as the tab lives. */
 export type PagePanelId = `page:${string}`
 /** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and its service runs. */
 export type PluginPanelId = `plugin:${string}`
 export type PanelId = StaticPanelId | PagePanelId | PluginPanelId
-export const PANEL_IDS: StaticPanelId[] = ['project', 'web', 'db', 'plugins', 'agents']
+export const PANEL_IDS: StaticPanelId[] = ['agents', 'web', 'plugins']
 export const isPage = (id: PanelId): id is PagePanelId => id.startsWith('page:')
 export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith('plugin:')
 export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`
 /** The plugins that get a title-bar panel of their own: on, able to run, with a page, and not taking over a built-in panel. */
-export const panelPlugins = (plugins: PluginInfo[]): PluginInfo[] => plugins.filter((p) => p.enabled && p.available && p.hasSidecar && p.panel && !p.panel.replaces)
+export const panelPlugins = (plugins: PluginInfo[]): PluginInfo[] => plugins.filter((p) => p.enabled && p.available && p.hasSidecar && p.panel)
 /** Its service runs (or is starting): the one state in which its title-bar panel stays. */
 export const serviceLive = (p: PluginInfo): boolean => p.status === 'running' || p.status === 'starting'
 export const pageTabId = (id: PagePanelId): string => id.slice(5)
@@ -165,7 +172,7 @@ const PINNED_KEY = 'vibe.stackPins'
 /** Browser key that holds the torn-off pages restored from a previous run (they belong to no chat). */
 export const PAGES_KEY = '_pages'
 export const SHARED_BROWSER_KEY = '_shared'
-const BROWSER_SHARED_STORE = 'vibe.browserShared'
+const BROWSER_SHARED_STORE = 'vibe.browserShared.v2'
 const PAGES_STORE = 'vibe.pages'
 interface SavedTab {
   id: string
@@ -223,14 +230,15 @@ function loadOrder(): PanelId[] {
   return [...saved, ...PANEL_IDS.filter((p) => !saved.includes(p))]
 }
 
-type PanelState = Pick<State, 'pinned' | 'floatOpen' | 'peek'>
+type PanelState = Pick<State, 'pinned' | 'floatOpen' | 'peek' | 'fullscreen'>
 /** The drop-down floating now, if any (hovered wins over opened). */
 export const floating = (s: PanelState): PanelId | null => {
   const f = s.peek ?? s.floatOpen
   return f && !s.pinned.includes(f) ? f : null
 }
 /** On screen: pinned in the stack, or floating. */
-export const panelShown = (s: PanelState, id: PanelId): boolean => s.pinned.includes(id) || floating(s) === id
+export const panelShown = (s: PanelState, id: PanelId): boolean =>
+  s.fullscreen ? s.fullscreen === id : s.pinned.includes(id) || floating(s) === id
 
 /** State that shows a drop-down: nothing to do when it is pinned, else it floats open. For set() patches. */
 export function openPatch(id: PanelId): Partial<State> {
@@ -312,6 +320,30 @@ export function togglePin(id: PanelId): void {
   useStore.setState({ pinned, floatOpen: null, peek: null })
 }
 
+export function toggleFullscreen(id: PanelId): void {
+  if (useStore.getState().fullscreen) return useStore.setState({ fullscreen: null })
+  useStore.setState({ fullscreen: id, floatOpen: null, peek: null })
+}
+
+export const ALL_LAYOUT_KEY = '*'
+
+export function shownLayout(s: {
+  chats: Chat[]
+  activeChatId: string | null
+  chatLayouts: Record<string, Layout>
+  layoutMode: LayoutMode
+}): Layout | string | null {
+  const active = s.chats.find((c) => c.id === s.activeChatId)
+  if (!active) return null
+  if (s.layoutMode === 'merged') {
+    const ids = s.chats.map((c) => c.id)
+    const stored = s.chatLayouts[ALL_LAYOUT_KEY]
+    return (stored ? reconcileLayout(stored, ids) : gridLayout(ids)) ?? null
+  }
+  const cur = s.chatLayouts[layoutKey(active.cwd)]
+  return cur && layoutIds(cur).includes(active.id) ? cur : active.id
+}
+
 /**
  * Keeps the plugin panels in step with the plugins: one appears (at the end) when its plugin can
  * run, and one goes when it is turned off, removed or cannot run. Kept in the saved order.
@@ -361,15 +393,20 @@ export const useStore = create<State>((set) => ({
 
   sidebarView: 'chats',
   panelOrder: loadOrder(),
-  pinned: loadIds(PINNED_KEY, ['agents']),
+  pinned: loadIds(PINNED_KEY, ['agents', 'web']),
   floatOpen: null,
   peek: null,
+  fullscreen: null,
+  inlineTab: null,
   bottomOpen: false,
   quickOpen: false,
   quickOpenQuery: '',
 
   chats: [],
   activeChatId: null,
+  chatLayouts: {},
+  layoutMode: 'project',
+  newChatModel: null,
 
   shells: [],
   activeShellId: null,
@@ -379,8 +416,7 @@ export const useStore = create<State>((set) => ({
   diffSideBySide: true,
 
   browsers: savedBrowsers,
-  projectBypass: {},
-  browserShared: userStore.getItem(BROWSER_SHARED_STORE) === 'true',
+  browserShared: userStore.getItem(BROWSER_SHARED_STORE) !== 'false',
 
   set: (p) => set(p),
   // a patch that changes nothing keeps the same array: the terminal title (Claude's spinner) and

@@ -25,11 +25,10 @@ import {
   Droplet,
   Globe,
   Code2,
-  Database,
   Moon,
   Sun
 } from 'lucide-react'
-import { basename, panelShown, showPanel, togglePanel, useStore, type SidebarView } from '../store'
+import { basename, panelShown, togglePanel, useStore, type SidebarView } from '../store'
 import { StackBar } from './Stack'
 import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
 import { agentDef } from '../../../shared/agents'
@@ -38,7 +37,7 @@ import { FileIcon, Logo } from './icons'
 import type { UsageLimit } from '../../../shared/types'
 import { revealIn } from '../scroll'
 import { COMMANDS, pluginCommands, type Command } from '../shortcuts'
-import { MODELS, Picker } from './Claude'
+import { openRail } from '../rail'
 
 /* ================================ Title bar ================================ */
 
@@ -198,45 +197,6 @@ function WindowControls(): React.JSX.Element | null {
   )
 }
 
-/* ================================ Activity bar ================================ */
-
-export function ActivityBar(): React.JSX.Element {
-  const view = useStore((s) => s.sidebarView)
-  const open = useStore((s) => panelShown(s, 'project'))
-  const attention = useStore((s) => s.chats.filter((c) => c.attention).length)
-  const working = useStore((s) => s.chats.some((c) => c.status === 'working'))
-  const changes = useStore((s) => s.git.files.length)
-
-  const item = (v: SidebarView, icon: React.ReactNode, title: string, badge?: React.ReactNode): React.JSX.Element => (
-    <button
-      className={`activity-item${view === v && open ? ' active' : ''}`}
-      title={title}
-      onClick={() => {
-        if (useStore.getState().sidebarView === v && open) return togglePanel('project')
-        useStore.setState({ sidebarView: v })
-        showPanel('project')
-      }}
-    >
-      {icon}
-      {badge}
-    </button>
-  )
-
-  return (
-    <div className="activity-bar">
-      <SlidePill />
-      {item(
-        'chats',
-        <MessagesSquare size={20} strokeWidth={1.7} />,
-        'Chats',
-        attention > 0 ? <span className="badge accent">{attention}</span> : working ? <span className="badge-pulse" /> : null
-      )}
-      {item('explorer', <Files size={20} strokeWidth={1.7} />, 'Explorer (Ctrl+Shift+E)')}
-      {item('changes', <GitCompare size={20} strokeWidth={1.7} />, 'Changes (Ctrl+Shift+G)', changes > 0 ? <span className="badge">{changes > 99 ? '99+' : changes}</span> : null)}
-    </div>
-  )
-}
-
 /* ================================ Status bar ================================ */
 
 /** "1:00 PM" today, "Fri 3:00 AM" later in the week. */
@@ -314,6 +274,7 @@ function RamMeter(): React.JSX.Element | null {
 }
 
 export function StatusBar(): React.JSX.Element {
+  const root = useStore((s) => s.root)
   const git = useStore((s) => s.git)
   const claude = useStore((s) => s.claude)
   const working = useStore((s) => s.chats.filter((c) => c.status === 'working').length)
@@ -323,25 +284,27 @@ export function StatusBar(): React.JSX.Element {
   return (
     <div className="statusbar">
       <div className="statusbar-left">
-        {git.isRepo && (
+        {root && (
           <button
             className="sb-item"
-            title="Show the changes in the agent sidebar"
-            onClick={() => {
-              showPanel('agents')
-              window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: 'git-changes' }))
-            }}
+            title={`${basename(root)} · ${root}\nClick to open another folder`}
+            aria-label={`Project folder ${basename(root)}, open another`}
+            onClick={() => void openFolder(null, { autoChat: false })}
           >
+            <FolderOpen size={12} />
+          </button>
+        )}
+        {git.isRepo && (
+          <span className="sb-item" title={git.root ?? undefined}>
             <GitBranch size={12} /> {git.branch}
             {git.files.length > 0 && <span className="sb-muted">· {git.files.length} changed</span>}
-          </button>
+          </span>
         )}
         {total > 0 && (
           <button
             className="sb-item"
             onClick={() => {
-              useStore.setState({ sidebarView: 'chats' })
-              showPanel('project')
+              openRail('project', 'open')
             }}
           >
             {working > 0 ? <Loader2 size={12} className="spin" /> : <MessagesSquare size={12} />}
@@ -353,28 +316,10 @@ export function StatusBar(): React.JSX.Element {
       <div className="statusbar-right">
         {tab && <span className="sb-item">{languageOf(tab.path)}</span>}
         {tab && <span className="sb-item">UTF-8</span>}
-        <NewChatModelPicker />
         {claude && <AgentPicker />}
       </div>
     </div>
   )
-}
-
-/** Status-bar picker for the model every new Claude chat starts with (shown while Claude is the AI in use). */
-function NewChatModelPicker(): React.JSX.Element | null {
-  const saved = useStore((s) => s.settings?.model)
-  useStore((s) => s.preferredAgent)
-  useStore((s) => s.agents)
-  if (defaultAgent() !== 'claude') return null
-  const value = saved ?? 'claude-opus-5-5'
-  const onPick = (model: string): void => {
-    useStore.setState((s) => (s.settings ? { settings: { ...s.settings, model } } : s))
-    window.api.app
-      .setSettings({ model })
-      .then((settings) => useStore.setState({ settings }))
-      .catch(() => {})
-  }
-  return <Picker title="Model for new chats" options={MODELS} value={value} onPick={onPick} />
 }
 
 /** Status-bar "AI in use" picker — a plain New chat starts with the agent chosen here. */

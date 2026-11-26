@@ -263,6 +263,64 @@ fn childEnv(a: std.mem.Allocator) ![]const []const u8 {
     return entries.items;
 }
 
+/// The child's environment plus the chat's id, so `pty_cwds` can find the shell that belongs to the chat.
+fn envWithMarker(a: std.mem.Allocator, id: []const u8) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    try out.appendSlice(a, try childEnv(a));
+    try out.append(a, try std.fmt.allocPrint(a, "{s}{s}", .{ marker, id }));
+    return out.items;
+}
+
+const marker = "TINJS_PTY_ID=";
+
+fn markerOf(environ: []const u8) ?[]const u8 {
+    var parts = std.mem.splitScalar(u8, environ, 0);
+    while (parts.next()) |part| {
+        if (std.mem.startsWith(u8, part, marker)) return part[marker.len..];
+    }
+    return null;
+}
+
+const Found = struct { id: []const u8, pid: u32, cwd: []const u8 };
+
+/// The folder each chat's shell is in now: `{id, cwd}` for every chat whose shell is running. The shell is the
+/// lowest-numbered process carrying the chat's marker (its own children inherit the marker later).
+pub fn cwds(_: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const Out = struct { id: []const u8, cwd: []const u8 };
+    var found: std.ArrayList(Found) = .empty;
+
+    var proc = std.Io.Dir.openDirAbsolute(cmd.io, "/proc", .{ .iterate = true }) catch return cmd.json(output, &[_]Out{});
+    defer proc.close(cmd.io);
+    var it = proc.iterate();
+    while (it.next(cmd.io) catch null) |entry| {
+        const pid = std.fmt.parseInt(u32, entry.name, 10) catch continue;
+        const env_path = std.fmt.allocPrint(a, "/proc/{d}/environ", .{pid}) catch continue;
+        const environ = std.Io.Dir.cwd().readFileAlloc(cmd.io, env_path, a, .limited(256 * 1024)) catch continue;
+        const id = markerOf(environ) orelse continue;
+        var known = false;
+        for (found.items) |*f| {
+            if (std.mem.eql(u8, f.id, id)) {
+                known = true;
+                if (pid < f.pid) f.pid = pid;
+                break;
+            }
+        }
+        if (!known) try found.append(a, .{ .id = id, .pid = pid, .cwd = "" });
+    }
+
+    var out: std.ArrayList(Out) = .empty;
+    for (found.items) |f| {
+        const link = std.fmt.allocPrint(a, "/proc/{d}/cwd", .{f.pid}) catch continue;
+        var buf: [4096]u8 = undefined;
+        const n = std.Io.Dir.readLinkAbsolute(cmd.io, link, &buf) catch continue;
+        try out.append(a, .{ .id = f.id, .cwd = try a.dupe(u8, buf[0..n]) });
+    }
+    return cmd.json(output, out.items);
+}
+
 const SpawnOptions = struct {
     id: []const u8,
     cwd: []const u8,
@@ -319,7 +377,7 @@ pub fn spawn(invocation: cmd.Invocation, output: []u8) ![]const u8 {
         .reuse = opts.reuse,
         .cwd = opts.cwd,
         .argv = argv.items,
-        .env = try childEnv(a),
+        .env = try envWithMarker(a, opts.id),
         .cols = opts.cols,
         .rows = opts.rows,
     }, .{});

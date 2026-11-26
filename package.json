@@ -5,25 +5,18 @@
   "description": "A desktop workspace for Claude Code: multi-chat, editor, diffs, terminal.",
   "private": true,
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "vite",
     "dev:web": "vite",
     "build:web": "vite build",
-    "build": "tauri build",
-    "typecheck": "tsc -p tsconfig.json",
-    "dist": "tauri build"
+    "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": {
-    "@tauri-apps/api": "2.12.5"
-
-    
-  },
+  "dependencies": {},
   "devDependencies": {
     "@babel/core": "8.1.2",
     "@fontsource/inter": "5.3.0",
     "@fontsource/jetbrains-mono": "5.3.0",
     "@monaco-editor/react": "4.7.0",
     "@rolldown/plugin-babel": "0.3.1",
-    "@tauri-apps/cli": "2.12.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",

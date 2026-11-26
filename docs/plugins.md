@@ -22,7 +22,7 @@ build script (`plugins/dbx/`).
   "description": "…",
   "license": "Apache-2.0",
   "homepage": "https://github.com/t8y2/dbx",
-  "panel":   { "title": "Database", "icon": "database", "replaces": "db" },
+  "panel":   { "title": "Database", "icon": "database" },
   "sidecar": {
     "command": "bin/dbx-web",
     "args": [],
@@ -48,14 +48,13 @@ The sidecar `command` must stay inside the plugin's folder.
   app (needed for an `mcp` server chats should have from their first message).
 - **`panel`** — shows the sidecar's page (`url`) in a frame. Without `replaces` the plugin gets its own
   title-bar button while it is on and can run: `title` is its label and `icon` one of `code`, `database`,
-  `globe`, `folder`, `bot`, `terminal`, `puzzle` (default). `replaces` names a built-in panel it takes
-  over instead (`"db"`: the Database tab); the built-in one stays one click away, and is what shows when the
-  plugin is not built. `"folder": true` opens the page on the project folder the sidebar shows (`?folder=`).
+  `globe`, `folder`, `bot`, `terminal`, `puzzle` (default). The panel shows while the plugin is on and its
+  page is up. `"folder": true` opens the page on the project folder the sidebar shows (`?folder=`).
 - **`sidecar.theme`** — `{ file, key, dark, light }`: before the sidecar starts, and when the app's theme
   changes, the setting `key` in `file` (relative to the plugin's data folder) is set to the `dark` or `light`
   value, keeping the rest of the file. The file must be plain JSON (no comments).
 - **`mcp`** — an MCP server (a path on the sidecar) added to every chat's `--mcp-config`, next to the
-  app's own `vibe-browser` and `vibe-mssql`.
+  app's own `vibe-browser`.
 
 A plugin whose sidecar program is missing is listed as not available and ignored.
 
@@ -113,11 +112,28 @@ the manager only offers an entry that fits this system.
   `plugin_set`, `plugin_logs`, `plugin_install`, `plugin_uninstall`, `plugin_registry`.
 - `src-tauri/src/mcp.rs`: adds each plugin's MCP server to a chat's config.
 - `src/renderer/src/components/PluginManager.tsx`: the Plugins panel.
-- `src/renderer/src/components/PluginPane.tsx`: the frame; `DbPanel` in `Editor.tsx` picks the enabled
-  plugin that replaces `db`.
+- `src/renderer/src/components/PluginPane.tsx`: the frame, shown in the plugin's own panel (`Stack.tsx`).
 
 ## Not yet
 
 A title-bar button of its own for a plugin that replaces nothing (it opens inside the manager for now),
 signed registries (only an optional SHA-256 today), automatic update checks, and plugins that run code in
 the renderer. The manifest is the contract those will extend; nothing in it needs to change for them.
+
+## Renderer modules (experimental)
+
+A plugin can bring a renderer module: `"renderer": "ui.js"` in its `plugin.json`, with the file at
+`plugins/<id>/ui.js`. The file is an ES module exporting `activate(api)`, which the app calls at startup:
+
+```js
+export function activate(api) {
+  api.addCommand({ id: 'hello-ui.hello', label: 'Hello from a renderer plugin', run: () => api.notify('Hi') })
+}
+```
+
+- `api.addCommand({ id, label, run })` adds a command to the palette (Ctrl+Shift+P). Ids must be unique.
+- `api.notify(text)` shows a message (for now an alert).
+
+Only modules in the checkout's `plugins/` folder are loaded, and they are bundled into the app at build
+time (`src/renderer/src/rendererPlugins.ts`). A change to `ui.js` reloads the window in dev; the app does
+not restart. Installed (user) plugins and a permission prompt for modules are not done yet.

@@ -10,7 +10,7 @@
  * cursor. Ctrl+B toggles the sidebar everywhere; `{ "key": "ctrl+b", "command": "passToTerminal",
  * "when": "chatFocus" }` in keybindings.json gives it back to Claude Code (run in background).
  */
-import { closeFloat, floating, PANEL_IDS, panelShown, showPanel, togglePanel, togglePin, useStore, type StaticPanelId } from './store'
+import { closeFloat, floating, focusPanel, isPage, PANEL_IDS, pageTab, panelShown, showPanel, toggleFullscreen, togglePanel, togglePin, useStore, type PanelId, type StaticPanelId, type WebTab } from './store'
 import {
   browserKey,
   closeBrowserTab,
@@ -21,6 +21,9 @@ import {
   cycleAgentGroup,
   cycleWebTab,
   defaultAgent,
+  duplicateChat,
+  newLayoutChat,
+  pageLabels,
   stepBrowserHistory,
   newChat,
   newShell,
@@ -34,9 +37,11 @@ import {
   toggleTheme
 } from './actions'
 import { focusTerm } from './terminals'
+import { explorerCtrlE } from './explorerFocus'
+import { openRail, type RailId, type RailMode } from './rail'
 import { saveFile } from './fileModelsLite'
 import type { PluginInfo } from '../../shared/types'
-import { buildBindings, keysFor, pressOf, resolve, type Binding, type Context, type KeyRule } from './keybindings'
+import { buildBindings, keysFor, parseJsonc, pressOf, resolve, type Binding, type Context, type KeyRule } from './keybindings'
 
 export interface Command {
   id: string
@@ -54,13 +59,13 @@ const activeFile = (): { path: string; dirty: boolean } | null => {
   return t?.kind === 'file' ? { path: t.path, dirty: t.dirty } : null
 }
 
-/** Files and Git changes are groups of the agent sidebar: show the chat's panel, open the group. */
-const revealSide = (group: 'files' | 'git-changes'): void => {
+/** The agent sidebar's groups: show the chat's panel, then open the group's flyout on the rail. */
+const railCmd = (id: RailId, mode: RailMode = 'toggle'): void => {
   showPanel('agents')
-  window.dispatchEvent(new CustomEvent('side-group-reveal', { detail: group }))
+  openRail(id, mode)
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<StaticPanelId, string> = { project: 'Project', web: 'Web', db: 'Database', plugins: 'Plugins', agents: 'Agent (chat)' }
+const PANEL_LABELS: Record<StaticPanelId, string> = { web: 'Web', plugins: 'Plugins', agents: 'Agent (chat)' }
 
 /** One command per plugin that has a settings file: opens it in the editor to edit and review. */
 export function pluginCommands(plugins: PluginInfo[]): Command[] {
@@ -80,11 +85,13 @@ export function pluginCommands(plugins: PluginInfo[]): Command[] {
 
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },
+  { id: 'keyboardShortcuts', label: 'Keyboard shortcuts: edit…', run: () => window.dispatchEvent(new Event('open-keybindings')) },
   { id: 'quickOpen', label: 'Go to file…', run: () => st().root && palette('') },
   { id: 'symbol', label: 'Go to symbol in file…', run: () => window.dispatchEvent(new Event('go-to-symbol')) },
   { id: 'line', label: 'Go to line…', run: () => window.dispatchEvent(new Event('go-to-line')) },
   { id: 'reloadApp', label: 'Reload app', run: () => window.location.reload() },
   { id: 'openFolder', label: 'Open folder…', run: () => void openFolder(null, { autoChat: false }) },
+  { id: 'openFolderTerminal', label: 'Open folder and start a chat in it', run: () => void openFolder(null, { autoChat: true }) },
 
   { id: 'newChat', label: 'New chat', run: () => void (defaultAgent() && newChat()) },
   { id: 'nextChat', label: 'Next chat', run: () => cycleChat(1) },
@@ -103,6 +110,15 @@ export const COMMANDS: Command[] = [
   { id: 'closeTab', label: 'Close the file or change on show', run: () => closeActiveTab() },
   { id: 'newWebTab', label: 'New web tab', run: () => newWebTab() },
   {
+    id: 'webDevtools',
+    label: 'Web tab: open developer tools',
+    run: () => {
+      const tab = activeWebTab()
+      const label = tab && pageLabels.get(tab.id)
+      if (label) window.api.browser.devtools(label)
+    }
+  },
+  {
     id: 'closeWebTab',
     label: 'Close web tab',
     run: () => {
@@ -118,32 +134,45 @@ export const COMMANDS: Command[] = [
   { id: 'prevAgent', label: 'Previous running agent', run: () => cycleAgent(-1) },
   { id: 'nextAgentGroup', label: 'Next agent group', run: () => cycleAgentGroup(1) },
   { id: 'prevAgentGroup', label: 'Previous agent group', run: () => cycleAgentGroup(-1) },
+  { id: 'duplicateAgent', label: 'Duplicate agent beside this one', run: () => duplicateChat('row') },
+  { id: 'duplicateAgentBelow', label: 'Duplicate agent below this one', run: () => duplicateChat('col') },
+  { id: 'duplicateAgentWholeRight', label: 'Duplicate agent as a new column at the right edge', run: () => duplicateChat('row', true) },
+  { id: 'duplicateAgentWholeBelow', label: 'Duplicate agent as a new row at the bottom', run: () => duplicateChat('col', true) },
+  { id: 'newLayoutChat', label: 'New chat in the layout', run: () => newLayoutChat() },
+  { id: 'newLayoutBelow', label: 'Split horizontal: new agent below the active one', run: () => newLayoutChat('col') },
+  { id: 'newLayoutColumn', label: 'New column: new agent at the right edge of the layout', run: () => newLayoutChat('row', true) },
+  { id: 'newLayoutRow', label: 'New row: new agent at the bottom of the layout', run: () => newLayoutChat('col', true) },
+  { id: 'fullscreen', label: 'Mini-app full screen', run: () => toggleFullscreen(currentMiniApp()) },
+  { id: 'miniAppPrev', label: 'Previous mini-app', run: () => cycleMiniApp(-1) },
+  { id: 'miniAppNext', label: 'Next mini-app', run: () => cycleMiniApp(1) },
   { id: 'webBack', label: 'Back in the web tab', run: () => stepBrowserHistory(-1) },
   { id: 'webForward', label: 'Forward in the web tab', run: () => stepBrowserHistory(1) },
 
-  { id: 'explorer', label: 'Show Explorer (files)', run: () => revealSide('files') },
-  { id: 'changes', label: 'Show Source Control (changes)', run: () => revealSide('git-changes') },
+  {
+    id: 'explorerFocus',
+    label: 'Focus Files in the Project list (again: open the folder under the cursor)',
+    run: () => explorerCtrlE(() => railCmd('project', 'open'))
+  },
+  { id: 'railProject', label: 'Agent sidebar: show / hide Project', run: () => railCmd('project') },
+  { id: 'railAgents', label: 'Agent sidebar: show / hide Agents', run: () => railCmd('agents') },
+  { id: 'railPlans', label: 'Agent sidebar: show / hide Plans & tasks', run: () => railCmd('plans') },
   {
     id: 'chats',
     label: 'Show chats (Project)',
-    run: () => {
-      useStore.setState({ sidebarView: 'chats' })
-      showPanel('project')
-    }
+    run: () => railCmd('project', 'open')
   },
   { id: 'terminal', label: 'Toggle terminal', run: () => toggleBottom() },
   { id: 'panel', label: 'Toggle bottom panel', run: () => toggleBottom() },
   { id: 'newTerminal', label: 'New terminal', run: () => newShell() },
 
   // the title-bar drop-downs: float open / close; pinned ones get the cursor instead (store.ts togglePanel)
-  { id: 'sidebar', label: 'Show / hide Project (chats and folders)', run: () => togglePanel('project') },
+  { id: 'sidebar', label: 'Show / hide Project (chats and folders)', run: () => railCmd('project') },
   {
     id: 'viewWeb',
     label: 'Show / hide Web',
     // openBrowser also gives the chat its first page
     run: () => (panelShown(st(), 'web') ? togglePanel('web') : openBrowser())
   },
-  { id: 'viewDb', label: 'Show / hide Database', run: () => togglePanel('db') },
   { id: 'viewPlugins', label: 'Show / hide Plugins', run: () => togglePanel('plugins') },
   // the chat: showing it puts the cursor in it, so you can type straight away
   { id: 'viewAgents', label: 'Show / hide Agent (the chat)', run: () => toggleChatPanel() },
@@ -201,27 +230,44 @@ function switchChat(n: number): void {
  */
 export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+shift+p', command: 'palette' },
+  { key: 'ctrl+k ctrl+s', command: 'keyboardShortcuts' },
   { key: 'f1', command: 'palette' },
   { key: 'ctrl+p', command: 'quickOpen', when: 'hasFolder' },
   { key: 'ctrl+shift+o', command: 'symbol' },
+  { key: 'ctrl+shift+o', command: 'openFolderTerminal', when: 'agentsFocus || chatFocus' },
   // Monaco opens its own "go to line" when it has the cursor
   { key: 'ctrl+g', command: 'line', when: '!terminalFocus && !editorFocus && !textInputFocus' },
   { key: 'ctrl+o', command: 'openFolder', when: '!terminalFocus && !textInputFocus' },
 
   { key: 'ctrl+shift+n', command: 'newChat' },
-  { key: 'ctrl+alt+right', command: 'nextChat' },
-  { key: 'ctrl+alt+left', command: 'prevChat' },
-  { key: 'alt+shift+down', command: 'nextAgent' },
-  { key: 'alt+shift+up', command: 'prevAgent' },
-  { key: 'alt+down', command: 'nextAgentGroup' },
-  { key: 'alt+up', command: 'prevAgentGroup' },
+  { key: 'ctrl+shift+right', command: 'nextChat' },
+  { key: 'ctrl+shift+left', command: 'prevChat' },
+  { key: 'ctrl+shift+down', command: 'nextAgent' },
+  { key: 'ctrl+shift+up', command: 'prevAgent' },
+  { key: 'ctrl+shift+pagedown', command: 'nextAgentGroup' },
+  { key: 'ctrl+shift+pageup', command: 'prevAgentGroup' },
+  { key: 'ctrl+shift+d', command: 'duplicateAgent' },
+  { key: 'alt+shift+d', command: 'duplicateAgent' },
+  { key: 'alt+shift+v', command: 'duplicateAgentBelow' },
+  { key: 'ctrl+shift+j', command: 'duplicateAgentBelow' },
+  { key: 'ctrl+shift+j', command: 'webDevtools', when: 'webFocus' },
+  { key: 'ctrl+alt+shift+d', command: 'duplicateAgentWholeRight' },
+  { key: 'ctrl+alt+shift+v', command: 'duplicateAgentWholeBelow' },
+  { key: 'ctrl+shift+k', command: 'newLayoutChat' },
+  { key: 'ctrl+shift+i', command: 'newLayoutBelow' },
+  { key: 'ctrl+alt+shift+k', command: 'newLayoutColumn' },
+  { key: 'ctrl+alt+shift+i', command: 'newLayoutRow' },
+  { key: 'alt+enter', command: 'fullscreen' },
+  { key: 'alt+shift+left', command: 'miniAppPrev' },
+  { key: 'alt+shift+right', command: 'miniAppNext' },
   { key: 'ctrl+shift+l', command: 'focusChat' },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `alt+${n}`, command: `chat${n}` })),
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `ctrl+shift+${n}`, command: `chat${n}` })),
 
   // nothing unsaved: the key is left alone
   { key: 'ctrl+s', command: 'save', when: '!terminalFocus && fileDirty' },
   { key: 'ctrl+w', command: 'closeTab', when: '!terminalFocus && !textInputFocus && reviewOpen' },
   { key: 'ctrl+f4', command: 'closeTab', when: '!terminalFocus && reviewOpen' },
+  { key: 'ctrl+w', command: 'closeChat', when: 'chatFocus || agentsFocus' },
   // the keyboard in a Web tab: these keys belong to the tabs there (the later rule wins)
   { key: 'ctrl+t', command: 'newWebTab', when: '!terminalFocus' },
   { key: 'ctrl+w', command: 'closeWebTab', when: 'webFocus' },
@@ -231,8 +277,13 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'alt+left', command: 'webBack', when: '!terminalFocus' },
   { key: 'alt+right', command: 'webForward', when: '!terminalFocus' },
 
-  { key: 'ctrl+shift+e', command: 'explorer' },
-  { key: 'ctrl+shift+g', command: 'changes' },
+  // no terminalFocus guard: in a chat it takes Claude Code's Ctrl+E (end of line); keybindings.json can give it back
+  { key: 'ctrl+shift+f', command: 'explorerFocus' },
+  // the agent sidebar's icons: each one toggles its flyout
+  { key: 'ctrl+shift+b', command: 'railProject' },
+  { key: 'ctrl+shift+m', command: 'railAgents' },
+  { key: 'ctrl+shift+y', command: 'railPlans' },
+  { key: 'ctrl+shift+h', command: 'railGit' },
   // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
   { key: 'ctrl+shift+c', command: 'chats', when: '!terminalFocus' },
   { key: 'ctrl+b', command: 'sidebar' },
@@ -242,13 +293,61 @@ export const DEFAULT_KEYS: KeyRule[] = [
 
   // the title-bar drop-downs (Ctrl+B: Project, above), from a terminal too
   { key: 'ctrl+shift+w', command: 'viewWeb' },
-  { key: 'ctrl+shift+d', command: 'viewDb' },
   { key: 'ctrl+shift+a', command: 'viewAgents' },
   { key: 'ctrl+shift+x', command: 'viewPlugins' },
   { key: 'ctrl+2', command: 'viewWeb' },
-  { key: 'ctrl+3', command: 'viewDb' },
   { key: 'ctrl+4', command: 'viewAgents' }
 ]
+
+const activeWebTab = (): WebTab | undefined => {
+  const s = st()
+  const b = s.browsers[browserKey(s.activeChatId)]
+  return b?.tabs.find((t) => t.id === b.active)
+}
+
+export function currentMiniApp(): PanelId {
+  const s = st()
+  if (s.fullscreen) return s.fullscreen
+  const floated = floating(s)
+  if (floated) return floated
+  if (webHasFocus) {
+    const tab = activeWebTab()
+    return tab?.detached ? `page:${tab.id}` : 'web'
+  }
+  const here = (document.activeElement as HTMLElement | null)?.closest?.('.stack-panel')?.getAttribute('data-panel')
+  if (here) return here as PanelId
+  return s.pinned.includes('agents') ? 'agents' : ([...s.panelOrder].reverse().find((p) => s.pinned.includes(p)) ?? 'agents')
+}
+
+function focusMiniApp(id: PanelId): void {
+  window.api.browser.focusMain()
+  const s = st()
+  if (id === 'web' || isPage(id)) {
+    const tab = isPage(id) ? pageTab(s, id) : activeWebTab()
+    const label = tab ? pageLabels.get(tab.id) : undefined
+    if (label) window.api.browser.focus(label)
+    return
+  }
+  if (id === 'agents' && s.activeChatId) return focusTerm(s.activeChatId)
+  focusPanel(id)
+}
+
+export function cycleMiniApp(step: 1 | -1): void {
+  const s = st()
+  const list = s.panelOrder.filter((id) => !isPage(id) || !!pageTab(s, id))
+  if (!list.length) return
+  const i = list.indexOf(currentMiniApp())
+  const next = list[(i < 0 ? 0 : i + step + list.length) % list.length]
+  webHasFocus = false
+  if (s.fullscreen) useStore.setState({ fullscreen: next, floatOpen: null, peek: null })
+  else if (!s.pinned.includes(next)) showPanel(next)
+  focusMiniApp(next)
+}
+
+export function runNativeShortcut(id: string): void {
+  webHasFocus = true
+  byId.get(id)?.run()
+}
 
 /** The cursor is in a text field of the page (not Monaco or a terminal, which handle their own keys). */
 const inTextField = (el: HTMLElement | null): boolean =>
@@ -270,6 +369,7 @@ function context(): Context {
     textInputFocus: field,
     inputFocus: editor || field,
     hasFolder: !!s.root,
+    agentsFocus: agentsPointer || !!el?.closest?.('.agents-panel, .agent-rail, .agent-flyout, .explorer-nav'),
     fileDirty: !!activeFile()?.dirty,
     reviewOpen: s.tabs.length > 0,
     floating: floating(s) ?? '',
@@ -285,17 +385,41 @@ const CONTEXT_HELP = [
   'textInputFocus     … in a text box (address bar, search, filter…)',
   'inputFocus         editorFocus || textInputFocus',
   'hasFolder          a project folder is open',
+  'agentsFocus        the cursor is in the agent sidebar',
   'fileDirty          the open file has unsaved changes',
   'reviewOpen         a file or a change is open in the popup',
-  "floating           the drop-down floating now: 'project' | 'web' | 'db' | 'plugins' | 'agents', '' if none",
-  'projectShown webShown dbShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
-  'projectPinned webPinned dbPinned pluginsPinned agentsPinned   … pinned in the stack'
+  "floating           the drop-down floating now: 'web' | 'plugins' | 'agents', '' if none",
+  'webShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
+  'webPinned pluginsPinned agentsPinned   … pinned in the stack'
 ]
 
 let bindings: Binding[] = []
+let userText: string | null = null
+
+export function allBindings(): Binding[] {
+  return bindings
+}
+
+/** The rules of keybindings.json as the file has them now (none when the file is missing or broken). */
+export function userRules(): KeyRule[] {
+  try {
+    const v = parseJsonc(userText ?? '[]')
+    return Array.isArray(v) ? (v as KeyRule[]) : []
+  } catch {
+    return []
+  }
+}
+
+/** Writes the whole keybindings.json and applies it at once. */
+export async function writeKeybindings(rules: KeyRule[]): Promise<void> {
+  const text = '// Keyboard shortcuts, edited in the app. Later rules win over the defaults.\n' + JSON.stringify(rules, null, 2) + '\n'
+  await window.api.fs.writeFile(await window.api.keybindings.path(), text)
+  apply(text)
+}
 let lastProblems = ''
 
 function apply(text: string | null): void {
+  userText = text
   const built = buildBindings(DEFAULT_KEYS, text, (id) => byId.has(id))
   bindings = built.bindings
   for (const c of COMMANDS) c.keys = keysFor(bindings, c.id)
@@ -366,8 +490,11 @@ let pending: string | null = null
 
 /** The page (a native view, outside the document) has the keyboard: set when its keys arrive, cleared by a click elsewhere. */
 let webHasFocus = false
+let agentsPointer = false
 document.addEventListener('pointerdown', (e) => {
-  webHasFocus = !!(e.target as HTMLElement | null)?.closest?.('.browser-tab')
+  const target = e.target as HTMLElement | null
+  webHasFocus = !!target?.closest?.('.browser-tab')
+  agentsPointer = !!target?.closest?.('.agents-panel, .agent-rail, .agent-flyout, .explorer-nav')
 }, true)
 
 /** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed in a Web page: run them as if they came from the window. */
@@ -376,8 +503,11 @@ export function webKeyFromNative(key: string, shift: boolean): void {
   window.dispatchEvent(new KeyboardEvent('keydown', { key: shift ? key.toUpperCase() : key, ctrlKey: true, shiftKey: shift }))
 }
 
+/** Set while the keyboard shortcuts editor waits for a key to record: no command runs then. */
+export const shortcutRecording = { on: false }
+
 export function onGlobalKey(e: KeyboardEvent): void {
-  if (e.defaultPrevented) return
+  if (e.defaultPrevented || shortcutRecording.on) return
   const inTerminal = !!(document.activeElement as HTMLElement | null)?.closest?.('.xterm')
   if (isReload(e) && !inTerminal) {
     // Ctrl+Shift+R still reloads while developing

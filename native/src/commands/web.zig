@@ -11,12 +11,14 @@ const zn = @import("zero-native");
 const cmd = @import("root.zig");
 const adblock = @import("../adblock/adblock.zig");
 
+extern "c" fn zero_native_gtk_web_devtools(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern "c" fn zero_native_gtk_web_history(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, step: c_int) c_int;
 extern "c" fn zero_native_gtk_web_reload(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, hard: c_int) c_int;
 extern "c" fn zero_native_gtk_web_stop(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern "c" fn zero_native_gtk_web_visible(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, visible: c_int) c_int;
 extern "c" fn zero_native_gtk_web_mute(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, muted: c_int) c_int;
 extern "c" fn zero_native_gtk_web_focus(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
+extern "c" fn zero_native_gtk_focus_main(host: *anyopaque, window_id: u64) c_int;
 extern "c" fn zero_native_gtk_web_set_dark_library(host: *anyopaque, source: [*]const u8, len: usize) c_int;
 extern "c" fn zero_native_gtk_web_set_dark(host: *anyopaque, window_id: u64, dark: c_int) c_int;
 extern "c" fn zero_native_gtk_web_user_agent(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, agent: [*]const u8, agent_len: usize) c_int;
@@ -147,6 +149,11 @@ pub fn focus(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     return cmd.json(output, null);
 }
 
+pub fn focusMain(_: cmd.Invocation, output: []u8) ![]const u8 {
+    _ = zero_native_gtk_focus_main(try host(), main_window);
+    return cmd.json(output, null);
+}
+
 pub fn navigate(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
@@ -154,6 +161,14 @@ pub fn navigate(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     if (!tabKnown(args.label)) return cmd.fail(output, "the tab is closed");
     if (!allowedUrl(args.url)) return cmd.fail(output, "this address cannot be opened");
     try (try services()).navigateWebView(main_window, args.label, args.url);
+    return cmd.json(output, null);
+}
+
+pub fn devtools(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const args = try cmd.args(struct { label: []const u8 }, arena.allocator(), invocation);
+    _ = zero_native_gtk_web_devtools(try host(), main_window, args.label.ptr, args.label.len);
     return cmd.json(output, null);
 }
 

@@ -5,7 +5,7 @@
  * event whose payload is the argument list. Terminal output is the hot path, so it streams
  * through one `Channel` per terminal instead of the global event bus.
  */
-import { invoke, listen, openFileDialog, bytesToBase64 } from './nativeBridge'
+import { invoke, listen, openFileDialog, bytesToBase64, subscribe } from './nativeBridge'
 import type {
   AgentInfo,
   AppSettings,
@@ -13,12 +13,6 @@ import type {
   SubAgent,
   SessionFile,
   ClaudeInfo,
-  DbColumn,
-  DbConnection,
-  DbConnectionInput,
-  DbFound,
-  DbObject,
-  DbQueryResult,
   DirEntry,
   GitCommit,
   GitBranch,
@@ -88,6 +82,8 @@ export const api = {
     pageReset: (): Promise<void> => invoke('pty_page_reset'),
     /** chats' terminals still running from before the app was closed */
     list: (): Promise<string[]> => invoke<string[]>('pty_list'),
+    /** the folder each running chat's shell is in now (chats started after this build) */
+    cwds: (): Promise<{ id: string; cwd: string }[]> => invoke('pty_cwds'),
     /** on screen → output every 5 ms; off screen → batched every 50 ms (far fewer wake-ups) */
     visible: (id: string, visible: boolean): void => void invoke('pty_visible', { id, visible }),
     onData: (cb: (id: string, data: string) => void): Off => sub(ptyData, cb),
@@ -116,8 +112,6 @@ export const api = {
     agents: (): Promise<AgentInfo[]> => invoke('agents_detect'),
     usage: (): Promise<UsageLimit[] | null> => invoke('claude_usage'),
     memory: (): Promise<{ usedBytes: number; totalBytes: number } | null> => invoke('sys_memory'),
-    getProjectBypass: (folder: string): Promise<boolean> => invoke('claude_get_project_bypass', { folder }),
-    setProjectBypass: (folder: string, on: boolean): Promise<boolean> => invoke('claude_set_project_bypass', { folder, on })
   },
   browser: {
     /** create (hidden) the native page for one Web tab */
@@ -129,6 +123,8 @@ export const api = {
     setActive: (chatId: string, label: string): void => void invoke('web_set_active', { chatId, label }),
     navigate: (label: string, url: string): Promise<void> => invoke('web_navigate', { label, url }),
     back: (label: string): void => void invoke('web_history', { label, step: -1 }),
+    /** the page's developer tools (Inspect), in their own window */
+    devtools: (label: string): void => void invoke('web_devtools', { label }),
     forward: (label: string): void => void invoke('web_history', { label, step: 1 }),
     reload: (label: string, hard = false): void => void invoke('web_reload', { label, hard }),
     stop: (label: string): void => void invoke('web_stop', { label }),
@@ -140,6 +136,13 @@ export const api = {
     close: (label: string): void => void invoke('web_close', { label }),
     /** the keyboard goes into the page */
     focus: (label: string): void => void invoke('web_focus', { label }),
+    focusMain: (): void => void invoke('web_focus_main'),
+    onShortcut: (cb: (id: string) => void): Off =>
+      subscribe('shortcut', (detail) => {
+        const event = Array.isArray(detail) ? detail[0] : detail
+        const id = (event as { id?: unknown } | null)?.id
+        if (typeof id === 'string') cb(id)
+      }),
     onNav: (cb: (label: string, nav: WebNav) => void): Off => on('web:nav', cb),
     /** the page's history, sent when a load finishes (base64; see web_open's session) */
     onSession: (cb: (label: string, session: string) => void): Off => on('web:session', cb),
@@ -166,24 +169,6 @@ export const api = {
     onChanged: (cb: (ids: string[]) => void): Off => on('sessions:changed', cb),
     /** a chat's Claude Code reported the session it writes to (on each prompt: it changes on /clear, forks…) */
     onChatSession: (cb: (chatId: string, sessionId: string) => void): Off => on('chat:session', cb)
-  },
-  db: {
-    list: (): Promise<DbConnection[]> => invoke('db_list'),
-    get: (id: string): Promise<(DbConnection & { conn: string }) | null> => invoke('db_get', { id }),
-    save: (c: DbConnectionInput): Promise<DbConnection[]> => invoke('db_save', { c }),
-    saveMany: (list: DbConnectionInput[]): Promise<DbConnection[]> => invoke('db_save_many', { list }),
-    remove: (id: string): Promise<DbConnection[]> => invoke('db_remove', { id }),
-    test: (conn: string): Promise<{ ok: boolean; error?: string; version?: string }> => invoke('db_test', { conn }),
-    buildConn: (f: { server: string; database?: string; windowsAuth: boolean; user?: string; password?: string; trustCert?: boolean; encrypt?: boolean }): Promise<string> =>
-      invoke('db_build_conn', { f }),
-    parseConn: (conn: string): Promise<Record<string, string>> => invoke('db_parse_conn', { conn }),
-    query: (id: string, sql: string, database?: string, maxRows?: number): Promise<DbQueryResult> => invoke('db_query', { id, sql, database, maxRows }),
-    cancel: (): void => void invoke('db_cancel'),
-    databases: (id: string): Promise<string[]> => invoke('db_databases', { id }),
-    objects: (id: string, database: string): Promise<DbObject[]> => invoke('db_objects', { id, database }),
-    columns: (id: string, database: string, schema: string, table: string): Promise<DbColumn[]> => invoke('db_columns', { id, database, schema, table }),
-    scanProject: (folder: string): Promise<DbFound[]> => invoke('db_scan_project', { folder }),
-    scanSsms: (): Promise<DbFound[]> => invoke('db_scan_ssms')
   },
   win: {
     state: (): Promise<WindowState> => invoke('win_state'),
@@ -219,7 +204,16 @@ export const api = {
     log: (root: string): Promise<GitCommit[]> => invoke('git_log', { root }),
     commitFiles: (root: string, hash: string): Promise<GitCommitFile[]> => invoke('git_commit_files', { root, hash }),
     branches: (root: string): Promise<GitBranch[]> => invoke('git_branches', { root }),
-    checkout: (root: string, name: string, remote: boolean): Promise<void> => invoke('git_checkout', { root, name, remote })
+    checkout: (root: string, name: string, remote: boolean): Promise<void> => invoke('git_checkout', { root, name, remote }),
+    /** commit the folder's changes (every change first when stageAll); the message must not be empty */
+    commit: (root: string, message: string, stageAll: boolean): Promise<void> => invoke('git_commit', { root, message, stageAll }),
+    push: (root: string): Promise<void> => invoke('git_push', { root }),
+    /** a tracked file's changes against HEAD, as a unified diff */
+    diff: (root: string, rel: string): Promise<string> => invoke('git_diff', { root, rel }),
+    /** throws away one file's changes (untracked: removes it) */
+    revertFile: (root: string, rel: string, untracked: boolean): Promise<void> => invoke('git_revert_file', { root, rel, untracked }),
+    /** throws away every change of the folder */
+    revertAll: (root: string): Promise<void> => invoke('git_revert_all', { root })
   },
   keybindings: {
     /** `<userData>/keybindings.json` (it may not exist yet) */
