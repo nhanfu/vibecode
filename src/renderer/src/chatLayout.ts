@@ -29,9 +29,36 @@ export function swapLeaves(n: Layout, a: string, b: string): Layout {
   return mapLeaves(n, (id) => (id === a ? b : id === b ? a : id)) ?? n
 }
 
+/** An empty cell of a grid: a leaf that is not a chat. */
+export const isSlot = (id: string): boolean => id.startsWith('slot:')
+let slotSeq = 0
+export function newSlot(): string {
+  return `slot:${Date.now().toString(36)}${(slotSeq++).toString(36)}`
+}
+export function firstSlot(n: Layout | null): string | null {
+  return layoutIds(n).find(isSlot) ?? null
+}
+
+/** A rows × cols grid: the first cells hold `ids` in order, the rest are empty slots. */
+export function templateLayout(rows: number, cols: number, ids: string[]): Layout {
+  const cells: Layout[] = []
+  for (let i = 0; i < rows * cols; i++) cells.push(ids[i] ?? newSlot())
+  const lines: Layout[] = []
+  for (let r = 0; r < rows; r++) {
+    const line = cells.slice(r * cols, (r + 1) * cols)
+    lines.push(line.length === 1 ? line[0] : { dir: 'row', kids: line })
+  }
+  return lines.length === 1 ? lines[0] : { dir: 'col', kids: lines }
+}
+
+/** Keeps the layout in step with the chats: gone chats leave, new ones take the first empty slot (or join at the end). */
 export function reconcileLayout(cur: Layout | null, ids: string[]): Layout | null {
-  let out = cur === null ? null : mapLeaves<string, string>(cur, (id) => (ids.includes(id) ? id : null))
-  for (const id of ids) if (!layoutIds(out).includes(id)) out = joinLayout(out, null, id, 'row')
+  let out = cur === null ? null : mapLeaves<string, string>(cur, (id) => (ids.includes(id) || isSlot(id) ? id : null))
+  for (const id of ids) {
+    if (layoutIds(out).includes(id)) continue
+    const slot = firstSlot(out)
+    out = slot && out ? replaceLayout(out, slot, id) : joinLayout(out, null, id, 'row')
+  }
   return out
 }
 

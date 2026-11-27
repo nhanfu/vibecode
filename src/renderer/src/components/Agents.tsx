@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Bot, Check, Copy, FolderOpen, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
+import { Bot, Check, Copy, FolderOpen, LayoutGrid, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
 import { basename, shownLayout, useStore, type Chat } from '../store'
-import { chatDragSource, chatDropTarget, defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setLayoutMode } from '../actions'
+import { chatDragSource, chatDropTarget, defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setGridLayout, setLayoutMode, takeGridPickRequest } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
-import { gridLayout, joinLayout, layoutIds, layoutKey, type Layout } from '../chatLayout'
+import { gridLayout, isSlot, joinLayout, layoutIds, layoutKey, type Layout } from '../chatLayout'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
 import { ChatsView } from './Sidebar'
@@ -266,8 +266,105 @@ export function AgentsGroup({ always }: { always?: boolean }): React.JSX.Element
   )
 }
 
-function LayoutTree({ node, chats, activeId }: { node: Layout | string; chats: Chat[]; activeId: string | null }): React.JSX.Element | null {
+const GRID_MAX = 4
+
+/**
+ * A button that opens a small grid: hover or use the arrow keys to size it (columns × rows), then click
+ * or press Enter to give the chats that many cells. Esc closes it.
+ */
+function GridPick({ title, onPick, listen }: { title: string; onPick: (rows: number, cols: number) => void; listen?: boolean }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [size, setSize] = useState({ rows: 2, cols: 2 })
+  const ref = useRef<HTMLDivElement>(null)
+  // keyboard: arrows resize, Enter applies, Esc closes (captured, so the rest of the app does not also get the keys)
+  useEffect(() => {
+    if (!open) return
+    const clamp = (n: number): number => Math.min(GRID_MAX, Math.max(1, n))
+    const key = (e: KeyboardEvent): void => {
+      const step: Record<string, [number, number]> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
+      const d = step[e.key]
+      if (d) {
+        e.preventDefault()
+        e.stopPropagation()
+        setSize((s) => ({ rows: clamp(s.rows + d[0]), cols: clamp(s.cols + d[1]) }))
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        e.stopPropagation()
+        onPick(size.rows, size.cols)
+        setOpen(false)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setOpen(false)
+      }
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, size])
+  // the shortcut (Alt+Shift+L) opens the one picker that is listening; it may mount after the request
+  useEffect(() => {
+    if (!listen) return
+    if (takeGridPickRequest()) setOpen(true)
+    const onRequest = (): void => {
+      if (takeGridPickRequest()) setOpen(true)
+    }
+    window.addEventListener('grid-pick-open', onRequest)
+    return () => window.removeEventListener('grid-pick-open', onRequest)
+  }, [listen])
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent): void => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', close, true)
+    return () => window.removeEventListener('mousedown', close, true)
+  }, [open])
+  return (
+    <div className="grid-pick" ref={ref}>
+      <button className="icon-btn tiny" title={title} onClick={() => setOpen((o) => !o)}>
+        <LayoutGrid size={13} />
+      </button>
+      {open && (
+        <div className="grid-pick-pop">
+          <div className="grid-pick-cells">
+            {Array.from({ length: GRID_MAX * GRID_MAX }, (_, i) => {
+              const rows = Math.floor(i / GRID_MAX) + 1
+              const cols = (i % GRID_MAX) + 1
+              const on = rows <= size.rows && cols <= size.cols
+              return (
+                <button
+                  key={i}
+                  className={`grid-pick-cell${on ? ' on' : ''}`}
+                  title={`${cols} × ${rows}`}
+                  onMouseEnter={() => setSize({ rows, cols })}
+                  onClick={() => {
+                    setSize({ rows, cols })
+                    onPick(rows, cols)
+                    setOpen(false)
+                  }}
+                />
+              )
+            })}
+          </div>
+          <div className="grid-pick-label">
+            {size.cols} columns × {size.rows} rows · ←↑↓→ size, Enter apply
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LayoutTree({ node, chats, activeId }:{ node: Layout | string; chats: Chat[]; activeId: string | null }): React.JSX.Element | null {
   if (typeof node === 'string') {
+    if (isSlot(node)) {
+      return (
+        <div className="layout-map-cell empty" title="Empty cell: drag an agent here" {...chatDropTarget(node)}>
+          <span className="layout-map-title">empty</span>
+        </div>
+      )
+    }
     const c = chats.find((x) => x.id === node)
     if (!c) return null
     return (
@@ -320,9 +417,12 @@ function LayoutMap(): React.JSX.Element {
             All
           </button>
         </div>
-        <button className="icon-btn tiny" title="New chat in the layout (Alt+Shift+C)" onClick={() => newLayoutChat()}>
-          <Plus size={14} />
-        </button>
+        <div className="layout-bar-tools">
+          {mode === 'merged' && <GridPick title="Grid for all chats (Alt+Shift+L)" listen onPick={(rows, cols) => setGridLayout(rows, cols, null)} />}
+          <button className="icon-btn tiny" title="New chat in the layout (Alt+Shift+C)" onClick={() => newLayoutChat()}>
+            <Plus size={14} />
+          </button>
+        </div>
       </div>
       {mode === 'merged' ? (
         merged !== null && (
@@ -331,10 +431,11 @@ function LayoutMap(): React.JSX.Element {
           </div>
         )
       ) : (
-        projects.map((p) => (
+        projects.map((p, i) => (
           <div key={p.key} className="layout-proj">
             <div className="layout-proj-name" title={p.cwd}>
-              {p.name}
+              <span className="layout-proj-title">{p.name}</span>
+              <GridPick title={`Grid for ${p.name}${i === 0 ? ' (Alt+Shift+L)' : ''}`} listen={i === 0} onPick={(rows, cols) => setGridLayout(rows, cols, p.cwd)} />
             </div>
             <div className="layout-map">
               <LayoutTree node={p.layout} chats={chats} activeId={activeId} />

@@ -1541,6 +1541,91 @@ kbd {
 .chat-side .icon-btn {
   position: relative;
 }
+/* grid picker (Agents section) and the empty cells of a grid */
+.grid-pick {
+  position: relative;
+  display: inline-flex;
+}
+.grid-pick-pop {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  z-index: 1000;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+.grid-pick-cells {
+  display: grid;
+  grid-template-columns: repeat(4, 16px);
+  gap: 4px;
+}
+.grid-pick-cell {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid var(--w-14);
+  background: var(--w-05);
+  cursor: pointer;
+}
+.grid-pick-cell.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.grid-pick-label {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  white-space: nowrap;
+}
+.layout-proj-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.layout-proj-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layout-map-cell.empty,
+.claude-col.empty {
+  border: 1px dashed var(--w-22);
+  background: transparent;
+}
+.layout-map-cell.empty .layout-map-title {
+  color: var(--text-faint);
+}
+.claude-empty-hint {
+  margin: auto;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+/* keybindings editor: the key filter chip */
+.kb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+/* gitignored files and folders in the explorer tree stay visible, dimmed */
+.tree-row.ignored {
+  opacity: 0.4;
+}
 .chat-side-branch {
   margin-left: 8px;
   min-width: 0;
@@ -5018,6 +5103,11 @@ button.plan-chevron:hover {
   justify-content: space-between;
   gap: 6px;
   margin: 2px 8px 6px;
+}
+.layout-bar-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 .layout-seg {
   display: flex;

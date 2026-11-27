@@ -30,7 +30,7 @@ import {
 } from 'lucide-react'
 import { basename, panelShown, togglePanel, useStore, type SidebarView } from '../store'
 import { StackBar } from './Stack'
-import { defaultAgent, installedAgents, openBrowser, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
+import { defaultAgent, deepUnderstanding, installedAgents, openBrowser, setDeepUnderstanding, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { languageOf } from '../fileModelsLite'
 import { FileIcon, Logo } from './icons'
@@ -331,6 +331,7 @@ function AgentPicker(): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const list = installedAgents()
   const cur = defaultAgent()
+  const [deepOn, setDeepOn] = useState(deepUnderstanding)
 
   useEffect(() => {
     if (!open) return
@@ -379,6 +380,18 @@ function AgentPicker(): React.JSX.Element {
               </button>
             )
           })}
+          <div className="menu-sep">Learning</div>
+          <label className="menu-item" title="Claude checks you understand (diagram, then a quiz) before it goes on. Applies to new and restarted chats.">
+            <input
+              type="checkbox"
+              checked={deepOn}
+              onChange={(e) => {
+                setDeepUnderstanding(e.target.checked)
+                setDeepOn(e.target.checked)
+              }}
+            />
+            <span className="menu-item-main">Deep understanding</span>
+          </label>
         </div>
       )}
     </div>

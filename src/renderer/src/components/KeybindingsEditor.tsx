@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Copy, FileText, Pencil, Plus, RotateCcw, Search, X } from 'lucide-react'
+import { Copy, FileText, Keyboard, Pencil, Plus, RotateCcw, Search, X } from 'lucide-react'
 import { keyLabel, pressOf } from '../keybindings'
 import { openFile } from '../actions'
 import { COMMANDS, allBindings, shortcutRecording, userRules, writeKeybindings, type Command } from '../shortcuts'
@@ -65,6 +65,9 @@ export function KeybindingsEditor(): React.JSX.Element | null {
   const [whenEdit, setWhenEdit] = useState<{ uid: string; value: string } | null>(null)
   const [note, setNote] = useState('')
   const [version, setVersion] = useState(0)
+  // search by key, as VS Code: press a shortcut and the rows bound to exactly that key are shown
+  const [keyRec, setKeyRec] = useState(false)
+  const [keySearch, setKeySearch] = useState<string | null>(null)
 
   useEffect(() => {
     const show = (): void => setOpen(true)
@@ -74,10 +77,10 @@ export function KeybindingsEditor(): React.JSX.Element | null {
 
   const rows = useMemo(() => buildRows(), [version, open])
   const shown = useMemo(() => {
-    const list = rows.filter((r) => matches(r, q))
+    const list = rows.filter((r) => matches(r, q) && (keySearch === null || r.key === keySearch))
     const dir = sort.asc ? 1 : -1
     return list.sort((a, b) => sortValue(a, sort.by).localeCompare(sortValue(b, sort.by)) * dir)
-  }, [rows, q, sort])
+  }, [rows, q, sort, keySearch])
 
   /** Rules are appended after the ones already there; a later rule overrides an earlier one. */
   const apply = (rules: ReturnType<typeof userRules>, done: string): void => {
@@ -116,8 +119,12 @@ export function KeybindingsEditor(): React.JSX.Element | null {
     apply(rules, `"${row.cmd.label}": when ${next ? `"${next}"` : 'always'}.`)
   }
 
+  // while a key is being recorded (to change a binding, or to search by key) the app's hotkeys stand aside
   useEffect(() => {
-    shortcutRecording.on = recording !== null
+    shortcutRecording.on = recording !== null || keyRec
+  }, [recording, keyRec])
+
+  useEffect(() => {
     if (!recording) return
     const onKey = (e: KeyboardEvent): void => {
       e.preventDefault()
@@ -133,6 +140,22 @@ export function KeybindingsEditor(): React.JSX.Element | null {
     return () => window.removeEventListener('keydown', onKey, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording])
+
+  // key search: the next shortcut pressed becomes the filter; Esc just stops recording
+  useEffect(() => {
+    if (!keyRec) return
+    const onKey = (e: KeyboardEvent): void => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.key === 'Escape') return setKeyRec(false)
+      const press = pressOf(e)
+      if (!press) return
+      setKeySearch(press)
+      setKeyRec(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [keyRec])
 
   useEffect(() => {
     if (!open) return
@@ -151,6 +174,8 @@ export function KeybindingsEditor(): React.JSX.Element | null {
     setOpen(false)
     setNote('')
     setQ('')
+    setKeyRec(false)
+    setKeySearch(null)
   }
   const head = (label: string, by: Sort): React.JSX.Element => (
     <button className="kb-sort" onClick={() => setSort((s) => ({ by, asc: s.by === by ? !s.asc : true }))}>
@@ -172,6 +197,18 @@ export function KeybindingsEditor(): React.JSX.Element | null {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
+          <button
+            className={`icon-btn tiny${keyRec ? ' on' : ''}`}
+            title="Search by shortcut: press the keys to find what is bound to them (Esc stops)"
+            onClick={() => setKeyRec((on) => !on)}
+          >
+            <Keyboard size={14} />
+          </button>
+          {keySearch && (
+            <button className="kb-chip" title="Clear the key filter" onClick={() => setKeySearch(null)}>
+              <kbd>{keyLabel(keySearch)}</kbd> <X size={11} />
+            </button>
+          )}
           <button className="btn btn-sm" title="Open keybindings.json" onClick={() => void window.api.keybindings.path().then(openFile)}>
             <FileText size={13} /> keybindings.json
           </button>
@@ -180,7 +217,7 @@ export function KeybindingsEditor(): React.JSX.Element | null {
           </button>
         </div>
         <div className="kb-note">
-          {recording ? `Press the new shortcut for "${recordingLabel}" · Esc cancels` : note || `${shown.length} of ${rows.length} · ${userCount} user rule${userCount === 1 ? '' : 's'} in keybindings.json`}
+          {recording ? `Press the new shortcut for "${recordingLabel}" · Esc cancels` : keyRec ? 'Press a shortcut to find the commands bound to it · Esc stops' : note ||`${shown.length} of ${rows.length} · ${userCount} user rule${userCount === 1 ? '' : 's'} in keybindings.json`}
         </div>
         <div className="kb-head">
           {head('Command', 'command')}

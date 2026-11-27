@@ -74,6 +74,8 @@ export function ExplorerNav({ root, git = true }: { root: string; git?: boolean 
   const colEls = useRef<(HTMLDivElement | null)[]>([])
   const rootDeco = useGitDecorations()
   const deco = git ? rootDeco : NO_DECO
+  // gitignored entries are dimmed; works for any folder in a repo, not only the open project
+  const ignored = useIgnored(root)
   const inline = useStore((s) => s.inlineTab)
   // a popup closed by its own × or by a quick open can leave the active index past the end
   const act = Math.min(active, cols.length - 1)
@@ -279,6 +281,7 @@ export function ExplorerNav({ root, git = true }: { root: string; git?: boolean 
       cursor: c.kind === 'dir' ? c.cursor : null,
       openDir: cols[i + 1]?.kind === 'dir' ? cols[i + 1].dir : null,
       deco,
+      ignored,
       colRef: (el) => {
         colEls.current[i] = el
       },
@@ -320,12 +323,54 @@ export function ExplorerNav({ root, git = true }: { root: string; git?: boolean 
   )
 }
 
+/**
+ * What .gitignore hides in the repo of `folder`, as lower-case paths with forward slashes (a folder has
+ * no trailing slash). Read when the folder changes and after each git change.
+ */
+function useIgnored(folder: string): Set<string> {
+  const [ignored, setIgnored] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    let alive = true
+    const load = (): void => {
+      window.api.git
+        .ignored(folder)
+        .then((r) => {
+          if (!alive) return
+          if (!r.root) return setIgnored(new Set())
+          const base = r.root.replace(/\\/g, '/').replace(/\/+$/, '')
+          setIgnored(new Set(r.paths.map((p) => `${base}/${p.replace(/\\/g, '/').replace(/\/+$/, '')}`.toLowerCase())))
+        })
+        .catch(() => alive && setIgnored(new Set()))
+    }
+    load()
+    window.addEventListener('git-changed', load)
+    return () => {
+      alive = false
+      window.removeEventListener('git-changed', load)
+    }
+  }, [folder])
+  return ignored
+}
+
+/** Is `path` ignored: it, or a folder above it, is in the set. */
+export function isIgnored(ignored: Set<string>, path: string): boolean {
+  let p = path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+  while (p) {
+    if (ignored.has(p)) return true
+    const i = p.lastIndexOf('/')
+    if (i <= 0) return false
+    p = p.slice(0, i)
+  }
+  return false
+}
+
 interface ColProps {
   dir: string
   cursor: DirEntry | null
   /** the folder that has a popup open from this column */
   openDir: string | null
   deco: Map<string, string>
+  ignored: Set<string>
   colRef: (el: HTMLDivElement | null) => void
   onFocus: () => void
   onCursor: (e: DirEntry, keepPopups: boolean) => void
@@ -344,7 +389,7 @@ interface ColProps {
 }
 
 function ExplorerCol(p: ColProps): React.JSX.Element {
-  const { dir, cursor, openDir, deco, onCursor, onOpen, onFile, onHover, onPreview, onBack, onPointer, filter, onFilter, root } = p
+  const { dir, cursor, openDir, deco, ignored, onCursor, onOpen, onFile, onHover, onPreview, onBack, onPointer, filter, onFilter, root } = p
   const [items, setItems] = useState<DirEntry[] | null>(null)
   const [limit, setLimit] = useState(PAGE)
   const list = useRef<HTMLDivElement>(null)
@@ -468,12 +513,13 @@ function ExplorerCol(p: ColProps): React.JSX.Element {
           const isCur = cur?.path === it.path
           const open = it.isDir && openDir === it.path
           const status = deco.get(it.path.replace(/\\/g, '/').toLowerCase())
+          const hidden = isIgnored(ignored, it.path)
           return (
             <div
               key={it.path}
-              className={`tree-row${isCur ? ' cursor' : ''}${open ? ' open' : ''}${status ? ` git-${status === '?' ? 'U' : status}` : ''}`}
+              className={`tree-row${isCur ? ' cursor' : ''}${open ? ' open' : ''}${status ? ` git-${status === '?' ? 'U' : status}` : ''}${hidden ? ' ignored' : ''}`}
               style={{ paddingLeft: 10 }}
-              title={it.path}
+              title={hidden ? `${it.path} (gitignored)` : it.path}
               onMouseEnter={it.isDir ? () => onHover(it) : () => onPreview(it)}
               onClick={() => (it.isDir ? onOpen(it, true) : (onCursor(it, true), onFile(it)))}
             >

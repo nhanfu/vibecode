@@ -4,7 +4,7 @@ import { ChevronDown, Copy, FolderOpen, FolderPlus, FolderX, GitBranch, GripVert
 import { basename, shownLayout, useStore, type Chat } from '../store'
 import type { SessionInfo } from '../../../shared/types'
 import { isHiddenProject, shortAgo } from './Sidebar'
-import { layoutIds, type Layout } from '../chatLayout'
+import { isSlot, layoutIds, type Layout } from '../chatLayout'
 import { SlidePill, useEnterAnimation } from './motion'
 import {
   closeChat,
@@ -129,7 +129,7 @@ export function ClaudePanel(): React.JSX.Element {
 }
 
 function LayoutNode({ node, activeId }: { node: Layout | string; activeId: string | null }): React.JSX.Element {
-  if (typeof node === 'string') return <ChatColumn id={node} current={node === activeId} />
+  if (typeof node === 'string') return isSlot(node) ? <EmptyColumn id={node} /> : <ChatColumn id={node} current={node === activeId} />
   return (
     <div className={`claude-split ${node.dir}${node.dir === 'col' && node.kids.length > 2 ? ' tall' : ''}`}>
       {node.kids.map((k) => (
@@ -137,6 +137,15 @@ function LayoutNode({ node, activeId }: { node: Layout | string; activeId: strin
           <LayoutNode node={k} activeId={activeId} />
         </div>
       ))}
+    </div>
+  )
+}
+
+/** An empty cell of a grid: drop an agent on it to move that agent here. */
+function EmptyColumn({ id }: { id: string }): React.JSX.Element {
+  return (
+    <div className="claude-col empty" {...chatDropTarget(id)}>
+      <div className="claude-empty-hint">Drag an agent here</div>
     </div>
   )
 }

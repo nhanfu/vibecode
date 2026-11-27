@@ -149,6 +149,27 @@ pub fn state(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     });
 }
 
+const Ignored = struct { root: ?[]const u8, paths: []const []const u8 };
+
+/// Untracked paths that .gitignore matches, relative to the repo root. A folder ends with "/" and stands for everything under it.
+pub fn ignored(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(Args, a, invocation);
+
+    const root = trimmed(git(a, args.folder, &.{ "rev-parse", "--show-toplevel" }) catch return cmd.json(output, Ignored{ .root = null, .paths = &.{} }));
+    const root_copy = try a.dupe(u8, root);
+    const listed = git(a, root_copy, &.{ "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z" }) catch "";
+    var paths: std.ArrayList([]const u8) = .empty;
+    var records = std.mem.splitScalar(u8, listed, 0);
+    while (records.next()) |rec| {
+        if (rec.len == 0) continue;
+        try paths.append(a, try a.dupe(u8, rec));
+    }
+    return cmd.json(output, Ignored{ .root = root_copy, .paths = paths.items });
+}
+
 const RootRel = struct { root: []const u8, rel: []const u8 };
 
 /// File content at HEAD; "" when it does not exist there.

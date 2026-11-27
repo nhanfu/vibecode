@@ -196,6 +196,8 @@ export const api = {
   },
   git: {
     state: (folder: string): Promise<GitState> => invoke('git_state', { folder }),
+    /** what .gitignore hides in the repo of `folder`: paths relative to `root` (a folder ends with "/") */
+    ignored: (folder: string): Promise<{ root: string | null; paths: string[] }> => invoke('git_ignored', { folder }),
     original: (root: string, rel: string): Promise<string> => invoke('git_original', { root, rel }),
     init: (folder: string): Promise<void> => invoke('git_init', { folder }),
     show: (root: string, rev: string, rel: string): Promise<string> => invoke('git_show', { root, rev, rel }),

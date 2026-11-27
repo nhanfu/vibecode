@@ -6,7 +6,7 @@ import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
 import { AGENTS, agentDef, type AgentId } from '../../shared/agents'
 import { userStore } from './localPref'
-import { appendLayout, gridLayout, joinLayout, layoutIds, layoutKey, mapLeaves, reconcileLayout, removeLayout, replaceLayout, swapLeaves, type Dir, type Layout } from './chatLayout'
+import { appendLayout, firstSlot, gridLayout, isSlot, joinLayout, layoutIds, layoutKey, mapLeaves, newSlot, reconcileLayout, removeLayout, replaceLayout, swapLeaves, templateLayout, type Dir, type Layout } from './chatLayout'
 
 const st = useStore.getState
 const lastData = new Map<string, number>()
@@ -612,13 +612,32 @@ function remember(key: string, value: string): void {
   }
 }
 
+/** Added to Claude's system prompt while the "deep understanding" option is on. */
+const DEEP_UNDERSTANDING_PROMPT = [
+  'Deep understanding mode is on. The user wants to understand the problem thoroughly, not just receive answers.',
+  '1. When you explain a concept or finish a substantive step, check understanding before you move on. Give one visual: a diagram in the chat (ASCII or Mermaid), or, for something interactive, a self-contained HTML file saved in the project (say its path).',
+  '2. Then ask 3 short quiz questions that mix explaining in their own words, predicting an outcome, and applying the idea to a new case.',
+  '3. Do not start the next task or write more code on the topic until the user has answered. Grade the answers, say what is right and what is missing, and if the answers are weak, explain again another way and quiz again.',
+  '4. Keep each check brief. If the user explicitly asks to skip the check for a message, skip it for that message only.'
+].join('\n')
+
 /** CLI flags that carry a chat's model, effort and permission mode across (re)starts. */
 function launchFlags(c: { model?: string; effort?: string; permissionMode?: string }): string[] {
   const out: string[] = []
   if (c.model) out.push('--model', c.model)
   if (c.effort) out.push('--effort', c.effort)
   if (c.permissionMode) out.push('--permission-mode', c.permissionMode)
+  if (deepUnderstanding()) out.push('--append-system-prompt', DEEP_UNDERSTANDING_PROMPT)
   return out
+}
+
+const DEEP_KEY = 'vibe.deepUnderstanding'
+/** The "deep understanding" option (kept as a preference, so it works without a native change). */
+export function deepUnderstanding(): boolean {
+  return remembered(DEEP_KEY, '') === 'on'
+}
+export function setDeepUnderstanding(on: boolean): void {
+  remember(DEEP_KEY, on ? 'on' : 'off')
 }
 
 export const CHAT_DRAG = 'application/x-vibe-chat'
@@ -649,11 +668,12 @@ export function chatDropTarget(id: string): { onDragOver: (e: DragEvent) => void
   }
 }
 
+/** Swaps two cells. `b` may be an empty cell of a grid: the chat moves there and its old cell is left empty. */
 export function swapChats(a: string, b: string): void {
   const s = st()
   const ca = s.chats.find((c) => c.id === a)
   const cb = s.chats.find((c) => c.id === b)
-  if (!ca || !cb || a === b) return
+  if (!ca || (!cb && !isSlot(b)) || a === b) return
   if (s.layoutMode === 'merged') {
     const ids = s.chats.map((c) => c.id)
     const stored = s.chatLayouts[ALL_LAYOUT_KEY]
@@ -663,7 +683,7 @@ export function swapChats(a: string, b: string): void {
     return
   }
   const key = layoutKey(ca.cwd)
-  if (key !== layoutKey(cb.cwd)) return
+  if (cb && key !== layoutKey(cb.cwd)) return
   const cur = s.chatLayouts[key]
   if (!cur) return
   const ids = layoutIds(cur)
@@ -758,7 +778,9 @@ export function closeChat(id: string): void {
     if (closing && cur && layoutIds(cur).includes(id)) {
       const activeChat = chats.find((c) => c.id === activeChatId)
       const takes = !!activeChat && layoutKey(activeChat.cwd) === layoutKey(closing.cwd) && !layoutIds(cur).includes(activeChat.id)
-      chatLayouts = withLayout(chatLayouts, closing.cwd, takes ? replaceLayout(cur, id, activeChat!.id) : removeLayout(cur, id))
+      // in a grid the closed chat's cell stays, empty; elsewhere the cell goes
+      const grid = layoutIds(cur).some(isSlot)
+      chatLayouts = withLayout(chatLayouts, closing.cwd, takes ? replaceLayout(cur, id, activeChat!.id) : grid ? replaceLayout(cur, id, newSlot()) : removeLayout(cur, id))
     }
     // the chat's browser page goes with it; torn-off pages are user data and stay
     const browsers = { ...s.browsers }
@@ -777,14 +799,48 @@ function placedLayouts(prev: Record<string, Layout>, mode: LayoutMode, cwd: stri
   if (mode === 'merged') {
     const base = prev[ALL_LAYOUT_KEY] ?? gridLayout(idsBefore)
     if (base && layoutIds(base).includes(id)) return prev
-    const next = whole || anchor === null ? appendLayout(base, id, dir) : joinLayout(base, anchor, id, dir)
+    // a grid with an empty cell: the new chat takes it
+    const slot = firstSlot(base)
+    const next = slot && base ? replaceLayout(base, slot, id) : whole || anchor === null ? appendLayout(base, id, dir) : joinLayout(base, anchor, id, dir)
     return { ...prev, [ALL_LAYOUT_KEY]: next }
   }
   const key = layoutKey(cwd)
   const cur = prev[key] ?? null
   if (cur && layoutIds(cur).includes(id)) return prev
-  const next = whole ? appendLayout(cur ?? anchor, id, dir) : anchor !== null ? joinLayout(cur, anchor, id, dir) : appendLayout(cur, id, dir)
+  const slot = firstSlot(cur)
+  const next = slot && cur ? replaceLayout(cur, slot, id) : whole ? appendLayout(cur ?? anchor, id, dir) : anchor !== null ? joinLayout(cur, anchor, id, dir) : appendLayout(cur, id, dir)
   return { ...prev, [key]: next }
+}
+
+/** Asks the Agents section's grid picker to open (a picker that is not on screen yet opens when it mounts). */
+let gridPickWaiting = false
+export function takeGridPickRequest(): boolean {
+  const waiting = gridPickWaiting
+  gridPickWaiting = false
+  return waiting
+}
+export function openGridPicker(): void {
+  gridPickWaiting = true
+  window.dispatchEvent(new Event('grid-pick-open'))
+}
+
+/** Gives the chats of one project (`cwd`), or of all chats (`null`, merged mode), a rows × cols grid. Chats keep their order. */
+export function setGridLayout(rows: number, cols: number, cwd: string | null): void {
+  const s = st()
+  const orderedIds = (cur: Layout | null, all: string[]): string[] => {
+    const kept = layoutIds(cur).filter((id) => all.includes(id))
+    return [...kept, ...all.filter((id) => !kept.includes(id))]
+  }
+  if (cwd === null) {
+    const all = s.chats.map((c) => c.id)
+    const cur = s.chatLayouts[ALL_LAYOUT_KEY] ?? null
+    useStore.setState({ chatLayouts: { ...s.chatLayouts, [ALL_LAYOUT_KEY]: templateLayout(rows, cols, orderedIds(cur, all)) } })
+    return
+  }
+  const key = layoutKey(cwd)
+  const all = s.chats.filter((c) => layoutKey(c.cwd) === key).map((c) => c.id)
+  const cur = s.chatLayouts[key] ?? null
+  useStore.setState({ chatLayouts: withLayout(s.chatLayouts, cwd, templateLayout(rows, cols, orderedIds(cur, all))) })
 }
 
 export function duplicateChat(dir: Dir = 'row', whole = false): void {

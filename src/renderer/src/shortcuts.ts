@@ -23,6 +23,7 @@ import {
   defaultAgent,
   duplicateChat,
   newLayoutChat,
+  openGridPicker,
   pageLabels,
   stepBrowserHistory,
   newChat,
@@ -139,6 +140,14 @@ export const COMMANDS: Command[] = [
   { id: 'duplicateAgentWholeRight', label: 'Duplicate agent as a new column at the right edge', run: () => duplicateChat('row', true) },
   { id: 'duplicateAgentWholeBelow', label: 'Duplicate agent as a new row at the bottom', run: () => duplicateChat('col', true) },
   { id: 'newLayoutChat', label: 'New chat in the layout', run: () => newLayoutChat() },
+  {
+    id: 'layoutGrid',
+    label: 'Agents: open the grid picker',
+    run: () => {
+      openRail('agents', 'open')
+      openGridPicker()
+    }
+  },
   { id: 'newLayoutBelow', label: 'Split horizontal: new agent below the active one', run: () => newLayoutChat('col') },
   { id: 'newLayoutColumn', label: 'New column: new agent at the right edge of the layout', run: () => newLayoutChat('row', true) },
   { id: 'newLayoutRow', label: 'New row: new agent at the bottom of the layout', run: () => newLayoutChat('col', true) },
@@ -253,8 +262,10 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+shift+j', command: 'webDevtools', when: 'webFocus' },
   { key: 'ctrl+alt+shift+d', command: 'duplicateAgentWholeRight' },
   { key: 'ctrl+alt+shift+v', command: 'duplicateAgentWholeBelow' },
+  { key: 'alt+shift+l', command: 'layoutGrid' },
   { key: 'ctrl+shift+k', command: 'newLayoutChat' },
-  { key: 'ctrl+shift+i', command: 'newLayoutBelow' },
+  // Ctrl+Shift+I is left to the web inspector (DevTools)
+  { key: 'ctrl+alt+i', command: 'newLayoutBelow' },
   { key: 'ctrl+alt+shift+k', command: 'newLayoutColumn' },
   { key: 'ctrl+alt+shift+i', command: 'newLayoutRow' },
   { key: 'alt+enter', command: 'fullscreen' },
