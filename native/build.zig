@@ -42,6 +42,7 @@ pub fn build(b: *std.Build) void {
     const cef_auto_install_override = b.option(bool, "cef-auto-install", "Override app.zon CEF auto-install setting");
     const package_target = b.option(PackageTarget, "package-target", "Package target: macos, windows, linux") orelse .macos;
     const zero_native_path = b.option([]const u8, "zero-native-path", "Path to the zero-native framework checkout") orelse default_zero_native_path;
+    const duckdb_prebuilt = b.option([]const u8, "duckdb-lib", "Link this prebuilt libduckdb.a (from `zig build duckdb`) instead of compiling DuckDB");
     const optimize_name = @tagName(optimize);
     const selected_platform: PlatformOption = switch (platform_option) {
         .auto => if (target.result.os.tag == .macos) .macos else if (target.result.os.tag == .linux) .linux else if (target.result.os.tag == .windows) .windows else .@"null",
@@ -90,7 +91,15 @@ pub fn build(b: *std.Build) void {
     app_mod.addImport("runner", runner_mod);
     const duck = duckdbLibrary(b, target, optimize);
     app_mod.addImport("duckdb_c", duck.header);
-    app_mod.linkLibrary(duck.lib);
+    if (duckdb_prebuilt) |path| {
+        // A libduckdb.a built earlier by `zig build duckdb` (same target and optimize mode): skip compiling DuckDB.
+        app_mod.addObjectFile(.{ .cwd_relative = path });
+        app_mod.link_libcpp = true;
+    } else {
+        app_mod.linkLibrary(duck.lib);
+    }
+    const duckdb_step = b.step("duckdb", "Build libduckdb.a into zig-out/duckdb for -Dduckdb-lib=zig-out/duckdb/libduckdb.a");
+    duckdb_step.dependOn(&b.addInstallArtifact(duck.lib, .{ .dest_dir = .{ .override = .{ .custom = "duckdb" } } }).step);
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,

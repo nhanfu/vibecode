@@ -65,7 +65,7 @@ pub fn main(init: std.process.Init) !void {
     try runner.runWithOptions(app.app(), .{
         .app_name = "VIBE CODE",
         .window_title = "VIBE CODE",
-        .bundle_id = "vn.tinjs.vibecode.ptyd",
+        .bundle_id = "vn.tinjs.vibecode.release",
         .icon_path = "assets/icon.icns",
         .security = .{
             .navigation = .{ .allowed_origins = &navigation_origins },
