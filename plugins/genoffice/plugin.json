@@ -1,0 +1,17 @@
+{
+  "id": "genoffice",
+  "name": "GenOffice",
+  "version": "0.10.0",
+  "description": "Word, Excel, PowerPoint and PDF tools for the chats (GenOffice, Apache-2.0). Needs the GenOffice app installed.",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/genspark-ai/genoffice",
+  "sidecar": {
+    "command": "bin/genoffice-mcp",
+    "args": ["mcp", "--http", "{port}"],
+    "env": { "GENOFFICE_MCP_TOKEN": "{token}" },
+    "health": "/health",
+    "autostart": true
+  },
+  "mcp": { "name": "genoffice", "path": "/mcp", "bearer": true },
+  "platforms": ["linux", "macos"]
+}
