@@ -416,7 +416,7 @@ export const useStore = create<State>((set) => ({
   chats: [],
   activeChatId: null,
   chatLayouts: {},
-  layoutMode: 'project',
+  layoutMode: 'merged',
   newChatModel: null,
 
   shells: [],

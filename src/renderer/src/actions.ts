@@ -1448,7 +1448,8 @@ export async function restoreChats(): Promise<void> {
     const r = mapLeaves(tree, (old) => came.get(String(old)) ?? null)
     if (r) restoredLayouts[key] = r
   }
-  useStore.setState({ chatLayouts: restoredLayouts, layoutMode: userStore.getItem(LAYOUT_MODE_KEY) === 'merged' ? 'merged' : 'project' })
+  // one layout for all chats: the per-project mode is no longer offered, so a saved 'project' is ignored
+  useStore.setState({ chatLayouts: restoredLayouts, layoutMode: 'merged' })
   if (activeId) selectChat(activeId)
   // terminals no chat claims (the chat was closed while the app was away, or never saved) would run for ever
   if (savedOk && listed) for (const id of running) if (!claimed.has(id) || !st().chats.some((c) => c.id === id)) window.api.pty.kill(id)

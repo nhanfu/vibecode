@@ -514,8 +514,9 @@ function FolderSwitch({ chat }: { chat: Chat }): React.JSX.Element {
   const pick = (cwd: string): void => {
     setOpen(false)
     const open = chats.find((c) => sameFolder(c.cwd, cwd))
+    // switching project only changes the folder: a chat is not started for it
     if (open) selectChat(open.id)
-    else newChat({ cwd })
+    else void openFolder(cwd, { autoChat: false })
   }
   return (
     <div className="chat-switch" ref={ref}>
