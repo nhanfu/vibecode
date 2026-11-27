@@ -327,6 +327,17 @@ export function toggleFullscreen(id: PanelId): void {
 
 export const ALL_LAYOUT_KEY = '*'
 
+/**
+ * The key of the project pane a chat sits in. A chat is looked up by its own folder first, but a
+ * session of the same project can run in another folder (a worktree or subfolder), and then the
+ * chat sits in the pane of the chat it took the place of.
+ */
+export function paneKeyOf(all: Record<string, Layout>, chat: { id: string; cwd: string }): string {
+  const own = layoutKey(chat.cwd)
+  if (all[own] && layoutIds(all[own]).includes(chat.id)) return own
+  return Object.keys(all).find((k) => k !== ALL_LAYOUT_KEY && layoutIds(all[k]).includes(chat.id)) ?? own
+}
+
 export function shownLayout(s: {
   chats: Chat[]
   activeChatId: string | null
@@ -340,7 +351,7 @@ export function shownLayout(s: {
     const stored = s.chatLayouts[ALL_LAYOUT_KEY]
     return (stored ? reconcileLayout(stored, ids) : gridLayout(ids)) ?? null
   }
-  const cur = s.chatLayouts[layoutKey(active.cwd)]
+  const cur = s.chatLayouts[paneKeyOf(s.chatLayouts, active)]
   return cur && layoutIds(cur).includes(active.id) ? cur : active.id
 }
 

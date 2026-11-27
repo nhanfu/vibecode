@@ -1,6 +1,6 @@
 import type { DragEvent } from 'react'
 import { clearAttachments } from './attachments'
-import { ALL_LAYOUT_KEY, PAGES_KEY, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type LayoutMode, type WebTab } from './store'
+import { ALL_LAYOUT_KEY, PAGES_KEY, paneKeyOf, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type LayoutMode, type WebTab } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -356,7 +356,7 @@ export function loadSessions(): void {
   }, 50)
 }
 
-/** Open a session from ~/.claude/projects: jump to its live chat, or resume it in a new one. */
+/** Open a session from ~/.claude/projects: jump to its live chat, or resume it in the pane of the chat you are in. */
 export async function openSession(s: SessionInfo): Promise<void> {
   const live = st().chats.find((c) => c.sessionId === s.id)
   if (live) return selectChat(live.id)
@@ -365,7 +365,36 @@ export async function openSession(s: SessionInfo): Promise<void> {
     return
   }
   if (!st().root || !samePath(st().root!, s.projectCwd)) await openFolder(s.projectCwd, { autoChat: false })
+  const prev = st().activeChatId
   newChat({ cwd: s.cwd, args: ['--resume', s.id], title: s.title, sessionId: s.id, pinnedTitle: true })
+  const id = st().activeChatId
+  if (prev && id && id !== prev) takePlace(prev, id)
+}
+
+/**
+ * The chat you switched to takes the place of the one you left on screen. The one you left is not
+ * closed: its terminal is only taken off screen, and it keeps running in the background.
+ */
+function takePlace(prevId: string, id: string): void {
+  const chat = st().chats.find((c) => c.id === id)
+  if (!chat) return
+  const { chatLayouts, layoutMode } = st()
+  if (layoutMode === 'merged') {
+    // one layout for every chat: the new one takes the old one's cell there
+    const all = chatLayouts[ALL_LAYOUT_KEY] ?? null
+    if (all) useStore.setState({ chatLayouts: { ...chatLayouts, [ALL_LAYOUT_KEY]: layoutWith(all, id, prevId) } })
+    return
+  }
+  // the new chat takes the cell of the chat left, in the pane that chat sits in (found by the chat,
+  // since the session may run in another folder of the same project)
+  const prev = st().chats.find((c) => c.id === prevId)
+  const key = prev ? paneKeyOf(chatLayouts, prev) : layoutKey(chat.cwd)
+  const cur = chatLayouts[key] ?? null
+  if (cur && layoutIds(cur).includes(prevId)) {
+    useStore.setState({ chatLayouts: withPane(chatLayouts, key, layoutWith(cur, id, prevId)) })
+    return
+  }
+  useStore.setState({ chatLayouts: withLayout(chatLayouts, chat.cwd, layoutWith(chatLayouts[layoutKey(chat.cwd)] ?? null, id, prevId)) })
 }
 
 /** New chat inside a project from the sidebar tree. */
@@ -682,13 +711,13 @@ export function swapChats(a: string, b: string): void {
     useStore.setState({ chatLayouts: { ...s.chatLayouts, [ALL_LAYOUT_KEY]: swapLeaves(cur, a, b) } })
     return
   }
-  const key = layoutKey(ca.cwd)
-  if (cb && key !== layoutKey(cb.cwd)) return
+  const key = paneKeyOf(s.chatLayouts, ca)
+  if (cb && key !== paneKeyOf(s.chatLayouts, cb)) return
   const cur = s.chatLayouts[key]
   if (!cur) return
   const ids = layoutIds(cur)
   if (!ids.includes(a) || !ids.includes(b)) return
-  useStore.setState({ chatLayouts: withLayout(s.chatLayouts, ca.cwd, swapLeaves(cur, a, b)) })
+  useStore.setState({ chatLayouts: withPane(s.chatLayouts, key, swapLeaves(cur, a, b)) })
 }
 
 function layoutWith(n: Layout | null, id: string, active: string | null): Layout | string {
@@ -700,7 +729,10 @@ function layoutWith(n: Layout | null, id: string, active: string | null): Layout
 }
 
 function withLayout(all: Record<string, Layout>, cwd: string, layout: Layout | null): Record<string, Layout> {
-  const key = layoutKey(cwd)
+  return withPane(all, layoutKey(cwd), layout)
+}
+
+function withPane(all: Record<string, Layout>, key: string, layout: Layout | null): Record<string, Layout> {
   const next = { ...all }
   if (layout === null) delete next[key]
   else next[key] = layout
@@ -716,7 +748,7 @@ export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   // the chat comes on screen: the Agent drop-down floats open unless it is pinned
   const { chatLayouts, activeChatId } = st()
-  const chatLayoutsNext = chat ? withLayout(chatLayouts, chat.cwd, layoutWith(chatLayouts[layoutKey(chat.cwd)] ?? null, id, activeChatId)) : chatLayouts
+  const chatLayoutsNext = chat ? withPane(chatLayouts, paneKeyOf(chatLayouts, chat), layoutWith(chatLayouts[paneKeyOf(chatLayouts, chat)] ?? null, id, activeChatId)) : chatLayouts
   useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext, ...openPatch('agents') })
   if (chat?.attention) st().patchChat(id, { attention: false })
   // Explorer / Changes follow the chat you're looking at.
@@ -735,7 +767,7 @@ export function hoverChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
   if (!chat || st().activeChatId === id) return
   const { chatLayouts, activeChatId } = st()
-  const chatLayoutsNext = withLayout(chatLayouts, chat.cwd, layoutWith(chatLayouts[layoutKey(chat.cwd)] ?? null, id, activeChatId))
+  const chatLayoutsNext = withPane(chatLayouts, paneKeyOf(chatLayouts, chat), layoutWith(chatLayouts[paneKeyOf(chatLayouts, chat)] ?? null, id, activeChatId))
   useStore.setState({ activeChatId: id, chatLayouts: chatLayoutsNext })
 }
 
@@ -774,13 +806,14 @@ export function closeChat(id: string): void {
       s.activeChatId === id ? (chats[Math.min(idx, chats.length - 1)]?.id ?? null) : s.activeChatId
     let chatLayouts = s.chatLayouts
     const closing = s.chats.find((c) => c.id === id)
-    const cur = closing ? (chatLayouts[layoutKey(closing.cwd)] ?? null) : null
+    const key = closing ? paneKeyOf(chatLayouts, closing) : ''
+    const cur = closing ? (chatLayouts[key] ?? null) : null
     if (closing && cur && layoutIds(cur).includes(id)) {
       const activeChat = chats.find((c) => c.id === activeChatId)
-      const takes = !!activeChat && layoutKey(activeChat.cwd) === layoutKey(closing.cwd) && !layoutIds(cur).includes(activeChat.id)
+      const takes = !!activeChat && paneKeyOf(chatLayouts, activeChat) === key && !layoutIds(cur).includes(activeChat.id)
       // in a grid the closed chat's cell stays, empty; elsewhere the cell goes
       const grid = layoutIds(cur).some(isSlot)
-      chatLayouts = withLayout(chatLayouts, closing.cwd, takes ? replaceLayout(cur, id, activeChat!.id) : grid ? replaceLayout(cur, id, newSlot()) : removeLayout(cur, id))
+      chatLayouts = withPane(chatLayouts, key, takes ? replaceLayout(cur, id, activeChat!.id) : grid ? replaceLayout(cur, id, newSlot()) : removeLayout(cur, id))
     }
     // the chat's browser page goes with it; torn-off pages are user data and stay
     const browsers = { ...s.browsers }
