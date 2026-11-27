@@ -4,6 +4,7 @@ dist
 *.log
 *.tsbuildinfo
 plugins/*/bin
+!plugins/genoffice/bin
 plugins/*/dist
 plugins/*/source
 plugins/*/server
