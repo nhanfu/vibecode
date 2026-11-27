@@ -4,12 +4,11 @@
 //!
 //! The pages live in the GTK host of the vendored zero-native (native/vendor/zero-native, patched for this):
 //! only labels starting `web-` are browser pages, and those may load http and https pages.
-//! Not yet: Claude's browser tools (DevTools: evaluate, screenshot, console), dark mode, suspending hidden tabs.
+//! Not yet: Claude's browser tools (DevTools: evaluate, screenshot, console), suspending hidden tabs.
 
 const std = @import("std");
 const zn = @import("zero-native");
 const cmd = @import("root.zig");
-const adblock = @import("../adblock/adblock.zig");
 
 extern "c" fn zero_native_gtk_web_devtools(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern "c" fn zero_native_gtk_web_history(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, step: c_int) c_int;
@@ -19,8 +18,6 @@ extern "c" fn zero_native_gtk_web_visible(host: *anyopaque, window_id: u64, labe
 extern "c" fn zero_native_gtk_web_mute(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, muted: c_int) c_int;
 extern "c" fn zero_native_gtk_web_focus(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern "c" fn zero_native_gtk_focus_main(host: *anyopaque, window_id: u64) c_int;
-extern "c" fn zero_native_gtk_web_set_dark_library(host: *anyopaque, source: [*]const u8, len: usize) c_int;
-extern "c" fn zero_native_gtk_web_set_dark(host: *anyopaque, window_id: u64, dark: c_int) c_int;
 extern "c" fn zero_native_gtk_web_user_agent(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, agent: [*]const u8, agent_len: usize) c_int;
 extern "c" fn zero_native_gtk_web_session_restore(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, data: [*]const u8, data_len: usize) c_int;
 
@@ -42,8 +39,6 @@ const Tab = struct {
 var tabs: std.StringHashMapUnmanaged(Tab) = .empty;
 var navs: std.StringHashMapUnmanaged(Nav) = .empty;
 var active: std.StringHashMapUnmanaged([]u8) = .empty;
-const dark_library = @embedFile("../assets/darkreader.js");
-var library_sent = false;
 
 fn host() !*anyopaque {
     return zn.platform.gtk_host.web_host orelse error.NoWindow;
@@ -64,20 +59,6 @@ fn tabKnown(label: []const u8) bool {
 
 const OpenArgs = struct { label: []const u8, chatId: []const u8, url: []const u8, userAgent: ?[]const u8 = null, session: ?[]const u8 = null };
 
-var ad_started = false;
-
-/// Compiles the EasyList filter once, into the app's data folder (about 2 s, in the background).
-/// Tabs opened before that load without it.
-fn startAdBlock() void {
-    if (ad_started) return;
-    ad_started = true;
-    var dir_buffer: [4096]u8 = undefined;
-    const base = cmd.userData(&dir_buffer) catch return;
-    var z: [4096]u8 = undefined;
-    const dir = std.fmt.bufPrintZ(&z, "{s}", .{base}) catch return;
-    adblock.vc_adblock_start(dir.ptr);
-}
-
 pub fn open(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
@@ -85,13 +66,7 @@ pub fn open(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     const args = try cmd.args(OpenArgs, a, invocation);
     if (tabKnown(args.label)) return cmd.json(output, null);
     if (!allowedUrl(args.url)) return cmd.fail(output, "this address cannot be opened");
-    startAdBlock();
 
-    const h0 = try host();
-    if (!library_sent) {
-        _ = zero_native_gtk_web_set_dark_library(h0, dark_library.ptr, dark_library.len);
-        library_sent = true;
-    }
     const svc = try services();
     // a tab brought back after a restart starts blank and takes its saved history, not the address alone
     const has_session = if (args.session) |s| s.len > 0 else false;
@@ -202,14 +177,6 @@ pub fn setUserAgent(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     const args = try cmd.args(struct { label: []const u8, userAgent: ?[]const u8 = null }, arena.allocator(), invocation);
     const agent = args.userAgent orelse "";
     _ = zero_native_gtk_web_user_agent(try host(), main_window, args.label.ptr, args.label.len, agent.ptr, agent.len);
-    return cmd.json(output, null);
-}
-
-pub fn setDark(invocation: cmd.Invocation, output: []u8) ![]const u8 {
-    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
-    defer arena.deinit();
-    const args = try cmd.args(struct { dark: bool }, arena.allocator(), invocation);
-    _ = zero_native_gtk_web_set_dark(try host(), main_window, if (args.dark) 1 else 0);
     return cmd.json(output, null);
 }
 

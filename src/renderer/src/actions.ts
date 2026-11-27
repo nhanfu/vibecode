@@ -194,6 +194,31 @@ setInterval(() => {
   }
 }, 500)
 
+/* ---------------- Idle chats ---------------- */
+
+/** A chat nobody has looked at or written to for this long stops its claude process (the session stays on disk). */
+const IDLE_SUSPEND_MS = 20 * 60 * 1000
+const loadedAt = Date.now()
+/** Chats suspended by the idle sweep: selecting one resumes its session. */
+const suspended = new Set<string>()
+
+function suspendIdleChats(): void {
+  const now = Date.now()
+  const { chatLayouts, activeChatId, chats } = st()
+  const shown = new Set(Object.values(chatLayouts).flatMap((l) => layoutIds(l)))
+  for (const c of chats) {
+    if (c.status !== 'idle' || c.attention || c.id === activeChatId || shown.has(c.id)) continue
+    if ((c.agent ?? 'claude') !== 'claude' || !c.sessionId) continue
+    if (now - Math.max(lastData.get(c.id) ?? 0, loadedAt) < IDLE_SUSPEND_MS) continue
+    // kills the terminal's process; the terminal entry stays so restartTerm can resume into it
+    suspended.add(c.id)
+    window.api.pty.kill(c.id)
+    st().patchChat(c.id, { status: 'exited' })
+  }
+}
+
+setInterval(suspendIdleChats, 60 * 1000)
+
 /* ---------------- Theme ---------------- */
 
 /** Dark (slate-blue, the default) or light; pushes it to the page, terminals, editor and see-through. */
@@ -215,8 +240,6 @@ export function applyTheme(): void {
   setTerminalTheme(light)
   if (st().themeResolved !== (light ? 'light' : 'dark')) useStore.setState({ themeResolved: light ? 'light' : 'dark' })
   applyGlass()
-  // web pages follow the app's theme (Dark Reader, see browser.rs)
-  void window.api.browser.setDark(!light).catch(() => {})
 }
 
 // 'system': the OS switching light/dark switches the app too
@@ -746,6 +769,7 @@ export function setLayoutMode(mode: LayoutMode): void {
 
 export function selectChat(id: string): void {
   const chat = st().chats.find((c) => c.id === id)
+  if (suspended.delete(id)) restartChat(id)
   // the chat comes on screen: the Agent drop-down floats open unless it is pinned
   const { chatLayouts, activeChatId } = st()
   const chatLayoutsNext = chat ? withPane(chatLayouts, paneKeyOf(chatLayouts, chat), layoutWith(chatLayouts[paneKeyOf(chatLayouts, chat)] ?? null, id, activeChatId)) : chatLayouts

@@ -9,7 +9,6 @@
 
 extern void zero_native_web_nav(uint64_t window_id, const char *label, const char *url, const char *title, int loading, int can_back, int can_forward);
 extern void zero_native_web_session(uint64_t window_id, const char *label, const char *data);
-extern void vc_adblock_attach(void *view);
 
 #define ZERO_NATIVE_MAX_WINDOWS 16
 #define ZERO_NATIVE_MAX_WEBVIEWS 16
@@ -736,58 +735,12 @@ static gboolean on_decide_policy(WebKitWebView *web_view, WebKitPolicyDecision *
     return TRUE;
 }
 
-static char *zn_dark_library = NULL;
-static int zn_web_dark = 0;
-static const char *ZN_DARK_ON = "if (window.DarkReader) DarkReader.enable({}, { ignoreImageAnalysis: ['svg', 'image', 'img[src$=\".svg\" i]', 'img[src*=\".svg?\" i]'].concat(/(^|\\.)google\\./.test(location.hostname) ? ['#hplogo', '.lnXdpd', '#logo img', '#logo svg', 'img[alt*=\"Google\"]', 'svg[aria-label*=\"Google\"]'] : []), css: /(^|\\.)google\\./.test(location.hostname) ? 'svg[aria-label=\"Google\"] path{fill:#e8eaed !important}' : /(^|\\.)(dev\\.azure\\.com|visualstudio\\.com)$/.test(location.hostname) ? '.region-header,.region-header-menubar{background-color:#191919 !important}' : undefined });";
-static const char *ZN_DARK_OFF = "if (window.DarkReader) DarkReader.disable();";
-
-int zero_native_gtk_web_set_dark_library(zero_native_gtk_host_t *host, const char *source, size_t len) {
-    (void)host;
-    char *copy = zero_native_strndup(source, len);
-    if (!copy) return 0;
-    free(zn_dark_library);
-    zn_dark_library = copy;
-    return 1;
-}
-
 static zero_native_gtk_webview_t *zero_native_browser_of(zero_native_gtk_window_t *win, WebKitWebView *web_view) {
     if (!win) return NULL;
     for (int i = 0; i < win->webview_count; i++) {
         if (win->webviews[i].web_view == web_view && win->webviews[i].browser) return &win->webviews[i];
     }
     return NULL;
-}
-
-static void zero_native_apply_dark(WebKitWebView *web_view) {
-    webkit_web_view_evaluate_javascript(web_view, zn_web_dark ? ZN_DARK_ON : ZN_DARK_OFF, -1, NULL, NULL, NULL, NULL, NULL);
-}
-
-/* Every document of a Web tab (each page, each link followed) starts with Dark Reader already on when the
-   app is in dark mode: the flag is part of the user script that runs before the page's own scripts. */
-static void zero_native_install_dark_script(WebKitWebView *web_view) {
-    if (!zn_dark_library) return;
-    WebKitUserContentManager *manager = webkit_web_view_get_user_content_manager(web_view);
-    WebKitUserScript *old = g_object_get_data(G_OBJECT(web_view), "zn-dark-script");
-    if (old) webkit_user_content_manager_remove_script(manager, old);
-    gchar *flag = g_strdup_printf("window.__vcDark = %s;\n", zn_web_dark ? "true" : "false");
-    gchar *source = g_strconcat(flag, zn_dark_library, "\nif (window.__vcDark) {", ZN_DARK_ON, "}", NULL);
-    WebKitUserScript *script = webkit_user_script_new(source, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME, WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, NULL, NULL);
-    webkit_user_content_manager_add_script(manager, script);
-    g_object_set_data_full(G_OBJECT(web_view), "zn-dark-script", script, g_object_unref);
-    g_free(flag);
-    g_free(source);
-}
-
-int zero_native_gtk_web_set_dark(zero_native_gtk_host_t *host, uint64_t window_id, int dark) {
-    zn_web_dark = dark != 0;
-    zero_native_gtk_window_t *win = zero_native_find_window(host, window_id);
-    if (!win) return 0;
-    for (int i = 0; i < win->webview_count; i++) {
-        if (!win->webviews[i].browser || !win->webviews[i].web_view) continue;
-        zero_native_install_dark_script(win->webviews[i].web_view);
-        zero_native_apply_dark(win->webviews[i].web_view);
-    }
-    return 1;
 }
 
 static int zero_native_is_browser_label(const char *label) {
@@ -840,35 +793,8 @@ static void zero_native_emit_web_session(WebKitWebView *web_view, zero_native_gt
     webkit_web_view_session_state_unref(state);
 }
 
-/* DEBUG: prints the dark state of the page to the app log. */
-static void on_dark_probe(GObject *source, GAsyncResult *result, gpointer data) {
-    (void)data;
-    GError *error = NULL;
-    JSCValue *value = webkit_web_view_evaluate_javascript_finish(WEBKIT_WEB_VIEW(source), result, &error);
-    if (value) {
-        char *text = jsc_value_to_string(value);
-        fprintf(stderr, "[dark-probe] %s\n", text);
-        g_free(text);
-        g_object_unref(value);
-    }
-    if (error) {
-        fprintf(stderr, "[dark-probe] error: %s\n", error->message);
-        g_error_free(error);
-    }
-}
-
-static void zero_native_probe_dark(WebKitWebView *web_view, const char *when) {
-    fprintf(stderr, "[dark-probe] %s flag=%d\n", when, zn_web_dark);
-    webkit_web_view_evaluate_javascript(web_view,
-        "JSON.stringify({u: location.href.slice(0, 120), flag: window.__vcDark, dr: !!window.DarkReader, styles: document.querySelectorAll('.darkreader').length, bg: getComputedStyle(document.body || document.documentElement).backgroundColor, ready: document.readyState})",
-        -1, NULL, NULL, NULL, on_dark_probe, NULL);
-}
-
 static void on_web_load_changed(WebKitWebView *web_view, WebKitLoadEvent event, gpointer data) {
     zero_native_gtk_webview_t *browser = zero_native_browser_of(data, web_view);
-    if (browser && (event == WEBKIT_LOAD_COMMITTED || event == WEBKIT_LOAD_FINISHED)) zero_native_apply_dark(web_view);
-    if (browser && event == WEBKIT_LOAD_FINISHED) zero_native_probe_dark(web_view, "finished");
-    if (browser && event == WEBKIT_LOAD_COMMITTED) zero_native_probe_dark(web_view, "committed");
     if (browser && event == WEBKIT_LOAD_FINISHED) zero_native_emit_web_session(web_view, data);
     if (browser && event == WEBKIT_LOAD_COMMITTED) {
         zero_native_stuck_t *stuck = g_new0(zero_native_stuck_t, 1);
@@ -1437,7 +1363,6 @@ int zero_native_gtk_create_webview(zero_native_gtk_host_t *host, uint64_t window
         frame_widget = scroller;
         g_object_set_data(G_OBJECT(web_view), "zn-browser", GINT_TO_POINTER(1));
         g_object_set_data_full(G_OBJECT(web_view), "zn-label", g_strdup(label_copy), g_free);
-        zero_native_install_dark_script(web_view);
         g_signal_connect(web_view, "load-changed", G_CALLBACK(on_web_load_changed), win);
         g_signal_connect(web_view, "notify::title", G_CALLBACK(on_web_property_changed), win);
         g_signal_connect(web_view, "notify::uri", G_CALLBACK(on_web_property_changed), win);
@@ -1466,7 +1391,6 @@ int zero_native_gtk_create_webview(zero_native_gtk_host_t *host, uint64_t window
     zero_native_reorder_webviews(win);
     g_signal_connect(web_view, "decide-policy", G_CALLBACK(on_webview_decide_policy), win);
     if (browser) {
-        vc_adblock_attach(web_view);
         webkit_settings_set_enable_developer_extras(webkit_web_view_get_settings(web_view), TRUE);
         zero_native_attach_history_keys(web_view, win);
     }
