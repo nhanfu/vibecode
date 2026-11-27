@@ -155,6 +155,17 @@ export function BrowserTab({
     const el = viewRef.current
     if (!el) return
     let last = ''
+    // a popup over the page: the native page can't go under it, so a picture of the page lies under
+    // the popup instead, and the native page is parked. The picture lives only in this element
+    // (in memory) and goes as soon as the popup does.
+    let shot: HTMLImageElement | null = null
+    let asking = false
+    let lastCovered = false
+    const dropShot = (): void => {
+      shot?.remove()
+      shot = null
+      asking = false
+    }
     const place = (): void => {
       if (!live) {
         window.api.browser.place(label, { x: 0, y: 0, w: 0, h: 0 }, zoom, false)
@@ -163,7 +174,14 @@ export function BrowserTab({
       const r = el.getBoundingClientRect()
       const fits = r.width > 4 && r.height > 4 && document.visibilityState === 'visible' && !el.closest('.browser-tab-pane:not(.on)')
       const covered = fits && [...document.querySelectorAll(OVERLAYS)].some((o) => !o.contains(el) && overlaps(o.getBoundingClientRect(), r))
-      const visible = fits && !covered && !home
+      lastCovered = covered
+      if (!covered) dropShot()
+      // the native page stays up until its picture is in place, so the popup is never seen over nothing
+      else if (!shot && !asking) {
+        asking = true
+        window.api.browser.snapshot(label)
+      }
+      const visible = fits && !(covered && shot) && !home
       const key = visible ? `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)},${zoom}` : 'off'
       if (key === last) return
       last = key
@@ -180,6 +198,18 @@ export function BrowserTab({
     // parked: nothing to follow. (Every tab of every chat used to watch the whole document, so each
     // terminal redraw made all of them measure the layout.)
     if (!live) return
+    const offShot = window.api.browser.onSnapshot((lbl, png, ok) => {
+      if (lbl !== label) return
+      asking = false
+      if (!ok || !png || !lastCovered) return
+      shot?.remove()
+      shot = document.createElement('img')
+      shot.className = 'browser-shot'
+      shot.alt = ''
+      shot.src = `data:image/png;base64,${png}`
+      el.appendChild(shot)
+      place()
+    })
     const ro = new ResizeObserver(soon)
     ro.observe(el)
     // menus / dialogs opening, panes sliding, the chat switching. Changes inside a terminal or an
@@ -213,6 +243,8 @@ export function BrowserTab({
     const tick = window.setInterval(place, 1000)
     return () => {
       cancelAnimationFrame(frame)
+      offShot()
+      dropShot()
       ro.disconnect()
       mo.disconnect()
       window.removeEventListener('resize', soon)

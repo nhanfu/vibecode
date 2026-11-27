@@ -9,6 +9,7 @@
 
 extern void zero_native_web_nav(uint64_t window_id, const char *label, const char *url, const char *title, int loading, int can_back, int can_forward);
 extern void zero_native_web_session(uint64_t window_id, const char *label, const char *data);
+extern void zero_native_web_snapshot(uint64_t window_id, const char *label, const char *png_base64, int ok);
 extern void vc_adblock_attach(void *view);
 
 #define ZERO_NATIVE_MAX_WINDOWS 16
@@ -1843,6 +1844,52 @@ int zero_native_gtk_web_stop(zero_native_gtk_host_t *host, uint64_t window_id, c
     zero_native_gtk_webview_t *webview = zero_native_browser_tab(host, window_id, label, label_len, NULL);
     if (!webview) return 0;
     webkit_web_view_stop_loading(webview->web_view);
+    return 1;
+}
+
+/* A picture of the page's visible area, for a popup to lie over: PNG in memory, base64, sent as web:snapshot. */
+typedef struct {
+    WebKitWebView *web_view;
+    uint64_t window_id;
+    char *label;
+} zero_native_snapshot_request_t;
+
+static cairo_status_t zero_native_snapshot_write(void *closure, const unsigned char *data, unsigned int length) {
+    g_byte_array_append((GByteArray *)closure, data, length);
+    return CAIRO_STATUS_SUCCESS;
+}
+
+static void zero_native_snapshot_done(GObject *source, GAsyncResult *result, gpointer user_data) {
+    zero_native_snapshot_request_t *req = user_data;
+    GError *error = NULL;
+    cairo_surface_t *surface = webkit_web_view_get_snapshot_finish(WEBKIT_WEB_VIEW(source), result, &error);
+    char *encoded = NULL;
+    int ok = 0;
+    if (surface) {
+        GByteArray *bytes = g_byte_array_new();
+        if (cairo_surface_write_to_png_stream(surface, zero_native_snapshot_write, bytes) == CAIRO_STATUS_SUCCESS) {
+            encoded = g_base64_encode(bytes->data, bytes->len);
+            ok = 1;
+        }
+        g_byte_array_free(bytes, TRUE);
+        cairo_surface_destroy(surface);
+    }
+    if (error) g_error_free(error);
+    zero_native_web_snapshot(req->window_id, req->label, encoded ? encoded : "", ok);
+    g_free(encoded);
+    g_free(req->label);
+    g_object_unref(req->web_view);
+    g_free(req);
+}
+
+int zero_native_gtk_web_snapshot(zero_native_gtk_host_t *host, uint64_t window_id, const char *label, size_t label_len) {
+    zero_native_gtk_webview_t *webview = zero_native_browser_tab(host, window_id, label, label_len, NULL);
+    if (!webview) return 0;
+    zero_native_snapshot_request_t *req = g_new0(zero_native_snapshot_request_t, 1);
+    req->web_view = g_object_ref(webview->web_view);
+    req->window_id = window_id;
+    req->label = g_strndup(label, label_len);
+    webkit_web_view_get_snapshot(webview->web_view, WEBKIT_SNAPSHOT_REGION_VISIBLE, WEBKIT_SNAPSHOT_OPTIONS_NONE, NULL, zero_native_snapshot_done, req);
     return 1;
 }
 

@@ -3628,6 +3628,15 @@ button.plan-chevron:hover {
   min-height: 0;
   width: 100%;
   background: #fff;
+  position: relative;
+}
+/* the page's picture while a popup lies over it (the native page is parked meanwhile) */
+.browser-view > img.browser-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 .tab-strip-btn {
   flex: none;

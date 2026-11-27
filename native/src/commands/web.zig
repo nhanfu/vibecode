@@ -15,6 +15,7 @@ extern "c" fn zero_native_gtk_web_devtools(host: *anyopaque, window_id: u64, lab
 extern "c" fn zero_native_gtk_web_history(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, step: c_int) c_int;
 extern "c" fn zero_native_gtk_web_reload(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, hard: c_int) c_int;
 extern "c" fn zero_native_gtk_web_stop(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
+extern "c" fn zero_native_gtk_web_snapshot(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern "c" fn zero_native_gtk_web_visible(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, visible: c_int) c_int;
 extern "c" fn zero_native_gtk_web_mute(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize, muted: c_int) c_int;
 extern "c" fn zero_native_gtk_web_focus(host: *anyopaque, window_id: u64, label: [*]const u8, label_len: usize) c_int;
@@ -124,6 +125,15 @@ pub fn place(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     }
     _ = zero_native_gtk_web_visible(h, main_window, args.label.ptr, args.label.len, if (args.visible) 1 else 0);
     if (args.zoom >= 0.25 and args.zoom <= 5.0) svc.setWebViewZoom(main_window, args.label, args.zoom) catch {};
+    return cmd.json(output, null);
+}
+
+/// Asks for a picture of the page; it comes back as `web:snapshot`. Nothing is kept or written to disk.
+pub fn snapshot(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const args = try cmd.args(struct { label: []const u8 }, arena.allocator(), invocation);
+    _ = zero_native_gtk_web_snapshot(try host(), main_window, args.label.ptr, args.label.len);
     return cmd.json(output, null);
 }
 
@@ -262,6 +272,15 @@ export fn zero_native_web_nav(window_id: u64, label: [*:0]const u8, url: [*:0]co
     defer a.deinit();
     const json = std.json.Stringify.valueAlloc(a.allocator(), .{ label_text, .{ .url = nav.url, .title = nav.title, .back = nav.back, .fwd = nav.fwd, .loading = nav.loading } }, .{}) catch return;
     cmd.emit("web:nav", json);
+}
+
+/// The picture of a page (base64 PNG; empty when it failed), from the GTK snapshot callback.
+export fn zero_native_web_snapshot(window_id: u64, label: [*:0]const u8, data: [*:0]const u8, ok: c_int) callconv(.c) void {
+    _ = window_id;
+    var a = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer a.deinit();
+    const json = std.json.Stringify.valueAlloc(a.allocator(), .{ std.mem.span(label), std.mem.span(data), ok != 0 }, .{}) catch return;
+    cmd.emit("web:snapshot", json);
 }
 
 /// The page's history and state (base64), sent when a load finishes: kept by the app for the next start.

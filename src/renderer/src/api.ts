@@ -119,6 +119,10 @@ export const api = {
     /** where the page sits (CSS px in the window) and its zoom; `visible` false parks it (and lets it sleep) */
     place: (label: string, r: { x: number; y: number; w: number; h: number }, zoom: number, visible: boolean): void =>
       void invoke('web_place', { label, x: r.x, y: r.y, w: r.w, h: r.h, zoom, visible }),
+    /** a picture of the page, for a popup to lie over: comes back as onSnapshot (not kept on disk) */
+    snapshot: (label: string): void => void invoke('web_snapshot', { label }),
+    /** the picture of a page: base64 PNG, ok false when it could not be taken */
+    onSnapshot: (cb: (label: string, png: string, ok: boolean) => void): Off => on('web:snapshot', cb),
     /** the tab Claude's browser tools drive for this chat */
     setActive: (chatId: string, label: string): void => void invoke('web_set_active', { chatId, label }),
     navigate: (label: string, url: string): Promise<void> => invoke('web_navigate', { label, url }),
