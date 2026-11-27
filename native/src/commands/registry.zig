@@ -5,6 +5,7 @@ const cmd = @import("root.zig");
 const keybindings = @import("keybindings.zig");
 const fsx = @import("fsx.zig");
 const git = @import("git.zig");
+const appusage = @import("appusage.zig");
 const userdb = @import("userdb.zig");
 const appcmds = @import("appcmds.zig");
 const sessions = @import("sessions.zig");
@@ -106,6 +107,7 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("claude_get_project_bypass", appcmds.getProjectBypass),
     cmd.handler("claude_set_project_bypass", appcmds.setProjectBypass),
     cmd.handler("sys_memory", appcmds.sysMemory),
+    cmd.handler("app_usage", appusage.appUsage),
     cmd.handler("app_settings", appcmds.appSettings),
     cmd.handler("app_remember_folder", appcmds.appRememberFolder),
     cmd.handler("app_set_settings", appcmds.appSetSettings),
@@ -204,6 +206,7 @@ pub const names = [_][]const u8{
     "claude_get_project_bypass",
     "claude_set_project_bypass",
     "sys_memory",
+    "app_usage",
     "app_settings",
     "app_remember_folder",
     "app_set_settings",

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels'
 import { useStore } from './store'
-import { applyTheme, detectClaude, followChatSession, loadPlugins, loadSessions, openFolder, refreshGit, restoreChats, showChatBrowser } from './actions'
+import { applyTheme, detectClaude, followChatSession, loadPlugins, loadSessions, openBrowserTab, openFolder, refreshGit, restoreChats, showChatBrowser } from './actions'
 import { onGlobalKey, runNativeShortcut, webKeyFromNative } from './shortcuts'
 import { focusTerm } from './terminals'
 import { reloadIfClean } from './fileModelsLite'
@@ -63,6 +63,9 @@ function useBoot(): void {
       window.api.sessions.onChanged(loadSessions),
       window.api.sessions.onChatSession(followChatSession),
       window.api.browser.onOpen(showChatBrowser),
+      window.api.browser.onTabRequest((chatId, url, headless) => {
+        if (useStore.getState().chats.some((c) => c.id === chatId)) openBrowserTab(chatId, url, { headless })
+      }),
       window.api.browser.onKey((_label, key, shift) => webKeyFromNative(key, shift)),
       window.api.browser.onShortcut(runNativeShortcut),
       window.api.win.onState((win) => useStore.setState({ win })),

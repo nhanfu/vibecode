@@ -149,6 +149,8 @@ export const api = {
     onKey: (cb: (label: string, key: string, shift: boolean) => void): Off => on('web:key', cb),
     /** a chat's browser tools were used: make sure its Web tab exists (and show it) */
     onOpen: (cb: (chatId: string) => void): Off => on('browser:open', cb),
+    /** `vibe-open <url>` run by a chat's Claude: the chat, the address, and whether to load it in the background */
+    onTabRequest: (cb: (chatId: string, url: string, headless: boolean) => void): Off => on('browser:tab-request', cb),
     data: (): Promise<WebData> => invoke('web_data'),
     importChrome: (): Promise<WebData> => invoke('web_import_chrome'),
     suggest: (query: string): Promise<WebSuggestion[]> => invoke('web_suggest', { query }),
@@ -225,6 +227,8 @@ export const api = {
   },
   app: {
     settings: (): Promise<AppSettings> => invoke('app_settings'),
+    /** CPU share (of the whole machine, since the last call; null the first time) and memory of the app and everything it started */
+    usage: (): Promise<{ cpuPercent: number | null; rssBytes: number; processes: number } | null> => invoke('app_usage'),
     rememberFolder: (folder: string): Promise<AppSettings> => invoke('app_remember_folder', { folder }),
     setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => invoke('app_set_settings', { patch }),
     pickFolder: async (): Promise<string | null> => {

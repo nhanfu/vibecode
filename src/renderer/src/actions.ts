@@ -99,8 +99,7 @@ onTerminalEvents({
     const chatId = st().chats.some((c) => c.id === id) ? id : st().activeChatId
     newBrowserTab(browserKey(chatId), url)
   },
-  // A local dev server showing up in a chat's output becomes that chat's Web page.
-  data: (id, data) => {
+  data: (id) => {
     const chat = st().chats.find((c) => c.id === id)
     if (!chat) return
     // Startup prompts: the trust-folder question is always answered "Yes" (you only open your own
@@ -108,16 +107,6 @@ onTerminalEvents({
     const bypass = chat.permissionMode === 'bypassPermissions'
     if (agentDef(chat.agent).id === 'claude' && !settled.has(id)) answerStartupDialog(id, bypass)
     if (pendingDraft.has(id)) typeDraftWhenReady(id)
-    const text = ((outTail.get(id) ?? '') + data.replace(ANSI, '')).slice(-400)
-    outTail.set(id, text)
-    const seen = seenLocal.get(id) ?? new Set<string>()
-    for (const m of text.matchAll(LOCAL_URL)) {
-      const url = m[0].replace(/[.,;:]+$/, '').replace('://0.0.0.0', '://localhost')
-      if (seen.has(url)) continue
-      seen.add(url)
-      seenLocal.set(id, seen)
-      setBrowserUrl(browserKey(id), url)
-    }
   }
 })
 
@@ -177,13 +166,6 @@ function typeDraftWhenReady(id: string): void {
     }, 600)
   )
 }
-
-/* eslint-disable no-control-regex */
-const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)|\x1b[@-_]/g
-const LOCAL_URL = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|[\w-]+\.localhost)(?::\d{2,5})(?:\/[^\s'"<>)\]]*)?/g
-/** last bit of each chat's output (URLs can arrive split across chunks) and local URLs already used */
-const outTail = new Map<string, string>()
-const seenLocal = new Map<string, Set<string>>()
 
 setInterval(() => {
   const now = Date.now()
@@ -679,9 +661,16 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
   if (c.model) out.push('--model', c.model)
   if (c.effort) out.push('--effort', c.effort)
   if (c.permissionMode) out.push('--permission-mode', c.permissionMode)
-  if (deepUnderstanding()) out.push('--append-system-prompt', DEEP_UNDERSTANDING_PROMPT)
+  // one system prompt for the chat: the deep-understanding rules (when on) and how to show a web page
+  const prompt = [deepUnderstanding() ? DEEP_UNDERSTANDING_PROMPT : '', BROWSER_PROMPT].filter(Boolean).join('\n\n')
+  out.push('--append-system-prompt', prompt)
   return out
 }
+
+const BROWSER_PROMPT = [
+  'This app shows web pages in a Web tab beside the chat. To show a page to the user, run `vibe-open <url>` in the shell.',
+  'Add --headless to load it in the background without switching the tab on screen.',
+].join(' ')
 
 const DEEP_KEY = 'vibe.deepUnderstanding'
 /** The "deep understanding" option (kept as a preference, so it works without a native change). */
@@ -818,7 +807,6 @@ export function closeChat(id: string): void {
   forgetTerm(id)
   settled.delete(id)
   pendingDraft.delete(id)
-  seenLocal.delete(id)
   clearTimeout(dialogTimer.get(id))
   dialogTimer.delete(id)
   clearTimeout(draftTimer.get(id))
@@ -953,7 +941,6 @@ export function renameChat(id: string, title: string): void {
 function forgetTerm(id: string): void {
   lastData.delete(id)
   statusDirty.delete(id)
-  outTail.delete(id)
 }
 
 /* ---------------- Shells (bottom panel) ---------------- */
@@ -1112,6 +1099,24 @@ export function newBrowserTab(key: string, url?: string, reuseBlank = true): voi
     }
     const tab = blankTab(url)
     return { ...openPatch('web'), browsers: { ...s.browsers, [key]: { tabs: [...(b?.tabs ?? []), tab], active: tab.id } } }
+  })
+}
+
+/**
+ * Opens a page in a new tab of a chat's Web browser: the request a chat's Claude makes to show something.
+ * Shown by default (the panel opens on the new tab). `headless`: the tab is added and loads in the
+ * background; the panel and the tab on screen stay as they are.
+ */
+export function openBrowserTab(chatId: string | null, url: string, opts: { headless?: boolean } = {}): void {
+  const key = browserKey(chatId)
+  if (!opts.headless) {
+    newBrowserTab(key, url, false)
+    return
+  }
+  useStore.setState((s) => {
+    const b = s.browsers[key]
+    const tab = blankTab(url)
+    return { browsers: { ...s.browsers, [key]: { tabs: [...(b?.tabs ?? []), tab], active: b?.active ?? tab.id } } }
   })
 }
 

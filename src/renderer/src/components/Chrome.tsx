@@ -275,8 +275,6 @@ function RamMeter(): React.JSX.Element | null {
 }
 
 export function StatusBar(): React.JSX.Element {
-  const root = useStore((s) => s.root)
-  const git = useStore((s) => s.git)
   const claude = useStore((s) => s.claude)
   const working = useStore((s) => s.chats.filter((c) => c.status === 'working').length)
   const total = useStore((s) => s.chats.length)
@@ -285,22 +283,6 @@ export function StatusBar(): React.JSX.Element {
   return (
     <div className="statusbar">
       <div className="statusbar-left">
-        {root && (
-          <button
-            className="sb-item"
-            title={`${basename(root)} · ${root}\nClick to open another folder`}
-            aria-label={`Project folder ${basename(root)}, open another`}
-            onClick={() => void openFolder(null, { autoChat: false })}
-          >
-            <FolderOpen size={12} />
-          </button>
-        )}
-        {git.isRepo && (
-          <span className="sb-item" title={git.root ?? undefined}>
-            <GitBranch size={12} /> {git.branch}
-            {git.files.length > 0 && <span className="sb-muted">· {git.files.length} changed</span>}
-          </span>
-        )}
         {total > 0 && (
           <button
             className="sb-item"
@@ -317,9 +299,35 @@ export function StatusBar(): React.JSX.Element {
       <div className="statusbar-right">
         {tab && <span className="sb-item">{languageOf(tab.path)}</span>}
         {tab && <span className="sb-item">UTF-8</span>}
+        <AppUsage />
         {claude && <AgentPicker />}
       </div>
     </div>
+  )
+}
+
+/** The app's own CPU and RAM (it and everything it started), refreshed every 3 seconds. */
+function AppUsage(): React.JSX.Element | null {
+  const [usage, setUsage] = useState<{ cpuPercent: number | null; rssBytes: number; processes: number } | null>(null)
+  useEffect(() => {
+    let live = true
+    const load = (): void => {
+      window.api.app.usage().then((u) => live && setUsage(u)).catch(() => {})
+    }
+    load()
+    const t = setInterval(load, 3000)
+    return () => {
+      live = false
+      clearInterval(t)
+    }
+  }, [])
+  if (!usage) return null
+  const gb = (b: number): string => (b / 1024 ** 3).toFixed(2)
+  const cpu = usage.cpuPercent === null ? '…' : `${usage.cpuPercent.toFixed(1)}%`
+  return (
+    <span className="sb-item" title={`VIBE CODE and its terminals: ${usage.processes} processes`}>
+      CPU {cpu} · RAM {gb(usage.rssBytes)} GB
+    </span>
   )
 }
 

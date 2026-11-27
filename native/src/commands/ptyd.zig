@@ -81,7 +81,7 @@ pub fn socketPath() ?[:0]const u8 {
     return std.fmt.bufPrintZ(&S.path_buf, "{s}/{s}", .{ dir, socket_name }) catch null;
 }
 
-fn unixAddress(path: []const u8) ?std.c.sockaddr.un {
+pub fn unixAddress(path: []const u8) ?std.c.sockaddr.un {
     var addr = std.mem.zeroes(std.c.sockaddr.un);
     addr.family = std.c.AF.UNIX;
     if (path.len >= addr.path.len) return null;

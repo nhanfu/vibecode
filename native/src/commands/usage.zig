@@ -88,10 +88,42 @@ fn fetchUsage(a: std.mem.Allocator) !?[]Limit {
     return out.items;
 }
 
+/// The last limits that came back, kept in the app's memory (the API answers 429 when asked too often, and
+/// a failed call must not blank the meters). Asked for again at most once a minute.
+var cache: ?[]Limit = null;
+var cache_at_ns: i128 = 0;
+const refresh_ns: i128 = 60 * std.time.ns_per_s;
+
+fn monotonicNs() i128 {
+    var ts: std.c.timespec = undefined;
+    _ = std.c.clock_gettime(.MONOTONIC, &ts);
+    return @as(i128, ts.sec) * std.time.ns_per_s + ts.nsec;
+}
+
+/// A copy owned by the app's allocator (the call's arena goes away).
+fn cloneLimits(limits: []const Limit) ![]Limit {
+    const out = try cmd.gpa.alloc(Limit, limits.len);
+    for (limits, out) |l, *o| {
+        o.* = .{
+            .kind = try cmd.gpa.dupe(u8, l.kind),
+            .label = try cmd.gpa.dupe(u8, l.label),
+            .percent = l.percent,
+            .severity = try cmd.gpa.dupe(u8, l.severity),
+            .resetsAt = if (l.resetsAt) |r| try cmd.gpa.dupe(u8, r) else null,
+        };
+    }
+    return out;
+}
+
 pub fn claudeUsage(_: cmd.Invocation, output: []u8) ![]const u8 {
-    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
-    defer arena.deinit();
-    const a = arena.allocator();
-    const limits = fetchUsage(a) catch null;
-    return cmd.json(output, limits);
+    const now = monotonicNs();
+    if (cache == null or now - cache_at_ns >= refresh_ns) {
+        cache_at_ns = now;
+        var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+        defer arena.deinit();
+        if (fetchUsage(arena.allocator()) catch null) |fresh| {
+            cache = cloneLimits(fresh) catch cache;
+        }
+    }
+    return cmd.json(output, cache);
 }
