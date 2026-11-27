@@ -1410,7 +1410,36 @@ function saveOpenChats(): void {
 }
 
 /** Reopen the chats that were open when the app quit, each resuming its own conversation. */
+/** Chats a restore starts, by id: the ones not in `before` that are still starting. */
+function chatsAdded(before: Set<string>): string[] {
+  return st().chats.filter((c) => !before.has(c.id) && c.status === 'starting').map((c) => c.id)
+}
+
+/** The loading line stays while those chats start; it gives up after a while so it never sticks. */
+const RESUME_LIMIT_MS = 30 * 1000
+function watchResume(ids: string[]): void {
+  if (!ids.length) return
+  let done = false
+  let timer: number | undefined
+  const finish = (): void => {
+    if (done) return
+    done = true
+    unsub()
+    window.clearTimeout(timer)
+    useStore.setState({ resumingIds: [] })
+  }
+  const check = (): void => {
+    const s = st()
+    if (!ids.some((id) => s.chats.some((c) => c.id === id && c.status === 'starting'))) finish()
+  }
+  const unsub = useStore.subscribe(check)
+  timer = window.setTimeout(finish, RESUME_LIMIT_MS)
+  useStore.setState({ resumingIds: ids })
+  check()
+}
+
 export async function restoreChats(): Promise<void> {
+  const before = new Set(st().chats.map((c) => c.id))
   let saved: SavedChat[] = []
   // the list of chats was read properly (an empty one counts): only then is a terminal nobody claims an orphan
   let savedOk = false
@@ -1468,6 +1497,7 @@ export async function restoreChats(): Promise<void> {
     savedLayouts = {}
   }
   const restoredLayouts: Record<string, Layout> = {}
+  watchResume(chatsAdded(before))
   for (const [key, tree] of Object.entries(savedLayouts)) {
     const r = mapLeaves(tree, (old) => came.get(String(old)) ?? null)
     if (r) restoredLayouts[key] = r

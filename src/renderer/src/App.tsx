@@ -11,6 +11,20 @@ import { StackLayout } from './components/Stack'
 import { ReviewPopup } from './components/Review'
 import { BottomPanel, ClaudePanel } from './components/Claude'
 import { userStore } from './localPref'
+import { Loader2 } from 'lucide-react'
+
+/** Shown while the chats a restore brought back are still starting (after a reload or a restart). */
+function ResumeNotice(): React.JSX.Element | null {
+  const ids = useStore((s) => s.resumingIds)
+  const starting = useStore((s) => s.chats.filter((c) => ids.includes(c.id) && c.status === 'starting').length)
+  if (!ids.length || !starting) return null
+  return (
+    <div className="resume-notice" role="status">
+      <Loader2 size={14} className="spin" />
+      Resuming {starting} {starting === 1 ? 'chat' : 'chats'}…
+    </div>
+  )
+}
 
 function useGlobalKeys(): void {
   useEffect(() => {
@@ -80,6 +94,7 @@ export default function App(): React.JSX.Element {
   return (
     <div className={`app${dropdown ? ' mode-dropdown' : ''}`}>
       <TitleBar />
+      <ResumeNotice />
       {!root ? (
         <Welcome />
       ) : (

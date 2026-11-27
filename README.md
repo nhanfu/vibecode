@@ -45,7 +45,7 @@ palette → *Open keyboard shortcuts*.
 | Ctrl+= / Ctrl+− / Ctrl+0 | Terminal font size |
 | Shift+Enter (in chat) | Newline in Claude prompt |
 
-F5 / Ctrl+R never reload the app window (that would blank every chat).
+F5 / Ctrl+R never reload the app window (that would blank every chat). Ctrl+Shift+R reloads the app: the chats come back by resuming their sessions, with a loading line while they start.
 
 ## Drop-down (Guake) mode
 

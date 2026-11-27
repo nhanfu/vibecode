@@ -10,7 +10,7 @@
  * cursor. Ctrl+B toggles the sidebar everywhere; `{ "key": "ctrl+b", "command": "passToTerminal",
  * "when": "chatFocus" }` in keybindings.json gives it back to Claude Code (run in background).
  */
-import { closeFloat, floating, focusPanel, isPage, PANEL_IDS, pageTab, panelShown, showPanel, toggleFullscreen, togglePanel, togglePin, useStore, type PanelId, type StaticPanelId, type WebTab } from './store'
+import { closeFloat, floating, focusPanel, isPage, PANEL_IDS, pageTab, panelShown, searchFolder, showPanel, toggleFullscreen, togglePanel, togglePin, useStore, type PanelId, type StaticPanelId, type WebTab } from './store'
 import {
   browserKey,
   closeBrowserTab,
@@ -87,7 +87,7 @@ export function pluginCommands(plugins: PluginInfo[]): Command[] {
 export const COMMANDS: Command[] = [
   { id: 'palette', label: 'Show all commands', run: () => palette('>') },
   { id: 'keyboardShortcuts', label: 'Keyboard shortcuts: edit…', run: () => window.dispatchEvent(new Event('open-keybindings')) },
-  { id: 'quickOpen', label: 'Go to file…', run: () => st().root && palette('') },
+  { id: 'quickOpen', label: 'Go to file…', run: () => searchFolder(st()) && palette('') },
   { id: 'symbol', label: 'Go to symbol in file…', run: () => window.dispatchEvent(new Event('go-to-symbol')) },
   { id: 'line', label: 'Go to line…', run: () => window.dispatchEvent(new Event('go-to-line')) },
   { id: 'reloadApp', label: 'Reload app', run: () => window.location.reload() },
@@ -164,7 +164,6 @@ export const COMMANDS: Command[] = [
   },
   { id: 'railProject', label: 'Agent sidebar: show / hide Project', run: () => railCmd('project') },
   { id: 'railAgents', label: 'Agent sidebar: show / hide Agents', run: () => railCmd('agents') },
-  { id: 'railPlans', label: 'Agent sidebar: show / hide Plans & tasks', run: () => railCmd('plans') },
   {
     id: 'chats',
     label: 'Show chats (Project)',
@@ -249,6 +248,7 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+o', command: 'openFolder', when: '!terminalFocus && !textInputFocus' },
 
   { key: 'ctrl+shift+n', command: 'newChat' },
+  { key: 'ctrl+shift+r', command: 'reloadApp' },
   { key: 'ctrl+shift+right', command: 'nextChat' },
   { key: 'ctrl+shift+left', command: 'prevChat' },
   { key: 'ctrl+shift+down', command: 'nextAgent' },
@@ -293,7 +293,6 @@ export const DEFAULT_KEYS: KeyRule[] = [
   // the agent sidebar's icons: each one toggles its flyout
   { key: 'ctrl+shift+b', command: 'railProject' },
   { key: 'ctrl+shift+m', command: 'railAgents' },
-  { key: 'ctrl+shift+y', command: 'railPlans' },
   { key: 'ctrl+shift+h', command: 'railGit' },
   // Ctrl+Shift+C in a terminal copies (Windows Terminal / VS Code)
   { key: 'ctrl+shift+c', command: 'chats', when: '!terminalFocus' },
@@ -379,7 +378,7 @@ function context(): Context {
     editorFocus: editor,
     textInputFocus: field,
     inputFocus: editor || field,
-    hasFolder: !!s.root,
+    hasFolder: !!searchFolder(s),
     agentsFocus: agentsPointer || !!el?.closest?.('.agents-panel, .agent-rail, .agent-flyout, .explorer-nav'),
     fileDirty: !!activeFile()?.dirty,
     reviewOpen: s.tabs.length > 0,
@@ -490,10 +489,10 @@ apply(null)
 void loadKeybindings()
 window.api.keybindings.onChanged(() => void loadKeybindings())
 
-/** The page is a web view: its reload keys would wipe every chat's screen. */
+/** F5 and Ctrl+R would reload the page by accident; Ctrl+Shift+R is the reloadApp command (chats resume). */
 function isReload(e: KeyboardEvent): boolean {
   const ctrl = e.ctrlKey || e.metaKey
-  return e.key === 'F5' || (ctrl && e.key.toLowerCase() === 'r')
+  return e.key === 'F5' || (ctrl && !e.shiftKey && e.key.toLowerCase() === 'r')
 }
 
 /** The first key of a chord ("ctrl+k" of "ctrl+k ctrl+t"), waiting for the second. */
@@ -521,8 +520,7 @@ export function onGlobalKey(e: KeyboardEvent): void {
   if (e.defaultPrevented || shortcutRecording.on) return
   const inTerminal = !!(document.activeElement as HTMLElement | null)?.closest?.('.xterm')
   if (isReload(e) && !inTerminal) {
-    // Ctrl+Shift+R still reloads while developing
-    if (!(import.meta.env.DEV && e.shiftKey)) e.preventDefault()
+    e.preventDefault()
     return
   }
   // a key the input method is using to compose a word (Unikey, Telex…)

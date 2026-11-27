@@ -1,19 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Bot, Check, Copy, FolderOpen, LayoutGrid, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
+import { Bot, Check, Copy, FolderOpen, LayoutGrid, Plus, RefreshCw, Star } from 'lucide-react'
 import { basename, shownLayout, useStore, type Chat } from '../store'
 import { chatDragSource, chatDropTarget, defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, selectChat, setDefaultAgent, setGridLayout, takeGridPickRequest } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
 import { isSlot, type Layout } from '../chatLayout'
-import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
 import { ChatsView } from './Sidebar'
 import { StatusDot } from './icons'
 
 /** what counts as "on the rail": its icons, the flyout, and the popups beside the flyout */
-const RAIL_PARTS = '.agent-rail, .agent-flyout, .explorer-pop, .plan-pop, .menu, .ctx-menu, .overlay'
+const RAIL_PARTS = '.agent-rail, .agent-flyout, .explorer-pop, .menu, .ctx-menu, .overlay'
 
 /**
  * The Agent drop-down: a rail of icons on the left, the chat (`children`) on the right. Each icon
@@ -117,8 +116,7 @@ export function AgentSplit({ children }: { children: React.ReactNode }): React.J
 /** One icon per group. `cmd` is the command that opens it, so the tooltip can show its hotkey. */
 const RAIL: { id: RailId; label: string; icon: LucideIcon; cmd: string }[] = [
   { id: 'project', label: 'Project', icon: FolderOpen, cmd: 'railProject' },
-  { id: 'agents', label: 'Agents', icon: Bot, cmd: 'railAgents' },
-  { id: 'plans', label: 'Plans & tasks', icon: ListTodo, cmd: 'railPlans' }
+  { id: 'agents', label: 'Agents', icon: Bot, cmd: 'railAgents' }
 ]
 
 function AgentRail({
@@ -132,7 +130,6 @@ function AgentRail({
   onHover: (id: RailId) => void
   onPick: (id: RailId) => void
 }): React.JSX.Element {
-  const root = useStore((s) => s.root)
   const railRef = useRef<HTMLDivElement>(null)
   const [top, setTop] = useState(0)
   const items = RAIL
@@ -182,7 +179,6 @@ function RailBody({ id }: { id: RailId }): React.JSX.Element {
     <div className="agents-panel agent-flyout-body">
       {id === 'project' && <ProjectBody />}
       {id === 'agents' && <AgentsGroup always />}
-      {id === 'plans' && <PlansGroup always />}
     </div>
   )
 }

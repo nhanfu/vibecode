@@ -28,7 +28,7 @@ import {
   Moon,
   Sun
 } from 'lucide-react'
-import { basename, panelShown, togglePanel, useStore, type SidebarView } from '../store'
+import { basename, panelShown, searchFolder, togglePanel, useStore, type SidebarView } from '../store'
 import { StackBar } from './Stack'
 import { defaultAgent, deepUnderstanding, installedAgents, openBrowser, setDeepUnderstanding, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
 import { agentDef } from '../../../shared/agents'
@@ -55,16 +55,17 @@ function dragWindow(e: React.MouseEvent): void {
 
 export function TitleBar(): React.JSX.Element {
   const root = useStore((s) => s.root)
+  const folder = useStore((s) => searchFolder(s))
 
   return (
     <div className={window.api.platform === 'darwin' ? 'titlebar mac' : 'titlebar'} onMouseDown={dragWindow}>
       <div className="titlebar-left">
         {root && <StackBar />}
       </div>
-      {root && (
+      {folder && (
         <button className="search-box" onClick={() => useStore.setState({ quickOpen: true })}>
           <Search size={13} />
-          <span>Search files in {basename(root)}</span>
+          <span>Search files in {basename(folder)}</span>
           <kbd>Ctrl+P</kbd>
         </button>
       )}
@@ -423,7 +424,8 @@ function fuzzy(q: string, t: string): number {
  * "@" jumps to a symbol in the open file, ":" to a line.
  */
 export function QuickOpen(): React.JSX.Element {
-  const root = useStore((s) => s.root)
+  // the chat you are looking at decides which folder is searched
+  const folder = useStore((s) => searchFolder(s))
   const [files, setFiles] = useState<string[]>([])
   const [q, setQ] = useState(() => useStore.getState().quickOpenQuery)
   const [sel, setSel] = useState(0)
@@ -431,8 +433,9 @@ export function QuickOpen(): React.JSX.Element {
   const commandMode = q.startsWith('>')
 
   useEffect(() => {
-    if (root) window.api.fs.listFiles(root).then(setFiles)
-  }, [root])
+    setFiles([])
+    if (folder) window.api.fs.listFiles(folder).then(setFiles).catch(() => setFiles([]))
+  }, [folder])
 
   // lower-cased once per project, not once per file per keystroke
   const lower = useMemo(() => files.map((f) => f.toLowerCase()), [files])
@@ -473,9 +476,9 @@ export function QuickOpen(): React.JSX.Element {
 
   const close = (): void => useStore.setState({ quickOpen: false, quickOpenQuery: '' })
   const pickFile = (rel: string): void => {
-    if (!root) return
+    if (!folder) return
     const sep = window.api.platform === 'win32' ? '\\' : '/'
-    openFile(root.replace(/[\\/]$/, '') + sep + rel.replace(/[\\/]/g, sep))
+    openFile(folder.replace(/[\\/]$/, '') + sep + rel.replace(/[\\/]/g, sep))
     close()
   }
   const runCommand = (c: Command): void => {
@@ -539,7 +542,7 @@ export function QuickOpen(): React.JSX.Element {
                 )
               })}
           {count === 0 && (
-            <div className="palette-empty">{commandMode ? 'No matching commands' : !root ? 'Open a folder first' : files.length ? 'No matching files' : 'Indexing…'}</div>
+            <div className="palette-empty">{commandMode ? 'No matching commands' : !folder ? 'Open a folder first' : files.length ? 'No matching files' : 'Indexing…'}</div>
           )}
         </div>
       </div>

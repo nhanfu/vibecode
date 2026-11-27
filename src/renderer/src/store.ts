@@ -93,6 +93,8 @@ interface State {
   chatLayouts: Record<string, Layout>
   layoutMode: LayoutMode
   newChatModel: string | null
+  /** chats brought back by restoreChats: the page shows a loading line until they have started */
+  resumingIds: string[]
 
   shells: ShellTab[]
   activeShellId: string | null
@@ -338,6 +340,12 @@ export function paneKeyOf(all: Record<string, Layout>, chat: { id: string; cwd: 
   return Object.keys(all).find((k) => k !== ALL_LAYOUT_KEY && layoutIds(all[k]).includes(chat.id)) ?? own
 }
 
+/** The folder file search looks in: the folder of the chat you are looking at, else the project folder. */
+export function searchFolder(s: { root: string | null; chats: Chat[]; activeChatId: string | null }): string | null {
+  const chat = s.chats.find((c) => c.id === s.activeChatId)
+  return chat?.cwd || s.root
+}
+
 export function shownLayout(s: {
   chats: Chat[]
   activeChatId: string | null
@@ -418,6 +426,7 @@ export const useStore = create<State>((set) => ({
   chatLayouts: {},
   layoutMode: 'merged',
   newChatModel: null,
+  resumingIds: [],
 
   shells: [],
   activeShellId: null,

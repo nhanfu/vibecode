@@ -909,16 +909,6 @@ function NoChat(): React.JSX.Element {
         <button className="btn btn-primary btn-lg" onClick={() => newChat()}>
           <Sparkles size={16} /> New chat{def.id !== 'claude' ? ` · ${def.label}` : ''}
         </button>
-        {claudeFound && (
-          <>
-            <button className="btn btn-ghost" onClick={() => newChat({ args: ['--continue'], title: 'Continued chat' })}>
-              <RotateCcw size={14} /> Continue last
-            </button>
-            <button className="btn btn-ghost" onClick={() => newChat({ args: ['--resume'], title: 'Resume…' })}>
-              <History size={14} /> Resume…
-            </button>
-          </>
-        )}
       </div>
       {others.length > 0 && (
         <div className="no-chat-actions no-chat-agents">

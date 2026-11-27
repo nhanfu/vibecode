@@ -11,7 +11,7 @@ const pending = new Map<string, string | null>()
 let timer: ReturnType<typeof setTimeout> | null = null
 
 /** Saved lists with a table of their own (plan_items, open_chats, web_pages); everything else is a key in ui_prefs. */
-const TABLES: Record<string, string> = { 'vibe.plansTasks': 'plans', 'vibe.openChats': 'chats', 'vibe.pages': 'pages' }
+const TABLES: Record<string, string> = { 'vibe.openChats': 'chats', 'vibe.pages': 'pages' }
 
 function flush(): void {
   timer = null
