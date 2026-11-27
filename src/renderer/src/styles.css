@@ -1583,18 +1583,6 @@ kbd {
   text-align: center;
   white-space: nowrap;
 }
-.layout-proj-name {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.layout-proj-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .layout-map-cell.empty,
 .claude-col.empty {
   border: 1px dashed var(--w-22);
@@ -5100,7 +5088,7 @@ button.plan-chevron:hover {
 .layout-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
   margin: 2px 8px 6px;
 }
@@ -5108,28 +5096,6 @@ button.plan-chevron:hover {
   display: flex;
   align-items: center;
   gap: 2px;
-}
-.layout-seg {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-}
-.layout-seg-btn {
-  padding: 2px 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.layout-seg-btn.on {
-  background: var(--bg-hover);
-  color: var(--text);
 }
 .layout-map {
   height: 84px;
@@ -5149,17 +5115,6 @@ button.plan-chevron:hover {
 }
 .layout-map-split.col {
   flex-direction: column;
-}
-.layout-proj + .layout-proj {
-  margin-top: 6px;
-}
-.layout-proj-name {
-  margin: 2px 10px 0;
-  font-size: 11px;
-  color: var(--text-dim);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 .layout-map-cell {
   flex: 1 1 0;

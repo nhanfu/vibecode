@@ -2,11 +2,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Bot, Check, Copy, FolderOpen, LayoutGrid, ListTodo, Plus, RefreshCw, Star } from 'lucide-react'
 import { basename, shownLayout, useStore, type Chat } from '../store'
-import { chatDragSource, chatDropTarget, defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, openFolder, selectChat, setDefaultAgent, setGridLayout, setLayoutMode, takeGridPickRequest } from '../actions'
+import { chatDragSource, chatDropTarget, defaultAgent, detectClaude, hoverFocus, newChatWith, newLayoutChat, selectChat, setDefaultAgent, setGridLayout, takeGridPickRequest } from '../actions'
 import { AGENTS, agentDef, type AgentId } from '../../../shared/agents'
 import { COMMANDS } from '../shortcuts'
 import { takeRailRequest, type RailId, type RailRequest } from '../rail'
-import { gridLayout, isSlot, joinLayout, layoutIds, layoutKey, type Layout } from '../chatLayout'
+import { isSlot, type Layout } from '../chatLayout'
 import { PlansGroup } from './PlansTree'
 import { SideGroup } from './SideGroup'
 import { ChatsView } from './Sidebar'
@@ -383,65 +383,32 @@ function LayoutTree({ node, chats, activeId }:{ node: Layout | string; chats: Ch
   )
 }
 
-function runningLayouts(chats: Chat[], chatLayouts: Record<string, Layout>): { key: string; name: string; cwd: string; layout: Layout }[] {
-  const groups = new Map<string, Chat[]>()
-  for (const c of chats) {
-    if (c.status === 'exited') continue
-    const k = layoutKey(c.cwd)
-    groups.set(k, [...(groups.get(k) ?? []), c])
-  }
-  return [...groups].map(([key, cs]) => {
-    const ids = cs.map((c) => c.id)
-    const cur = chatLayouts[key]
-    const shown = new Set(layoutIds(cur ?? null))
-    const layout = cur ? ids.filter((id) => !shown.has(id)).reduce<Layout>((l, id) => joinLayout(l, null, id, 'row'), cur) : (gridLayout(ids) as Layout)
-    return { key, name: basename(cs[0].cwd), cwd: cs[0].cwd, layout }
-  })
-}
-
 function LayoutMap(): React.JSX.Element {
   const activeId = useStore((s) => s.activeChatId)
   const chats = useStore((s) => s.chats)
   const chatLayouts = useStore((s) => s.chatLayouts)
   const mode = useStore((s) => s.layoutMode)
-  const merged = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode: 'merged' }), [chats, activeId, chatLayouts])
-  const projects = useMemo(() => (mode === 'merged' ? [] : runningLayouts(chats, chatLayouts)), [chats, chatLayouts, mode])
+  // the same layout the chat pane shows: all chats in one grid, or only the active chat's project
+  const shown = useMemo(() => shownLayout({ chats, activeChatId: activeId, chatLayouts, layoutMode: mode }), [chats, activeId, chatLayouts, mode])
+  const active = chats.find((c) => c.id === activeId)
   return (
     <>
       <div className="layout-bar">
-        <div className="layout-seg">
-          <button className={`layout-seg-btn${mode === 'project' ? ' on' : ''}`} title="One layout per project" onClick={() => setLayoutMode('project')}>
-            By project
-          </button>
-          <button className={`layout-seg-btn${mode === 'merged' ? ' on' : ''}`} title="All open chats in one grid" onClick={() => setLayoutMode('merged')}>
-            All
-          </button>
-        </div>
         <div className="layout-bar-tools">
-          {mode === 'merged' && <GridPick title="Grid for all chats (Alt+Shift+L)" listen onPick={(rows, cols) => setGridLayout(rows, cols, null)} />}
+          {mode === 'merged' ? (
+            <GridPick title="Grid for all chats (Alt+Shift+L)" listen onPick={(rows, cols) => setGridLayout(rows, cols, null)} />
+          ) : (
+            active && <GridPick title={`Grid for ${basename(active.cwd)} (Alt+Shift+L)`} listen onPick={(rows, cols) => setGridLayout(rows, cols, active.cwd)} />
+          )}
           <button className="icon-btn tiny" title="New chat in the layout (Alt+Shift+C)" onClick={() => newLayoutChat()}>
             <Plus size={14} />
           </button>
         </div>
       </div>
-      {mode === 'merged' ? (
-        merged !== null && (
-          <div className="layout-map">
-            <LayoutTree node={merged} chats={chats} activeId={activeId} />
-          </div>
-        )
-      ) : (
-        projects.map((p, i) => (
-          <div key={p.key} className="layout-proj">
-            <div className="layout-proj-name" title={p.cwd}>
-              <span className="layout-proj-title">{p.name}</span>
-              <GridPick title={`Grid for ${p.name}${i === 0 ? ' (Alt+Shift+L)' : ''}`} listen={i === 0} onPick={(rows, cols) => setGridLayout(rows, cols, p.cwd)} />
-            </div>
-            <div className="layout-map">
-              <LayoutTree node={p.layout} chats={chats} activeId={activeId} />
-            </div>
-          </div>
-        ))
+      {shown !== null && (
+        <div className="layout-map">
+          <LayoutTree node={shown} chats={chats} activeId={activeId} />
+        </div>
       )}
     </>
   )
