@@ -189,7 +189,8 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
   const [logs, setLogs] = useState(false)
   const [more, setMore] = useState(false)
   const api = window.api.plugins
-  const canOpen = p.enabled && p.available && p.hasSidecar
+  // only a plugin that brings a web page: an MCP-only sidecar (no panel) has no page, and its root answers 401
+  const canOpen = p.enabled && p.available && p.hasSidecar && !!p.panel
   const live = p.status === 'running' || p.status === 'starting'
 
   const remove = async (): Promise<void> => {
