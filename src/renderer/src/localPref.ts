@@ -10,8 +10,8 @@ const cache = new Map<string, string>()
 const pending = new Map<string, string | null>()
 let timer: ReturnType<typeof setTimeout> | null = null
 
-/** Saved lists with a table of their own (plan_items, open_chats, web_pages); everything else is a key in ui_prefs. */
-const TABLES: Record<string, string> = { 'vibe.openChats': 'chats', 'vibe.pages': 'pages' }
+/** Saved lists with a table of their own (plan_items, open_chats); everything else is a key in ui_prefs. */
+const TABLES: Record<string, string> = { 'vibe.openChats': 'chats' }
 
 function flush(): void {
   timer = null
@@ -40,10 +40,10 @@ export async function hydrateUserStore(): Promise<void> {
   // the chats that come back attach to them
   await invoke('pty_page_reset').catch(() => {})
   try {
-    const snap = await invoke<{ prefs: Record<string, string>; plans: string; chats: string; pages: string }>('userdb_snapshot')
+    const snap = await invoke<{ prefs: Record<string, string>; plans: string; chats: string }>('userdb_snapshot')
     for (const [k, v] of Object.entries(snap.prefs)) cache.set(k, v)
     for (const [key, table] of Object.entries(TABLES)) {
-      const v = snap[table as 'plans' | 'chats' | 'pages']
+      const v = snap[table as 'plans' | 'chats']
       if (v && v !== '[]') cache.set(key, v)
     }
   } catch {

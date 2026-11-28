@@ -2,7 +2,6 @@
 const std = @import("std");
 const cmd = @import("root.zig");
 const ptyd = @import("ptyd.zig");
-const openreq = @import("openreq.zig");
 
 extern "c" fn usleep(usec: c_uint) c_int;
 
@@ -256,20 +255,11 @@ fn childEnv(a: std.mem.Allocator) ![]const []const u8 {
             std.mem.startsWith(u8, text, "ANTHROPIC_BASE_URL=")))
             continue;
         if (std.mem.startsWith(u8, text, "TERM=") or std.mem.startsWith(u8, text, "COLORTERM=") or std.mem.startsWith(u8, text, "FORCE_COLOR=")) continue;
-        // the `vibe-open` helper comes first on PATH, so Claude's shell finds it
-        if (std.mem.startsWith(u8, text, "PATH=")) {
-            var dir_buf: [700]u8 = undefined;
-            if (openreq.binDir(&dir_buf)) |dir| {
-                try entries.append(a, try std.fmt.allocPrint(a, "PATH={s}:{s}", .{ dir, text["PATH=".len..] }));
-                continue;
-            }
-        }
         try entries.append(a, text);
     }
     for ([_][]const u8{ "TERM=xterm-256color", "COLORTERM=truecolor", "FORCE_COLOR=1" }) |extra| {
         try entries.append(a, extra);
     }
-    if (openreq.appExe().len > 0) try entries.append(a, try std.fmt.allocPrint(a, "TINJS_APP_BIN={s}", .{openreq.appExe()}));
     return entries.items;
 }
 

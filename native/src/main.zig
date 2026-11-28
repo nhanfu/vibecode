@@ -5,7 +5,10 @@ const commands = @import("commands/root.zig");
 const registry = @import("commands/registry.zig");
 const plugins = @import("commands/plugins.zig");
 const ptyd = @import("commands/ptyd.zig");
-const openreq = @import("commands/openreq.zig");
+// the vendored GTK host calls these two; they must be linked in (see the file)
+comptime {
+    _ = @import("commands/gtk_hooks.zig");
+}
 
 pub const panic = std.debug.FullPanic(zero_native.debug.capturePanic);
 
@@ -26,7 +29,6 @@ const App = struct {
     fn start(_: *anyopaque, runtime: *zero_native.Runtime) anyerror!void {
         commands.runtime = runtime;
         plugins.warmUp();
-        openreq.start();
     }
 
     fn stop(_: *anyopaque, _: *zero_native.Runtime) anyerror!void {
@@ -51,14 +53,6 @@ const builtin_commands = [_]zero_native.BridgeCommandPolicy{
 /// so the localhost ports are a prefix match). Sidecars are not given the bridge: the bridge's origins are separate.
 const navigation_origins = commands.origins ++ [_][]const u8{"http://127.0.0.1:*"};
 
-fn wantsOpenTab(args: std.process.Args) bool {
-    var it = args.iterate();
-    while (it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--open-tab")) return true;
-    }
-    return false;
-}
-
 fn wantsDaemon(args: std.process.Args) bool {
     var it = args.iterate();
     while (it.next()) |arg| {
@@ -68,7 +62,6 @@ fn wantsDaemon(args: std.process.Args) bool {
 }
 
 pub fn main(init: std.process.Init) !void {
-    if (wantsOpenTab(init.minimal.args)) return openreq.client(init.minimal.args);
     commands.io = init.io;
     commands.gpa = init.gpa;
     if (wantsDaemon(init.minimal.args)) return ptyd.run();

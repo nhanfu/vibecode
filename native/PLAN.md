@@ -30,14 +30,10 @@ added for each command) and, for UI steps, a look at the running window (`cd nat
 - Default: patch `node_modules/zero-native/src/platform/linux/gtk_host.c` through a local copy so the bridge can minimise, maximise, hide, resize and set the drop-down geometry. Badge via the desktop notification API if available.
 - Check: each title-bar button and the drop-down mode work in the window.
 
-**5. Browser tabs** (`browser.rs`, 999 lines, `webdata.rs`)
-- Uses zero-native child webviews (`webview.create`, `setFrame`, `navigate`). Verify that child webviews with the bridge are supported on Linux (the README warns some backends do not support them).
-- CDP/eval features (`web_eval`, key presses) need a WebKit-level path; decide per feature whether it is in scope.
-- Check: open a web tab, navigate, back/forward, close.
+**5. Browser tabs**: removed from the app (web tabs, bookmarks and history, `vibe-open`). Nothing to port.
 
 **6. Remaining modules**
 - `sessions` detail commands (images, context, tasks, subagents, changes).
-- `webdata` (SQLite for Chrome import; vendor SQLite the same way as DuckDB).
 - `plugins` (1213 lines: install, sidecar processes, registry).
 - `mcp` (488 lines).
 - `claude_usage` (HTTPS to the Anthropic API; use `std.http.Client`).

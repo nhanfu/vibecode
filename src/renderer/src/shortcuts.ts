@@ -10,29 +10,21 @@
  * cursor. Ctrl+B toggles the sidebar everywhere; `{ "key": "ctrl+b", "command": "passToTerminal",
  * "when": "chatFocus" }` in keybindings.json gives it back to Claude Code (run in background).
  */
-import { closeFloat, floating, focusPanel, isPage, PANEL_IDS, pageTab, panelShown, searchFolder, showPanel, toggleFullscreen, togglePanel, togglePin, useStore, type PanelId, type StaticPanelId, type WebTab } from './store'
+import { closeFloat, floating, focusPanel, PANEL_IDS, panelShown, searchFolder, showPanel, toggleFullscreen, togglePanel, togglePin, useStore, type PanelId, type StaticPanelId } from './store'
 import {
-  browserKey,
-  closeBrowserTab,
   closeChat,
   closeTab,
   cycleChat,
   cycleAgent,
   cycleAgentGroup,
-  cycleWebTab,
   defaultAgent,
   duplicateChat,
   newLayoutChat,
   openGridPicker,
-  pageLabels,
-  stepBrowserHistory,
   newChat,
   newShell,
-  newWebTab,
-  openBrowser,
   openFolder,
   openFile,
-  reopenClosedWebTab,
   selectChat,
   toggleBottom,
   toggleTheme
@@ -66,7 +58,7 @@ const railCmd = (id: RailId, mode: RailMode = 'toggle'): void => {
   openRail(id, mode)
 }
 const palette = (query: string): void => useStore.setState({ quickOpen: true, quickOpenQuery: query })
-const PANEL_LABELS: Record<StaticPanelId, string> = { web: 'Web', plugins: 'Plugins', agents: 'Agent (chat)' }
+const PANEL_LABELS: Record<StaticPanelId, string> = { plugins: 'Plugins', agents: 'Agent (chat)' }
 
 /** One command per plugin that has a settings file: opens it in the editor to edit and review. */
 export function pluginCommands(plugins: PluginInfo[]): Command[] {
@@ -109,28 +101,6 @@ export const COMMANDS: Command[] = [
 
   { id: 'save', label: 'Save file', run: () => saveActive() },
   { id: 'closeTab', label: 'Close the file or change on show', run: () => closeActiveTab() },
-  { id: 'newWebTab', label: 'New web tab', run: () => newWebTab() },
-  {
-    id: 'webDevtools',
-    label: 'Web tab: open developer tools',
-    run: () => {
-      const tab = activeWebTab()
-      const label = tab && pageLabels.get(tab.id)
-      if (label) window.api.browser.devtools(label)
-    }
-  },
-  {
-    id: 'closeWebTab',
-    label: 'Close web tab',
-    run: () => {
-      const key = browserKey(st().activeChatId)
-      const active = st().browsers[key]?.active
-      if (active) closeBrowserTab(key, active)
-    }
-  },
-  { id: 'reopenWebTab', label: 'Reopen closed web tab', run: () => reopenClosedWebTab() },
-  { id: 'nextWebTab', label: 'Next web tab', run: () => cycleWebTab(1) },
-  { id: 'prevWebTab', label: 'Previous web tab', run: () => cycleWebTab(-1) },
   { id: 'nextAgent', label: 'Next running agent', run: () => cycleAgent(1) },
   { id: 'prevAgent', label: 'Previous running agent', run: () => cycleAgent(-1) },
   { id: 'nextAgentGroup', label: 'Next agent group', run: () => cycleAgentGroup(1) },
@@ -154,8 +124,6 @@ export const COMMANDS: Command[] = [
   { id: 'fullscreen', label: 'Mini-app full screen', run: () => toggleFullscreen(currentMiniApp()) },
   { id: 'miniAppPrev', label: 'Previous mini-app', run: () => cycleMiniApp(-1) },
   { id: 'miniAppNext', label: 'Next mini-app', run: () => cycleMiniApp(1) },
-  { id: 'webBack', label: 'Back in the web tab', run: () => stepBrowserHistory(-1) },
-  { id: 'webForward', label: 'Forward in the web tab', run: () => stepBrowserHistory(1) },
 
   {
     id: 'explorerFocus',
@@ -175,12 +143,6 @@ export const COMMANDS: Command[] = [
 
   // the title-bar drop-downs: float open / close; pinned ones get the cursor instead (store.ts togglePanel)
   { id: 'sidebar', label: 'Show / hide Project (chats and folders)', run: () => railCmd('project') },
-  {
-    id: 'viewWeb',
-    label: 'Show / hide Web',
-    // openBrowser also gives the chat its first page
-    run: () => (panelShown(st(), 'web') ? togglePanel('web') : openBrowser())
-  },
   { id: 'viewPlugins', label: 'Show / hide Plugins', run: () => togglePanel('plugins') },
   // the chat: showing it puts the cursor in it, so you can type straight away
   { id: 'viewAgents', label: 'Show / hide Agent (the chat)', run: () => toggleChatPanel() },
@@ -259,7 +221,6 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'alt+shift+d', command: 'duplicateAgent' },
   { key: 'alt+shift+v', command: 'duplicateAgentBelow' },
   { key: 'ctrl+shift+j', command: 'duplicateAgentBelow' },
-  { key: 'ctrl+shift+j', command: 'webDevtools', when: 'webFocus' },
   { key: 'ctrl+alt+shift+d', command: 'duplicateAgentWholeRight' },
   { key: 'ctrl+alt+shift+v', command: 'duplicateAgentWholeBelow' },
   { key: 'alt+shift+l', command: 'layoutGrid' },
@@ -279,14 +240,6 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+w', command: 'closeTab', when: '!terminalFocus && !textInputFocus && reviewOpen' },
   { key: 'ctrl+f4', command: 'closeTab', when: '!terminalFocus && reviewOpen' },
   { key: 'ctrl+w', command: 'closeChat', when: 'chatFocus || agentsFocus' },
-  // the keyboard in a Web tab: these keys belong to the tabs there (the later rule wins)
-  { key: 'ctrl+t', command: 'newWebTab', when: '!terminalFocus' },
-  { key: 'ctrl+w', command: 'closeWebTab', when: 'webFocus' },
-  { key: 'ctrl+shift+t', command: 'reopenWebTab', when: '!terminalFocus' },
-  { key: 'ctrl+tab', command: 'nextWebTab', when: '!terminalFocus' },
-  { key: 'ctrl+shift+tab', command: 'prevWebTab', when: '!terminalFocus' },
-  { key: 'alt+left', command: 'webBack', when: '!terminalFocus' },
-  { key: 'alt+right', command: 'webForward', when: '!terminalFocus' },
 
   // no terminalFocus guard: in a chat it takes Claude Code's Ctrl+E (end of line); keybindings.json can give it back
   { key: 'ctrl+shift+f', command: 'explorerFocus' },
@@ -302,64 +255,39 @@ export const DEFAULT_KEYS: KeyRule[] = [
   { key: 'ctrl+shift+`', command: 'newTerminal' },
 
   // the title-bar drop-downs (Ctrl+B: Project, above), from a terminal too
-  { key: 'ctrl+shift+w', command: 'viewWeb' },
   { key: 'ctrl+shift+a', command: 'viewAgents' },
   { key: 'ctrl+shift+x', command: 'viewPlugins' },
-  { key: 'ctrl+2', command: 'viewWeb' },
   { key: 'ctrl+4', command: 'viewAgents' }
 ]
-
-const activeWebTab = (): WebTab | undefined => {
-  const s = st()
-  const b = s.browsers[browserKey(s.activeChatId)]
-  return b?.tabs.find((t) => t.id === b.active)
-}
 
 export function currentMiniApp(): PanelId {
   const s = st()
   if (s.fullscreen) return s.fullscreen
   const floated = floating(s)
   if (floated) return floated
-  if (webHasFocus) {
-    const tab = activeWebTab()
-    return tab?.detached ? `page:${tab.id}` : 'web'
-  }
   const here = (document.activeElement as HTMLElement | null)?.closest?.('.stack-panel')?.getAttribute('data-panel')
   if (here) return here as PanelId
   return s.pinned.includes('agents') ? 'agents' : ([...s.panelOrder].reverse().find((p) => s.pinned.includes(p)) ?? 'agents')
 }
 
 function focusMiniApp(id: PanelId): void {
-  window.api.browser.focusMain()
   const s = st()
-  if (id === 'web' || isPage(id)) {
-    const tab = isPage(id) ? pageTab(s, id) : activeWebTab()
-    const label = tab ? pageLabels.get(tab.id) : undefined
-    if (label) window.api.browser.focus(label)
-    return
-  }
   if (id === 'agents' && s.activeChatId) return focusTerm(s.activeChatId)
   focusPanel(id)
 }
 
 export function cycleMiniApp(step: 1 | -1): void {
   const s = st()
-  const list = s.panelOrder.filter((id) => !isPage(id) || !!pageTab(s, id))
+  const list = s.panelOrder
   if (!list.length) return
   const i = list.indexOf(currentMiniApp())
   const next = list[(i < 0 ? 0 : i + step + list.length) % list.length]
-  webHasFocus = false
   if (s.fullscreen) useStore.setState({ fullscreen: next, floatOpen: null, peek: null })
   else if (!s.pinned.includes(next)) showPanel(next)
   focusMiniApp(next)
 }
 
-export function runNativeShortcut(id: string): void {
-  webHasFocus = true
-  byId.get(id)?.run()
-}
-
-/** The cursor is in a text field of the page (not Monaco or a terminal, which handle their own keys). */
+/** The cursor is in a text field (not Monaco or a terminal, which handle their own keys). */
 const inTextField = (el: HTMLElement | null): boolean =>
   !!el && !el.closest('.monaco-editor') && !el.closest('.xterm') && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
 
@@ -371,7 +299,6 @@ function context(): Context {
   const field = inTextField(el)
   const s = st()
   return {
-    webFocus: webHasFocus || !!el?.closest?.('.browser-tab'),
     terminalFocus: !!term,
     chatFocus: !!term && term.dataset.kind === 'claude',
     shellFocus: !!term && term.dataset.kind === 'shell',
@@ -387,8 +314,7 @@ function context(): Context {
   }
 }
 const CONTEXT_HELP = [
-  'webFocus           the keyboard is in a Web tab (its address bar or its page)',
-  'terminalFocus      the cursor is in a terminal (a chat or a shell)',
+  'terminalFocus     the cursor is in a terminal (a chat or a shell)',
   'chatFocus          … in a chat (Claude Code or another coding agent)',
   'shellFocus         … in a shell terminal',
   'editorFocus        … in the code editor',
@@ -398,9 +324,9 @@ const CONTEXT_HELP = [
   'agentsFocus        the cursor is in the agent sidebar',
   'fileDirty          the open file has unsaved changes',
   'reviewOpen         a file or a change is open in the popup',
-  "floating           the drop-down floating now: 'web' | 'plugins' | 'agents', '' if none",
-  'webShown pluginsShown agentsShown        that drop-down is on screen (pinned or floating)',
-  'webPinned pluginsPinned agentsPinned   … pinned in the stack'
+  "floating           the drop-down floating now: 'plugins' | 'agents', '' if none",
+  'pluginsShown agentsShown           that drop-down is on screen (pinned or floating)',
+  'pluginsPinned agentsPinned         … pinned in the stack'
 ]
 
 let bindings: Binding[] = []
@@ -498,20 +424,11 @@ function isReload(e: KeyboardEvent): boolean {
 /** The first key of a chord ("ctrl+k" of "ctrl+k ctrl+t"), waiting for the second. */
 let pending: string | null = null
 
-/** The page (a native view, outside the document) has the keyboard: set when its keys arrive, cleared by a click elsewhere. */
-let webHasFocus = false
 let agentsPointer = false
 document.addEventListener('pointerdown', (e) => {
   const target = e.target as HTMLElement | null
-  webHasFocus = !!target?.closest?.('.browser-tab')
   agentsPointer = !!target?.closest?.('.agents-panel, .agent-rail, .agent-flyout, .explorer-nav')
 }, true)
-
-/** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed in a Web page: run them as if they came from the window. */
-export function webKeyFromNative(key: string, shift: boolean): void {
-  webHasFocus = true
-  window.dispatchEvent(new KeyboardEvent('keydown', { key: shift ? key.toUpperCase() : key, ctrlKey: true, shiftKey: shift }))
-}
 
 /** Set while the keyboard shortcuts editor waits for a key to record: no command runs then. */
 export const shortcutRecording = { on: false }

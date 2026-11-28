@@ -1,5 +1,5 @@
 //! The user's data in one DuckDB file: `<userData>/vibecode.duckdb` (override: `VIBECODE_DB`).
-//! Port of src-tauri/src/userdb.rs. Tables: meta, settings, ui_prefs, plan_items, open_chats, web_pages.
+//! Port of src-tauri/src/userdb.rs. Tables: meta, settings, ui_prefs, plan_items, open_chats.
 //! Secrets are not stored here.
 
 const std = @import("std");
@@ -7,6 +7,8 @@ const cmd = @import("root.zig");
 const db = @import("db.zig");
 
 /// Each step runs once, in order; `meta.schema_version` records how far this file has got.
+/// Never remove or reorder a step: the web_pages steps are the built-in browser's old table, still run so that
+/// files written before it was removed keep their schema_version.
 const migrations = [_][:0]const u8{
     \\CREATE TABLE settings (
     \\    key     VARCHAR PRIMARY KEY,
@@ -130,16 +132,6 @@ const SavedChat = struct {
     active: bool = false,
 };
 
-const WebPage = struct {
-    id: []const u8,
-    url: []const u8,
-    title: []const u8 = "",
-    chat: ?[]const u8 = null,
-    pinned: bool = false,
-    muted: bool = false,
-    detached: bool = false,
-};
-
 /// Serialises a value the way the page reads it: optional fields that are null are left out.
 fn compactJson(a: std.mem.Allocator, value: anytype) ![]u8 {
     return std.json.Stringify.valueAlloc(a, value, .{ .emit_null_optional_fields = false });
@@ -190,20 +182,6 @@ fn loadChats(a: std.mem.Allocator) ![]SavedChat {
     return chats.items;
 }
 
-fn loadPages(a: std.mem.Allocator) ![]WebPage {
-    var rows = try db.query("SELECT id, url, title, chat, pinned, muted, detached FROM web_pages ORDER BY position", &.{});
-    defer rows.deinit();
-    var pages: std.ArrayList(WebPage) = .empty;
-    for (0..rows.count()) |r| {
-        const id = (try rows.text(a, 0, r)) orelse continue;
-        const url = (try rows.text(a, 1, r)) orelse continue;
-        const title = (try rows.text(a, 2, r)) orelse "";
-        const chat = try rows.text(a, 3, r);
-        try pages.append(a, .{ .id = id, .url = url, .title = title, .chat = chat, .pinned = rows.boolean(4, r), .muted = rows.boolean(5, r), .detached = rows.boolean(6, r) });
-    }
-    return pages.items;
-}
-
 /// Replaces the plans. A parent that is not in the list (or is the item itself) puts the item at the top level.
 fn savePlans(items: []const PlanItem) !void {
     try db.begin();
@@ -252,19 +230,6 @@ fn saveChats(chats: []const SavedChat) !void {
     try db.commit();
 }
 
-fn savePages(pages: []const WebPage) !void {
-    try db.begin();
-    errdefer db.rollback();
-    try db.exec("DELETE FROM web_pages");
-    for (pages, 0..) |page, pos| {
-        try db.run(
-            "INSERT INTO web_pages (id, url, title, position, chat, pinned, muted, detached) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            &.{ .{ .text = page.id }, .{ .text = page.url }, .{ .text = page.title }, .{ .int = @intCast(pos) }, optionalParam(page.chat), .{ .boolean = page.pinned }, .{ .boolean = page.muted }, .{ .boolean = page.detached } },
-        );
-    }
-    try db.commit();
-}
-
 const Pref = struct { key: []const u8, value: []const u8 };
 
 /// Everything the page reads at startup: the UI preferences, and each list as JSON text.
@@ -285,7 +250,6 @@ pub fn snapshot(_: cmd.Invocation, output: []u8) ![]const u8 {
 
     const plans = try compactJson(a, try loadPlans(a));
     const chats = try compactJson(a, try loadChats(a));
-    const pages = try compactJson(a, try loadPages(a));
 
     var writer = std.Io.Writer.fixed(output);
     var s: std.json.Stringify = .{ .writer = &writer };
@@ -301,8 +265,6 @@ pub fn snapshot(_: cmd.Invocation, output: []u8) ![]const u8 {
     try s.write(plans);
     try s.objectField("chats");
     try s.write(chats);
-    try s.objectField("pages");
-    try s.write(pages);
     try s.endObject();
     return writer.buffered();
 }
@@ -330,7 +292,7 @@ pub fn prefsWrite(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     return cmd.json(output, null);
 }
 
-/// `{ table, json }`: replaces one list. `table` is "plans", "chats" or "pages"; `json` is the whole list.
+/// `{ table, json }`: replaces one list. `table` is "plans" or "chats"; `json` is the whole list.
 pub fn save(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
@@ -342,8 +304,6 @@ pub fn save(invocation: cmd.Invocation, output: []u8) ![]const u8 {
         savePlans(try std.json.parseFromSliceLeaky([]PlanItem, a, args.json, .{ .ignore_unknown_fields = true }))
     else if (std.mem.eql(u8, args.table, "chats"))
         saveChats(try std.json.parseFromSliceLeaky([]SavedChat, a, args.json, .{ .ignore_unknown_fields = true }))
-    else if (std.mem.eql(u8, args.table, "pages"))
-        savePages(try std.json.parseFromSliceLeaky([]WebPage, a, args.json, .{ .ignore_unknown_fields = true }))
     else
         return cmd.fail(output, "unknown table");
     result catch |err| return failure(output, err);

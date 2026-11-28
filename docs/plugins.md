@@ -53,8 +53,7 @@ The sidecar `command` must stay inside the plugin's folder.
 - **`sidecar.theme`** — `{ file, key, dark, light }`: before the sidecar starts, and when the app's theme
   changes, the setting `key` in `file` (relative to the plugin's data folder) is set to the `dark` or `light`
   value, keeping the rest of the file. The file must be plain JSON (no comments).
-- **`mcp`** — an MCP server (a path on the sidecar) added to every chat's `--mcp-config`, next to the
-  app's own `vibe-browser`.
+- **`mcp`** — an MCP server (a path on the sidecar) added to every chat's `--mcp-config`.
 
 A plugin whose sidecar program is missing is listed as not available and ignored.
 

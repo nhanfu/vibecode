@@ -1,17 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ArrowRight, Bot, Code2, Database, FolderOpen, Globe, Layers, MoveHorizontal, PanelTop, Pin, PinOff, Power, Puzzle, Terminal, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Bot, Code2, Database, FolderOpen, Globe, MoveHorizontal, PanelTop, Pin, PinOff, Power, Puzzle, Terminal, X } from 'lucide-react'
 import {
   basename,
   closeFloat,
   floating,
-  isPage,
   isPluginPanel,
   leavePanel,
   movePanel,
   PANEL_IDS,
-  pageKey,
-  pageTab,
   peekPanel,
   showPanel,
   togglePanel,
@@ -20,11 +17,8 @@ import {
   type PanelId,
   type StaticPanelId
 } from '../store'
-import { attachBrowserTab, browserKey, closeAllBrowserTabs, closeBrowserTab, loadPlugins, openFolder, setBrowserMode } from '../actions'
-import { SiteIcon } from './SiteIcon'
-import { Adopt, TabHosts } from './webHosts'
+import { loadPlugins, openFolder } from '../actions'
 import { COMMANDS } from '../shortcuts'
-import { WebPanel } from './Editor'
 import { agentDef } from '../../../shared/agents'
 import { AgentSplit } from './Agents'
 import { PluginManager } from './PluginManager'
@@ -56,13 +50,10 @@ interface FloatSize {
 }
 
 const PANELS: Record<StaticPanelId, PanelMeta> = {
-  web: { label: 'Web', icon: Globe, command: 'viewWeb', size: { key: 'vibe.webWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 320 } },
   plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
   agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
 }
 
-/** A torn-off web tab: titled after its page, its own width. */
-const PAGE_META: PanelMeta = { label: 'Page', icon: Globe, command: '', size: { key: 'vibe.pageWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
 /** Icons a plugin can name in its manifest (`panel.icon`). */
 const PLUGIN_ICONS: Record<string, typeof Code2> = { code: Code2, database: Database, globe: Globe, folder: FolderOpen, bot: Bot, terminal: Terminal, puzzle: Puzzle }
 
@@ -77,9 +68,9 @@ const pluginMeta = (id: PanelId): PanelMeta => {
   }
 }
 
-const metaOf = (id: PanelId): PanelMeta => (isPage(id) ? PAGE_META : isPluginPanel(id) ? pluginMeta(id) : PANELS[id])
+const metaOf = (id: PanelId): PanelMeta => (isPluginPanel(id) ? pluginMeta(id) : PANELS[id])
 
-const keysOf = (id: PanelId): string | undefined => (isPage(id) || isPluginPanel(id) ? undefined : COMMANDS.find((c) => c.id === PANELS[id].command)?.keys)
+const keysOf = (id: PanelId): string | undefined => (isPluginPanel(id) ? undefined : COMMANDS.find((c) => c.id === PANELS[id].command)?.keys)
 
 /* ---------------- title bar ---------------- */
 
@@ -178,7 +169,6 @@ function StackButton(props: {
   const { id, dragging, shift, moving, onDrag, onDrop } = props
   const meta = metaOf(id)
   const root = useStore((s) => s.root)
-  const page = useStore((s) => (isPage(id) ? pageTab(s, id) : undefined))
   const pinned = useStore((s) => s.pinned.includes(id))
   const shown = useStore((s) => floating(s) === id)
   const running = useStore((s) => (id === 'agents' ? s.chats.filter((c) => c.status === 'working').length : 0))
@@ -233,7 +223,7 @@ function StackButton(props: {
   }
 
   const Icon = meta.icon
-  const label = id === 'agents' && agent ? agent : page ? page.title || page.url.replace(/^https?:\/\//, '') || meta.label : meta.label
+  const label = id === 'agents' && agent ? agent : meta.label
   const keys = keysOf(id)
   const what = 'click to open'
   const openMenu = (e: React.MouseEvent): void => {
@@ -253,7 +243,7 @@ function StackButton(props: {
         onClick={click}
         onContextMenu={openMenu}
       >
-        {page ? <SiteIcon url={page.url} size={14} /> : <Icon size={13} />}
+        <Icon size={13} />
         {running > 0 && <span className="center-count">{running}</span>}
       </button>
       {ctx && <StackMenu id={id} x={ctx.x} y={ctx.y} onClose={() => setCtx(null)} />}
@@ -268,10 +258,7 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   const pinned = useStore((s) => s.pinned.includes(id))
   const open = useStore((s) => floating(s) === id)
   const order = useStore((s) => s.panelOrder)
-  const key = useStore((s) => (isPage(id) ? pageKey(s, id) : undefined))
-  const chatKey = useStore((s) => browserKey(s.activeChatId))
   const at = order.indexOf(id)
-  const shared = useStore((s) => s.browserShared)
   const keys = keysOf(id)
   const pluginId = id.startsWith('plugin:') ? id.slice('plugin:'.length) : null
   const pluginRunning = useStore((s) => (pluginId ? s.plugins.find((p) => p.id === pluginId)?.status === 'running' : false))
@@ -324,13 +311,6 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
     { icon: <ArrowRight size={14} />, label: 'Move right', act: () => movePanel(id, at + 1), off: at >= order.length - 1 },
     'sep',
     { icon: <MoveHorizontal size={14} />, label: 'Reset width', act: () => window.dispatchEvent(new CustomEvent('stack-reset-width', { detail: id })) },
-    ...(isPage(id) && key
-      ? [
-          'sep' as const,
-          { icon: <Globe size={14} />, label: 'Back to the Web tabs', act: () => attachBrowserTab(key, id.slice(5)) },
-          { icon: <X size={14} />, label: 'Close this page', act: () => closeBrowserTab(key, id.slice(5)) }
-        ]
-      : []),
     ...(pluginId
       ? [
           'sep' as const,
@@ -343,20 +323,6 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
           }
         ]
       : []),
-    ...(id === 'web' || isPage(id)
-      ? [
-          'sep' as const,
-          { icon: <X size={14} />, label: 'Close all tabs', act: () => closeAllBrowserTabs(key ?? chatKey) }
-        ]
-      : []),
-    ...(id === 'web'
-      ? [
-          'sep' as const,
-          shared
-            ? { icon: <Layers size={14} />, label: 'Group by chat', tip: 'Each chat has its own Browser tabs. Switching back gives every tab to its chat again.', act: () => setBrowserMode(false) }
-            : { icon: <Layers size={14} />, label: 'Singleton', tip: 'One set of Browser tabs for all chats. Switching merges every chat\'s tabs into it.', act: () => setBrowserMode(true) }
-        ]
-      : [])
   ]
 
   // portal to <body>: inside the title bar a transformed / blurred ancestor breaks position:fixed
@@ -380,13 +346,12 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
 
 /** What counts as "on the floating drop-down": it, the title-bar buttons, and menus / dialogs opened from it. */
 const FLOAT_PARTS =
-  '.stack-panel.floating, .stack-bar, .menu, .ctx-menu, .overlay, .context-view, .monaco-menu-container, .image-lightbox, .bm-menu, .browser-sugg, .term-image-hover, .plan-pop, .explorer-pop'
+  '.stack-panel.floating, .stack-bar, .menu, .ctx-menu, .overlay, .context-view, .monaco-menu-container, .image-lightbox, .term-image-hover, .plan-pop, .explorer-pop'
 
 /**
  * A hovered drop-down follows the pointer: it hides a moment after the pointer moves onto the rest
- * of the app. That is read from where the pointer moves, not from leaving the drop-down: over a web
- * page the pointer is in the native page and the app sees no event at all (a mouseleave would hide
- * the page you are using). A click elsewhere in the app closes whatever floats.
+ * of the app. That is read from where the pointer moves, not from leaving the drop-down. A click
+ * elsewhere in the app closes whatever floats.
  */
 function useFloatTracking(): void {
   const peeking = useStore((s) => s.peek !== null)
@@ -432,7 +397,7 @@ function useFloatTracking(): void {
  * The workbench: pinned drop-downs side by side in the title bar's order, the last one (the chat,
  * when it is pinned) stretched over the rest; floating ones over them, under their button. Every
  * drop-down is mounted once, in a fixed place, whatever it does: pinning, floating or reordering
- * only changes its CSS, so the chat's terminals, editors, pages and scroll positions survive.
+ * only changes its CSS, so the chat's terminals, editors and scroll positions survive.
  * `children` is the chat, shown in the Agent drop-down.
  */
 export function StackLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
@@ -440,19 +405,15 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   const shown = useStore((s) => floating(s) !== null)
   const pinned = useStore((s) => s.pinned)
   const order = useStore((s) => s.panelOrder)
-  const browsers = useStore((s) => s.browsers)
   const fullscreen = useStore((s) => s.fullscreen)
-  // the torn-off tabs that still exist
-  const pageExists = new Set<string>(Object.values(browsers).flatMap((b) => b.tabs.filter((t) => t.detached).map((t) => `page:${t.id}`)))
-  const panels: PanelId[] = [...PANEL_IDS, ...order.filter(isPage).filter((id) => pageExists.has(id)), ...order.filter(isPluginPanel)]
+  const panels: PanelId[] = [...PANEL_IDS, ...order.filter(isPluginPanel)]
   const full = fullscreen && panels.includes(fullscreen) ? fullscreen : null
   // the one that takes the room left: the chat if pinned, else the last pinned one
   const fill = pinned.includes('agents') ? 'agents' : [...order].reverse().find((p) => pinned.includes(p))
   /*
    * Who resizes whom. The stretched one has no width to drag. A drop-down left of it is dragged by
    * its own right edge; one right of it is dragged by its left edge, which is the right edge of the
-   * pinned one before it (the window's edge, where the last one ends, can't be dragged, and a
-   * native page laid over its panel would swallow the press).
+   * pinned one before it (the window's edge, where the last one ends, can't be dragged).
    */
   const line = order.filter((p) => pinned.includes(p))
   const fillAt = fill ? line.indexOf(fill) : -1
@@ -462,7 +423,6 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   }
   return (
     <div className="workbench stack">
-      <TabHosts />
       {panels.map((id) => (
         <StackPanel
           key={id}
@@ -474,12 +434,10 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
         >
           {id === 'agents' ? (
             <AgentSplit>{children}</AgentSplit>
-          ) : isPage(id) ? (
-            <Adopt tabId={id.slice(5)} className="page-pane" />
           ) : isPluginPanel(id) ? (
             <PluginPane id={id.slice('plugin:'.length)} name={metaOf(id).label} />
           ) : (
-            <PanelBody id={id} />
+            <PluginManager />
           )}
         </StackPanel>
       ))}
@@ -566,15 +524,6 @@ function StackPanel(props: {
       )}
     </div>
   )
-}
-
-function PanelBody({ id }: { id: Exclude<StaticPanelId, 'agents'> }): React.JSX.Element {
-  switch (id) {
-    case 'web':
-      return <WebPanel />
-    case 'plugins':
-      return <PluginManager />
-  }
 }
 
 /** A drop-down's width: dragged on its right edge, remembered; double-click on the edge resets it. */

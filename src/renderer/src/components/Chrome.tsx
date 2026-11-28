@@ -30,7 +30,7 @@ import {
 } from 'lucide-react'
 import { basename, panelShown, searchFolder, togglePanel, useStore, type SidebarView } from '../store'
 import { StackBar } from './Stack'
-import { defaultAgent, deepUnderstanding, installedAgents, openBrowser, setDeepUnderstanding, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
+import { defaultAgent, deepUnderstanding, installedAgents, setDeepUnderstanding, openFile, openFolder, openSession, setDefaultAgent, setTheme, toggleBottom, toggleTheme, type ThemeChoice } from '../actions'
 import { agentDef } from '../../../shared/agents'
 import { languageOf } from '../fileModelsLite'
 import { FileIcon, Logo } from './icons'

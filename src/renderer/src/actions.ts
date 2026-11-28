@@ -1,6 +1,6 @@
 import type { DragEvent } from 'react'
 import { clearAttachments } from './attachments'
-import { ALL_LAYOUT_KEY, PAGES_KEY, paneKeyOf, SHARED_BROWSER_KEY, basename, saveBrowserShared, openPatch, panelShown, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type ChatBrowser, type PagePanelId, type Chat, type EditorTab, type LayoutMode, type WebTab } from './store'
+import { ALL_LAYOUT_KEY, paneKeyOf, basename, openPatch, panelPlugins, pluginPanelId, showPanel, syncPluginPanels, uid, useStore, type Chat, type EditorTab, type LayoutMode } from './store'
 import { createTerm, disposeTerm, focusTerm, onTerminalEvents, readScreen, restartTerm, setTerminalClear, setTerminalTheme, writeToTerm, readScreenTail } from './terminals'
 import { disposeModel, hasUnsaved } from './fileModelsLite'
 import type { SessionInfo } from '../../shared/types'
@@ -93,11 +93,6 @@ onTerminalEvents({
     if (data.startsWith('\x1b[I') || data.startsWith('\x1b[O') || data.startsWith('\x1b[<')) return true
     restartChat(id)
     return true
-  },
-  // A link clicked in a chat opens in that chat's Web tab (from a shell: the current chat's).
-  link: (id, url) => {
-    const chatId = st().chats.some((c) => c.id === id) ? id : st().activeChatId
-    newBrowserTab(browserKey(chatId), url)
   },
   data: (id) => {
     const chat = st().chats.find((c) => c.id === id)
@@ -579,7 +574,7 @@ export function newChat(opts: NewChatOpts = {}): void {
   if (opts.draft) pendingDraft.set(chat.id, opts.draft)
   if (blank) blankChats.add(chat.id)
   createTerm({ id: chat.id, cwd: chat.cwd, kind: 'claude', claudeArgs: args, reuse: opts.reuse })
-  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id), ...openPatch('agents') }))
+  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...openPatch('agents') }))
 }
 
 /**
@@ -607,7 +602,7 @@ function newAgentChat(cwd: string, agentId: AgentId, opts: NewChatOpts, blank: b
   }
   if (blank) blankChats.add(chat.id)
   createTerm({ id: chat.id, cwd, kind: 'claude', agent: agentId, claudeArgs: args, reuse: opts.reuse })
-  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...browserForNewChat(s, chat.id), ...openPatch('agents') }))
+  useStore.setState((s) => ({ chats: [...s.chats, chat], activeChatId: chat.id, ...openPatch('agents') }))
 }
 
 const agentFlags = (agentId: AgentId | undefined, permissionMode?: string): string[] =>
@@ -661,16 +656,10 @@ function launchFlags(c: { model?: string; effort?: string; permissionMode?: stri
   if (c.model) out.push('--model', c.model)
   if (c.effort) out.push('--effort', c.effort)
   if (c.permissionMode) out.push('--permission-mode', c.permissionMode)
-  // one system prompt for the chat: the deep-understanding rules (when on) and how to show a web page
-  const prompt = [deepUnderstanding() ? DEEP_UNDERSTANDING_PROMPT : '', BROWSER_PROMPT].filter(Boolean).join('\n\n')
-  out.push('--append-system-prompt', prompt)
+  // the deep-understanding rules, when on
+  if (deepUnderstanding()) out.push('--append-system-prompt', DEEP_UNDERSTANDING_PROMPT)
   return out
 }
-
-const BROWSER_PROMPT = [
-  'This app shows web pages in a Web tab beside the chat. To show a page to the user, run `vibe-open <url>` in the shell.',
-  'Add --headless to load it in the background without switching the tab on screen.',
-].join(' ')
 
 const DEEP_KEY = 'vibe.deepUnderstanding'
 /** The "deep understanding" option (kept as a preference, so it works without a native change). */
@@ -827,15 +816,7 @@ export function closeChat(id: string): void {
       const grid = layoutIds(cur).some(isSlot)
       chatLayouts = withPane(chatLayouts, key, takes ? replaceLayout(cur, id, activeChat!.id) : grid ? replaceLayout(cur, id, newSlot()) : removeLayout(cur, id))
     }
-    // the chat's browser page goes with it; torn-off pages are user data and stay
-    const browsers = { ...s.browsers }
-    const kept = (browsers[id]?.tabs ?? []).filter((t) => t.detached)
-    delete browsers[id]
-    if (kept.length) {
-      const pool = browsers[PAGES_KEY]
-      browsers[PAGES_KEY] = { tabs: [...(pool?.tabs ?? []), ...kept], active: pool?.active ?? kept[0].id }
-    }
-    return { chats, activeChatId, browsers, chatLayouts }
+    return { chats, activeChatId, chatLayouts }
   })
 }
 
@@ -1051,292 +1032,6 @@ export function openFileInOverlay(path: string): void {
   showInPopup({ id: 'f:' + path.toLowerCase(), kind: 'file', path, title: basename(path), dirty: false })
 }
 
-export const HOME_URL = 'about:blank'
-
-/** Browser key for the chat you're looking at — every chat keeps its own page. */
-export const browserKey = (activeChatId: string | null): string => (useStore.getState().browserShared ? SHARED_BROWSER_KEY : activeChatId ?? '_')
-
-const blankTab = (url = HOME_URL): WebTab => ({ id: 'w-' + uid(), url, title: '' })
-
-/**
- * A chat opened while the Web tab is showing gets its browser in the same state update, so the
- * Web pane never renders a frame with no page in it (that empty frame made the layout jump).
- */
-function browserForNewChat(s: ReturnType<typeof st>, chatId: string): Partial<ReturnType<typeof st>> {
-  if (!panelShown(s, 'web') || s.browsers[chatId]) return {}
-  const t = blankTab()
-  return { browsers: { ...s.browsers, [chatId]: { tabs: [t], active: t.id } } }
-}
-
-/** Give a chat its first (blank) page, without showing or hiding anything. */
-export function ensureBrowser(key: string): void {
-  useStore.setState((s) => {
-    if (s.browsers[key]) return s
-    const t = blankTab()
-    return { browsers: { ...s.browsers, [key]: { tabs: [t], active: t.id } } }
-  })
-}
-
-/** Show the Web tab for the current chat (optionally at a URL, in the tab you're on). */
-export function openBrowser(url?: string): void {
-  const key = browserKey(st().activeChatId)
-  if (!st().browsers[key]) newBrowserTab(key, url)
-  else if (url) setBrowserUrl(key, url)
-  showPanel('web')
-}
-
-/**
- * A new tab in a chat's browser, and show it. Opening a URL (the app, Claude) reuses the open tab
- * while it is still blank; the "+" button (`reuseBlank` false) always adds one, like a browser.
- */
-export function newBrowserTab(key: string, url?: string, reuseBlank = true): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    const cur = b?.tabs.find((t) => t.id === b.active)
-    if (reuseBlank && b && cur && cur.url === HOME_URL) {
-      if (!url) return openPatch('web')
-      return { ...openPatch('web'), browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t === cur ? { ...t, url } : t)) } } }
-    }
-    const tab = blankTab(url)
-    return { ...openPatch('web'), browsers: { ...s.browsers, [key]: { tabs: [...(b?.tabs ?? []), tab], active: tab.id } } }
-  })
-}
-
-/**
- * Opens a page in a new tab of a chat's Web browser: the request a chat's Claude makes to show something.
- * Shown by default (the panel opens on the new tab). `headless`: the tab is added and loads in the
- * background; the panel and the tab on screen stay as they are.
- */
-export function openBrowserTab(chatId: string | null, url: string, opts: { headless?: boolean } = {}): void {
-  const key = browserKey(chatId)
-  if (!opts.headless) {
-    newBrowserTab(key, url, false)
-    return
-  }
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    const tab = blankTab(url)
-    return { browsers: { ...s.browsers, [key]: { tabs: [...(b?.tabs ?? []), tab], active: b?.active ?? tab.id } } }
-  })
-}
-
-/** Ctrl+Shift+T in the Web tabs: the last closed page again, in the chat you are in. */
-export function reopenClosedWebTab(): void {
-  const key = browserKey(st().activeChatId)
-  const last = closedWebTabs.pop()
-  if (last) newBrowserTab(key, last.url, false)
-}
-
-/** Ctrl+T: a new blank tab in the chat's Web panel, and the panel shows. */
-export function newWebTab(): void {
-  newBrowserTab(browserKey(st().activeChatId), undefined, false)
-}
-
-/** Move a Web tab to a position among the open tabs (drag along the strip). */
-export function moveBrowserTab(key: string, id: string, to: number): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    const tab = b?.tabs.find((t) => t.id === id)
-    if (!b || !tab || tab.detached) return s
-    const others = b.tabs.filter((t) => t.id !== id)
-    const open = others.filter((t) => !t.detached)
-    const anchor = open[Math.min(Math.max(to, 0), open.length)]
-    const at = anchor ? others.indexOf(anchor) : open.length ? others.indexOf(open[open.length - 1]) + 1 : others.length
-    const tabs = [...others.slice(0, at), tab, ...others.slice(at)]
-    if (tabs.every((t, i) => t === b.tabs[i])) return s
-    return { browsers: { ...s.browsers, [key]: { ...b, tabs } } }
-  })
-}
-
-/** Ctrl+Tab / Ctrl+Shift+Tab: the next (or previous) Web tab of the chat on screen, wrapping around. */
-export function cycleWebTab(step: 1 | -1): void {
-  const key = browserKey(st().activeChatId)
-  const b = st().browsers[key]
-  const strip = (b?.tabs ?? []).filter((t) => !t.detached)
-  if (!b || strip.length === 0) return
-  const at = strip.findIndex((t) => t.id === b.active)
-  const next = strip[(at < 0 ? 0 : at + step + strip.length) % strip.length]
-  if (next) selectBrowserTab(key, next.id)
-}
-
-/** Alt+Left / Alt+Right: back or forward in the Web tab on screen (when the page itself does not have the focus). */
-export function stepBrowserHistory(step: 1 | -1): void {
-  const key = browserKey(st().activeChatId)
-  const b = st().browsers[key]
-  const tab = b?.tabs.find((t) => t.id === b.active)
-  const label = tab ? pageLabels.get(tab.id) : undefined
-  if (!label) return
-  if (step < 0) window.api.browser.back(label)
-  else window.api.browser.forward(label)
-}
-
-export function selectBrowserTab(key: string, id: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    return b && b.active !== id ? { browsers: { ...s.browsers, [key]: { ...b, active: id } } } : s
-  })
-}
-
-/** Web tabs closed lately, newest last (Ctrl+Shift+T brings the last one back). */
-const closedWebTabs: { url: string; title: string }[] = []
-
-/** Close one tab; closing the last one leaves a blank tab. */
-export function closeBrowserTab(key: string, id: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    if (!b) return s
-    const gone = b.tabs.find((t) => t.id === id)
-    if (gone && !gone.detached && gone.url !== HOME_URL) {
-      closedWebTabs.push({ url: gone.url, title: gone.title })
-      if (closedWebTabs.length > 30) closedWebTabs.shift()
-    }
-    let tabs = b.tabs.filter((t) => t.id !== id)
-    // the strip needs a tab of its own: torn-off ones don't count
-    if (key !== PAGES_KEY && !tabs.some((t) => !t.detached)) tabs = [...tabs, blankTab()]
-    const open = tabs.filter((t) => !t.detached)
-    if (!open.length) {
-      const page = `page:${id}` as PagePanelId
-      return {
-        browsers: { ...s.browsers, [key]: { tabs, active: tabs[0]?.id ?? '' } },
-        panelOrder: s.panelOrder.filter((p) => p !== page),
-        pinned: s.pinned.filter((p) => p !== page)
-      }
-    }
-    const was = b.tabs.filter((t) => !t.detached).findIndex((t) => t.id === id)
-    const active = b.active === id ? open[Math.min(Math.max(was, 0), open.length - 1)].id : b.active
-    const page = `page:${id}` as PagePanelId
-    return {
-      browsers: { ...s.browsers, [key]: { tabs, active } },
-      panelOrder: s.panelOrder.filter((p) => p !== page),
-      pinned: s.pinned.filter((p) => p !== page)
-    }
-  })
-}
-
-/**
- * Close every tab of this chat, leaving a single blank one. Torn-off pages are title-bar buttons
- * shared by all chats, so the torn-off pages of the other chats go too; their ordinary tabs stay.
- */
-export function closeAllBrowserTabs(key: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    if (!b) return s
-    const torn = Object.values(s.browsers).flatMap((x) => x.tabs.filter((t) => t.detached))
-    const pages = new Set([...b.tabs, ...torn].map((t) => `page:${t.id}`))
-    const blank = blankTab()
-    const browsers = { ...s.browsers, [key]: { tabs: [blank], active: blank.id } }
-    if (key !== PAGES_KEY) delete browsers[PAGES_KEY]
-    for (const [k, other] of Object.entries(browsers)) {
-      if (k === key) continue
-      const kept = other.tabs.filter((t) => !t.detached)
-      if (kept.length === other.tabs.length) continue
-      const tabs = kept.length ? kept : [blankTab()]
-      browsers[k] = { tabs, active: tabs.some((t) => t.id === other.active) ? other.active : tabs[0].id }
-    }
-    return {
-      browsers,
-      panelOrder: s.panelOrder.filter((p) => !pages.has(p)),
-      pinned: s.pinned.filter((p) => !pages.has(p))
-    }
-  })
-}
-
-/**
- * Tear a tab off the Web drop-down into a title-bar button of its own (a panel next to the others:
- * pin it, move it, resize it). The page keeps running, it is only shown somewhere else.
- */
-export function detachBrowserTab(key: string, id: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    const tab = b?.tabs.find((t) => t.id === id)
-    if (!b || !tab || tab.detached) return s
-    let tabs = b.tabs.map((t) => (t.id === id ? { ...t, detached: true } : t))
-    let active = b.active
-    if (!tabs.some((t) => !t.detached)) {
-      const blank = blankTab()
-      tabs = [...tabs, blank]
-      active = blank.id
-    } else if (active === id) {
-      const open = b.tabs.filter((t) => !t.detached)
-      const before = open.findIndex((t) => t.id === id)
-      const next = tabs.filter((t) => !t.detached)
-      active = next[Math.min(Math.max(before, 0), next.length - 1)].id
-    }
-    const page = `page:${id}` as PagePanelId
-    const at = s.panelOrder.indexOf('web')
-    const order = s.panelOrder.filter((p) => p !== page)
-    order.splice(at < 0 ? order.length : at + 1, 0, page)
-    return {
-      browsers: { ...s.browsers, [key]: { tabs, active } },
-      panelOrder: order,
-      pinned: s.pinned.includes(page) ? s.pinned : [...s.pinned, page],
-      floatOpen: null,
-      peek: null
-    }
-  })
-}
-
-/** Put a torn-off tab back among the Web tabs. */
-export function attachBrowserTab(key: string, id: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    const page = `page:${id}` as PagePanelId
-    const tab = b?.tabs.find((t) => t.id === id)
-    if (!b || !tab) return s
-    if (key === PAGES_KEY) {
-      // restored from an earlier run: it joins the Web tabs of the chat you are in
-      const to = browserKey(s.activeChatId)
-      const dest = s.browsers[to] ?? { tabs: [], active: '' }
-      const rest = b.tabs.filter((t) => t.id !== id)
-      const browsers = { ...s.browsers, [to]: { tabs: [...dest.tabs, { ...tab, detached: false }], active: id } }
-      if (rest.length) browsers[PAGES_KEY] = { tabs: rest, active: rest[0].id }
-      else delete browsers[PAGES_KEY]
-      return { ...openPatch('web'), browsers, panelOrder: s.panelOrder.filter((p) => p !== page), pinned: s.pinned.filter((p) => p !== page) }
-    }
-    return {
-      ...openPatch('web'),
-      browsers: { ...s.browsers, [key]: { tabs: b.tabs.map((t) => (t.id === id ? { ...t, detached: false } : t)), active: id } },
-      panelOrder: s.panelOrder.filter((p) => p !== page),
-      pinned: s.pinned.filter((p) => p !== page)
-    }
-  })
-}
-
-/** A chat's Claude used its browser tools: give that chat a Web tab (the drop-down stays as it is: floating, it would cover the chat). */
-export function showChatBrowser(chatId: string): void {
-  useStore.setState((s) => {
-    if (s.browsers[chatId]) return s
-    const t = blankTab()
-    return { browsers: { ...s.browsers, [chatId]: { tabs: [t], active: t.id } } }
-  })
-}
-
-/** Keep a tab's page history (base64, from the native side) so it comes back after a restart. */
-export function setBrowserSession(key: string, tabId: string, session: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    if (!b) return s
-    return { browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t.id === tabId ? { ...t, session } : t)) } } }
-  })
-}
-
-/** Point a tab (default: the chat's open tab) at a URL / record its title. */
-export function setBrowserUrl(key: string, url: string, tabId?: string, title?: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    if (!b) {
-      const t = blankTab(url)
-      return { browsers: { ...s.browsers, [key]: { tabs: [t], active: t.id } } }
-    }
-    const id = tabId ?? b.active
-    const cur = b.tabs.find((t) => t.id === id)
-    if (!cur || (cur.url === url && (title === undefined || cur.title === title))) return s
-    // a new address has a title of its own: the old page's title must not stay on the tab
-    const tabs = b.tabs.map((t) => (t === cur ? { ...t, url, title: title ?? (url === cur.url ? t.title : '') } : t))
-    return { browsers: { ...s.browsers, [key]: { ...b, tabs } } }
-  })
-}
-
 export function openDiff(abs: string, rel: string): void {
   review({ id: 'd:' + abs.toLowerCase(), kind: 'diff', path: abs, rel, title: basename(abs) })
 }
@@ -1517,90 +1212,6 @@ export async function restoreChats(): Promise<void> {
   useStore.subscribe((s, prev) => {
     if (s.chats !== prev.chats || s.activeChatId !== prev.activeChatId || s.chatLayouts !== prev.chatLayouts) saveOpenChats()
   })
-}
-
-/** The native page of each Web tab, by tab id (registered by the tab's Browser component). */
-export const pageLabels = new Map<string, string>()
-
-export function reloadBrowserTab(id: string): void {
-  const label = pageLabels.get(id)
-  if (label) window.api.browser.reload(label)
-}
-
-export function setBrowserTabMuted(key: string, id: string, muted: boolean): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    if (!b) return s
-    return { browsers: { ...s.browsers, [key]: { ...b, tabs: b.tabs.map((t) => (t.id === id ? { ...t, muted } : t)) } } }
-  })
-  const label = pageLabels.get(id)
-  if (label) window.api.browser.setMuted(label, muted)
-}
-
-export function toggleBrowserTabPin(key: string, id: string): void {
-  useStore.setState((s) => {
-    const b = s.browsers[key]
-    if (!b) return s
-    const tabs = b.tabs.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t))
-    return { browsers: { ...s.browsers, [key]: { ...b, tabs: [...tabs.filter((t) => t.pinned), ...tabs.filter((t) => !t.pinned)] } } }
-  })
-}
-
-/** A new tab right after `id` in the strip: its page is `url` (blank when none). */
-export function openTabToRight(key: string, id: string, url?: string): void {
-  const strip = (st().browsers[key]?.tabs ?? []).filter((t) => !t.detached)
-  const at = strip.findIndex((t) => t.id === id)
-  newBrowserTab(key, url, false)
-  const created = st().browsers[key]?.active
-  if (created && at >= 0) moveBrowserTab(key, created, at + 1)
-}
-
-export function closeOtherBrowserTabs(key: string, id: string): void {
-  const others = (st().browsers[key]?.tabs ?? []).filter((t) => !t.detached && t.id !== id)
-  for (const t of others) closeBrowserTab(key, t.id)
-}
-
-export function closeBrowserTabsToRight(key: string, id: string): void {
-  const strip = (st().browsers[key]?.tabs ?? []).filter((t) => !t.detached)
-  const at = strip.findIndex((t) => t.id === id)
-  for (const t of strip.slice(at + 1)) closeBrowserTab(key, t.id)
-}
-
-/**
- * Group by chat / Singleton: switching merges the tabs (nothing is dropped). Singleton gathers every chat's
- * tabs into one set, each remembering its chat; back to Group by chat, each tab goes home to its chat again.
- */
-export function setBrowserMode(shared: boolean): void {
-  useStore.setState((s) => {
-    if (s.browserShared === shared) return s
-    const current = s.activeChatId ?? '_'
-    const browsers: Record<string, ChatBrowser> = { ...s.browsers }
-    if (shared) {
-      const keys = Object.keys(browsers).filter((k) => k !== SHARED_BROWSER_KEY && k !== PAGES_KEY)
-      const tabs = keys.flatMap((k) => (browsers[k]?.tabs ?? []).map((t) => ({ ...t, home: t.home ?? k })))
-      const wanted = browsers[current]?.active
-      for (const k of keys) delete browsers[k]
-      if (tabs.length) browsers[SHARED_BROWSER_KEY] = { tabs, active: tabs.find((t) => t.id === wanted)?.id ?? tabs[0].id }
-    } else {
-      const merged = browsers[SHARED_BROWSER_KEY]
-      delete browsers[SHARED_BROWSER_KEY]
-      if (merged) {
-        const groups = new Map<string, WebTab[]>()
-        for (const t of merged.tabs) {
-          const home = t.home ?? current
-          const { home: _home, ...rest } = t
-          groups.set(home, [...(groups.get(home) ?? []), rest])
-        }
-        for (const [k, tabs] of groups) {
-          const existing = browsers[k]?.tabs ?? []
-          const all = [...existing, ...tabs.filter((t) => !existing.some((e) => e.id === t.id))]
-          browsers[k] = { tabs: all, active: tabs.find((t) => t.id === merged.active)?.id ?? all[0].id }
-        }
-      }
-    }
-    return { browserShared: shared, browsers }
-  })
-  saveBrowserShared(shared)
 }
 
 /** Open chats grouped by AI tool and worktree folder (one group per pair), in the order they were opened. */

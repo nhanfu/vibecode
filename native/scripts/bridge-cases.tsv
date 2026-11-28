@@ -79,4 +79,3 @@ fs_write_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/.zig-ca
 fs_read_file	{"path":"/home/nhanjs/projects/vibecode-zero-native/native/.zig-cache/write-check.txt"}	hello-check
 fs_list_files	{"root":"/home/nhanjs/projects/vibecode-zero-native/native/src/commands"}	registry.zig
 agents_detect	{}	"id":"claude"
-web_data	{}	"result"

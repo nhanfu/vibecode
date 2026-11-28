@@ -5,7 +5,7 @@
  * event whose payload is the argument list. Terminal output is the hot path, so it streams
  * through one `Channel` per terminal instead of the global event bus.
  */
-import { invoke, listen, openFileDialog, bytesToBase64, subscribe } from './nativeBridge'
+import { invoke, listen, openFileDialog, bytesToBase64 } from './nativeBridge'
 import type {
   AgentInfo,
   AppSettings,
@@ -21,8 +21,6 @@ import type {
   ProjectGroup,
   PtySpawnOptions,
   UsageLimit,
-  WebData,
-  WebSuggestion,
   WindowMode,
   WindowState,
   PluginInfo,
@@ -48,15 +46,6 @@ listen<[string, number]>('pty:exit', (id, code) => exitNow(id, code))
 const sub = <F>(set: Set<F>, cb: F): Off => {
   set.add(cb)
   return () => set.delete(cb)
-}
-
-/** A page in a chat's Web tab: what the address bar / buttons show. */
-export interface WebNav {
-  url: string
-  title: string
-  back: boolean
-  fwd: boolean
-  loading: boolean
 }
 
 export interface DropEvent {
@@ -112,50 +101,6 @@ export const api = {
     agents: (): Promise<AgentInfo[]> => invoke('agents_detect'),
     usage: (): Promise<UsageLimit[] | null> => invoke('claude_usage'),
     memory: (): Promise<{ usedBytes: number; totalBytes: number } | null> => invoke('sys_memory'),
-  },
-  browser: {
-    /** create (hidden) the native page for one Web tab */
-    open: (label: string, chatId: string, url: string, userAgent?: string, session?: string): Promise<void> => invoke('web_open', { label, chatId, url, userAgent, session }),
-    /** where the page sits (CSS px in the window) and its zoom; `visible` false parks it (and lets it sleep) */
-    place: (label: string, r: { x: number; y: number; w: number; h: number }, zoom: number, visible: boolean): void =>
-      void invoke('web_place', { label, x: r.x, y: r.y, w: r.w, h: r.h, zoom, visible }),
-    /** the tab Claude's browser tools drive for this chat */
-    setActive: (chatId: string, label: string): void => void invoke('web_set_active', { chatId, label }),
-    navigate: (label: string, url: string): Promise<void> => invoke('web_navigate', { label, url }),
-    back: (label: string): void => void invoke('web_history', { label, step: -1 }),
-    /** the page's developer tools (Inspect), in their own window */
-    devtools: (label: string): void => void invoke('web_devtools', { label }),
-    forward: (label: string): void => void invoke('web_history', { label, step: 1 }),
-    reload: (label: string, hard = false): void => void invoke('web_reload', { label, hard }),
-    stop: (label: string): void => void invoke('web_stop', { label }),
-    setMuted: (label: string, muted: boolean): void => void invoke('web_set_muted', { label, muted }),
-    setUserAgent: (label: string, userAgent: string | null): Promise<void> => invoke('web_set_user_agent', { label, userAgent }),
-    /** the tab's latest navigation state (null before its first event) */
-    lastNav: (label: string): Promise<WebNav | null> => invoke('web_nav_state', { label }),
-    close: (label: string): void => void invoke('web_close', { label }),
-    /** the keyboard goes into the page */
-    focus: (label: string): void => void invoke('web_focus', { label }),
-    focusMain: (): void => void invoke('web_focus_main'),
-    onShortcut: (cb: (id: string) => void): Off =>
-      subscribe('shortcut', (detail) => {
-        const event = Array.isArray(detail) ? detail[0] : detail
-        const id = (event as { id?: unknown } | null)?.id
-        if (typeof id === 'string') cb(id)
-      }),
-    onNav: (cb: (label: string, nav: WebNav) => void): Off => on('web:nav', cb),
-    /** the page's history, sent when a load finishes (base64; see web_open's session) */
-    onSession: (cb: (label: string, session: string) => void): Off => on('web:session', cb),
-    /** Ctrl+T / Ctrl+W / Ctrl+Shift+T pressed while the page has the keyboard: key is 't' or 'w' */
-    onKey: (cb: (label: string, key: string, shift: boolean) => void): Off => on('web:key', cb),
-    /** a chat's browser tools were used: make sure its Web tab exists (and show it) */
-    onOpen: (cb: (chatId: string) => void): Off => on('browser:open', cb),
-    /** `vibe-open <url>` run by a chat's Claude: the chat, the address, and whether to load it in the background */
-    onTabRequest: (cb: (chatId: string, url: string, headless: boolean) => void): Off => on('browser:tab-request', cb),
-    data: (): Promise<WebData> => invoke('web_data'),
-    importChrome: (): Promise<WebData> => invoke('web_import_chrome'),
-    suggest: (query: string): Promise<WebSuggestion[]> => invoke('web_suggest', { query }),
-    visit: (url: string, title?: string): void => void invoke('web_visit', { url, title }),
-    title: (url: string, title: string): void => void invoke('web_title', { url, title })
   },
   sessions: {
     list: (): Promise<ProjectGroup[]> => invoke('sessions_list'),

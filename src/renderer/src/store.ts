@@ -103,117 +103,37 @@ interface State {
   activeTabId: string | null
   diffSideBySide: boolean
 
-  /** each chat has its own browser tabs: chat id ('_' with no chat open) → its tabs */
-  browsers: Record<string, ChatBrowser>
-  /** the Browser mini-app: one set of tabs for all chats (true) or one set per chat (false) */
-  browserShared: boolean
-
-  set: (p: Partial<State>) => void
+  set:(p: Partial<State>) => void
   patchChat: (id: string, p: Partial<Chat>) => void
   patchShell: (id: string, p: Partial<ShellTab>) => void
 }
 
-/** One tab of the built-in browser. */
-export interface WebTab {
-  id: string
-  url: string
-  title: string
-  /** torn off into its own title-bar button (panel `page:<id>`); not in the Web tab strip */
-  detached?: boolean
-  pinned?: boolean
-  muted?: boolean
-  /** the chat a tab belongs to while the Browser is shared by all chats (it goes back there when split again) */
-  home?: string
-  /** the page's history as the native side saved it (base64): brought back when the tab opens again */
-  session?: string
-}
-export interface ChatBrowser {
-  tabs: WebTab[]
-  active: string
-}
-
 /**
- * The title-bar drop-downs: Project (chats), Source code, Web, Plugins and Agent (the chat with the
- * agent you are talking to). Each one floats while hovered or opened (a click, its key); a
- * double-click pins it into the horizontal stack, where it stays. Dragging the buttons reorders the
- * stack. Agent starts pinned, so the chat is on screen.
+ * The title-bar drop-downs: Plugins and Agent (the chat with the agent you are talking to). Each one
+ * floats while hovered or opened (a click, its key); a double-click pins it into the horizontal
+ * stack, where it stays. Dragging the buttons reorders the stack. Agent starts pinned, so the chat
+ * is on screen.
  */
-export type StaticPanelId = 'web' | 'plugins' | 'agents'
-/** A web tab torn off the Web drop-down: its own button and panel, for as long as the tab lives. */
-export type PagePanelId = `page:${string}`
+export type StaticPanelId = 'plugins' | 'agents'
 /** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and its service runs. */
 export type PluginPanelId = `plugin:${string}`
-export type PanelId = StaticPanelId | PagePanelId | PluginPanelId
-export const PANEL_IDS: StaticPanelId[] = ['agents', 'web', 'plugins']
-export const isPage = (id: PanelId): id is PagePanelId => id.startsWith('page:')
+export type PanelId = StaticPanelId | PluginPanelId
+export const PANEL_IDS: StaticPanelId[] = ['agents', 'plugins']
 export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith('plugin:')
 export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`
 /** The plugins that get a title-bar panel of their own: on, able to run, with a page, and not taking over a built-in panel. */
 export const panelPlugins = (plugins: PluginInfo[]): PluginInfo[] => plugins.filter((p) => p.enabled && p.available && p.hasSidecar && p.panel)
 /** Its service runs (or is starting): the one state in which its title-bar panel stays. */
 export const serviceLive = (p: PluginInfo): boolean => p.status === 'running' || p.status === 'starting'
-export const pageTabId = (id: PagePanelId): string => id.slice(5)
-/** The torn-off tab behind a page panel, with the browser key (chat) it belongs to. */
-export function pageTab(s: Pick<State, 'browsers'>, id: PagePanelId): WebTab | undefined {
-  const tid = pageTabId(id)
-  for (const b of Object.values(s.browsers)) {
-    const t = b.tabs.find((x) => x.id === tid)
-    if (t) return t
-  }
-  return undefined
-}
-export function pageKey(s: Pick<State, 'browsers'>, id: PagePanelId): string | undefined {
-  const tid = pageTabId(id)
-  return Object.keys(s.browsers).find((k) => s.browsers[k].tabs.some((t) => t.id === tid))
-}
 
 const ORDER_KEY = 'vibe.panelOrder'
 // (a new key: pins saved before Agent became the chat would leave the chat floating)
 const PINNED_KEY = 'vibe.stackPins'
 
-/** Browser key that holds the torn-off pages restored from a previous run (they belong to no chat). */
-export const PAGES_KEY = '_pages'
-export const SHARED_BROWSER_KEY = '_shared'
-const BROWSER_SHARED_STORE = 'vibe.browserShared.v2'
-const PAGES_STORE = 'vibe.pages'
-interface SavedTab {
-  id: string
-  url: string
-  title: string
-  chat?: string
-  home?: string
-  detached?: boolean
-  pinned?: boolean
-  muted?: boolean
-  session?: string
-}
-/** The Web tabs kept as user data: each chat's tabs and the torn-off pages, with address, title and state. */
-const savedTabs: SavedTab[] = (() => {
-  try {
-    const v = JSON.parse(userStore.getItem(PAGES_STORE) ?? 'null')
-    if (Array.isArray(v))
-      return v
-        .filter((t) => t && typeof t.id === 'string' && typeof t.url === 'string')
-        .map((t) => ({ id: t.id, url: t.url, title: String(t.title ?? ''), chat: typeof t.chat === 'string' ? t.chat : undefined, detached: !!t.detached, pinned: !!t.pinned, muted: !!t.muted, home: typeof t.home === 'string' ? t.home : undefined, session: typeof t.session === 'string' ? t.session : undefined }))
-  } catch {
-    /* storage unavailable */
-  }
-  return []
-})()
-const savedBrowsers: Record<string, ChatBrowser> = {}
-for (const t of savedTabs) {
-  const key = t.chat ?? PAGES_KEY
-  const tab: WebTab = { id: t.id, url: t.url, title: t.title, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}), ...(t.session ? { session: t.session } : {}) }
-  const b = savedBrowsers[key] ?? { tabs: [], active: tab.id }
-  b.tabs.push(tab)
-  savedBrowsers[key] = b
-}
-const isSavedPage = (x: unknown): boolean => typeof x === 'string' && savedTabs.some((t) => t.detached && `page:${t.id}` === x)
-
 function loadIds(key: string, fallback: PanelId[]): PanelId[] {
   try {
     const v = JSON.parse(userStore.getItem(key) ?? 'null')
-    if (Array.isArray(v)) return [...new Set(v.filter((x): x is PanelId => (PANEL_IDS as string[]).includes(x) || isSavedPage(x) || (typeof x === 'string' && x.startsWith('plugin:'))))]
+    if (Array.isArray(v)) return [...new Set(v.filter((x): x is PanelId => (PANEL_IDS as string[]).includes(x) || (typeof x === 'string' && x.startsWith('plugin:'))))]
   } catch {
     /* storage unavailable */
   }
@@ -412,7 +332,7 @@ export const useStore = create<State>((set) => ({
 
   sidebarView: 'chats',
   panelOrder: loadOrder(),
-  pinned: loadIds(PINNED_KEY, ['agents', 'web']),
+  pinned: loadIds(PINNED_KEY, ['agents']),
   floatOpen: null,
   peek: null,
   fullscreen: null,
@@ -434,9 +354,6 @@ export const useStore = create<State>((set) => ({
   tabs: [],
   activeTabId: null,
   diffSideBySide: true,
-
-  browsers: savedBrowsers,
-  browserShared: userStore.getItem(BROWSER_SHARED_STORE) !== 'false',
 
   set: (p) => set(p),
   // a patch that changes nothing keeps the same array: the terminal title (Claude's spinner) and
@@ -460,34 +377,3 @@ export const uid = (): string => Math.random().toString(36).slice(2, 10) + Date.
 export const basename = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
 export const fileUri = (p: string): string => 'file:///' + p.replace(/\\/g, '/').replace(/^\/+/, '')
-
-// keep the Web tabs (address, title and state) as user data; the blank ones are not worth keeping
-const serializeTabs = (browsers: Record<string, ChatBrowser>): string =>
-  JSON.stringify(
-    Object.entries(browsers).flatMap(([key, b]) =>
-      b.tabs
-        .filter((t) => t.url !== 'about:blank' || t.detached || t.pinned || t.muted)
-        .map((t) => ({ id: t.id, url: t.url, title: t.title, chat: key, ...(t.detached ? { detached: true } : {}), ...(t.pinned ? { pinned: true } : {}), ...(t.muted ? { muted: true } : {}), ...(t.home ? { home: t.home } : {}), ...(t.session ? { session: t.session } : {}) }))
-    )
-  )
-let savedJson = serializeTabs(savedBrowsers)
-useStore.subscribe((s, prev) => {
-  if (s.browsers === prev.browsers) return
-  const json = serializeTabs(s.browsers)
-  if (json === savedJson) return
-  savedJson = json
-  try {
-    userStore.setItem(PAGES_STORE, json)
-  } catch {
-    /* only lost on the next run */
-  }
-})
-
-/** Remembers whether the Browser mini-app shares one set of tabs among all chats. */
-export function saveBrowserShared(shared: boolean): void {
-  try {
-    userStore.setItem(BROWSER_SHARED_STORE, String(shared))
-  } catch {
-    /* only lost on the next run */
-  }
-}

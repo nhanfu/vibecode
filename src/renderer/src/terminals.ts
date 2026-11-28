@@ -172,7 +172,6 @@ type ActivityFn = (id: string) => void
 type TitleFn = (id: string, title: string) => void
 type ExitFn = (id: string, code: number) => void
 type DataFn = (id: string, data: string) => void
-type LinkFn = (id: string, url: string) => void
 
 const entries = new Map<string, Entry>()
 /** parked terminals still holding their WebGL renderer, oldest first */
@@ -209,7 +208,7 @@ export function setTermFontSize(size: number): void {
 }
 
 type InputFn = (id: string, data: string) => boolean
-const handlers: { activity?: ActivityFn; title?: TitleFn; exit?: ExitFn; data?: DataFn; link?: LinkFn; input?: InputFn } = {}
+const handlers: { activity?: ActivityFn; title?: TitleFn; exit?: ExitFn; data?: DataFn; input?: InputFn } = {}
 
 let parking: HTMLDivElement | null = null
 function parkingLot(): HTMLDivElement {
@@ -240,7 +239,7 @@ function wire(): void {
   })
 }
 
-export function onTerminalEvents(h: { activity?: ActivityFn; title?: TitleFn; exit?: ExitFn; data?: DataFn; link?: LinkFn; input?: InputFn }): void {
+export function onTerminalEvents(h: { activity?: ActivityFn; title?: TitleFn; exit?: ExitFn; data?: DataFn; input?: InputFn }): void {
   Object.assign(handlers, h)
 }
 
@@ -605,10 +604,9 @@ function preeditView(term: Terminal): (text: string) => void {
 export function createTerm({ reuse, ...spawn }: Omit<PtySpawnOptions, 'cols' | 'rows'>): void {
   wire()
   if (entries.has(spawn.id)) return
+  // links open in the system's browser
   const openLink = (url: string): void => {
-    if (!/^https?:\/\//i.test(url)) return
-    if (handlers.link) handlers.link(spawn.id, url)
-    else window.api.app.openExternal(url)
+    if (/^https?:\/\//i.test(url)) window.api.app.openExternal(url)
   }
   const term = new Terminal({
     // OSC 8 hyperlinks (Claude Code underlines URLs this way): same route as plain-text links,
@@ -635,7 +633,6 @@ export function createTerm({ reuse, ...spawn }: Omit<PtySpawnOptions, 'cols' | '
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
-  // clicked links go to the app (a chat's own Web tab); external browser only as a fallback
   term.loadAddon(new WebLinksAddon((_e, url) => openLink(url)))
   // Windows paths: images get a hover thumbnail + click to enlarge, anything else opens in File Explorer
   term.registerLinkProvider({

@@ -75,8 +75,7 @@ The Chats sidebar lists every project and conversation from `~/.claude/projects`
 ## Layout
 
 - `src-tauri/src` – Rust backend: terminals (`pty.rs`), files + watcher, git, Claude's session
-  store, the built-in browser (`browser.rs`, native
-  WebView2 / WebKitGTK tabs that sleep when hidden), the MCP server Claude's tools talk to (`mcp.rs`), window /
+  store, the MCP server Claude's tools talk to (`mcp.rs`), window /
   tray / drop-down mode (`windowing.rs`)
 - `src/renderer/src/api.ts` – `window.api`: the page's bridge to the Rust commands and events
 - `src/renderer/src` – UI (`components/`), state (`store.ts`, `actions.ts`), terminals, Monaco setup
