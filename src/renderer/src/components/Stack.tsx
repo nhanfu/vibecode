@@ -17,10 +17,7 @@ import {
   type PanelId,
   type StaticPanelId
 } from '../store'
-import { loadPlugins, openFolder } from '../actions'
-import { COMMANDS } from '../shortcuts'
-import { agentDef } from '../../../shared/agents'
-import { AgentSplit } from './Agents'
+import { loadPlugins } from '../actions'
 import { PluginManager } from './PluginManager'
 import { PluginPane } from './PluginPane'
 import { userStore } from '../localPref'
@@ -50,8 +47,7 @@ interface FloatSize {
 }
 
 const PANELS: Record<StaticPanelId, PanelMeta> = {
-  plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
-  agents: { label: 'Agent', icon: Bot, command: 'viewAgents', size: { key: 'vibe.agentWidth', initial: () => Math.round(window.innerWidth * 0.45), min: 320 } }
+  plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } }
 }
 
 /** Icons a plugin can name in its manifest (`panel.icon`). */
@@ -70,7 +66,6 @@ const pluginMeta = (id: PanelId): PanelMeta => {
 
 const metaOf = (id: PanelId): PanelMeta => (isPluginPanel(id) ? pluginMeta(id) : PANELS[id])
 
-const keysOf = (id: PanelId): string | undefined => (isPluginPanel(id) ? undefined : COMMANDS.find((c) => c.id === PANELS[id].command)?.keys)
 
 /* ---------------- title bar ---------------- */
 
@@ -168,12 +163,8 @@ function StackButton(props: {
 }): React.JSX.Element {
   const { id, dragging, shift, moving, onDrag, onDrop } = props
   const meta = metaOf(id)
-  const root = useStore((s) => s.root)
   const pinned = useStore((s) => s.pinned.includes(id))
   const shown = useStore((s) => floating(s) === id)
-  const running = useStore((s) => (id === 'agents' ? s.chats.filter((c) => c.status === 'working').length : 0))
-  // Agent: named after the agent of the chat you are in ("Claude Code", "Codex"…)
-  const agent = useStore((s) => (id === 'agents' ? agentDef(s.chats.find((c) => c.id === s.activeChatId)?.agent).label : ''))
   const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
   const clickTimer = useRef<number | undefined>(undefined)
   // a drag ends with a click on the button: that one is not a click
@@ -223,8 +214,7 @@ function StackButton(props: {
   }
 
   const Icon = meta.icon
-  const label = id === 'agents' && agent ? agent : meta.label
-  const keys = keysOf(id)
+  const label = meta.label
   const what = 'click to open'
   const openMenu = (e: React.MouseEvent): void => {
     e.preventDefault()
@@ -237,14 +227,13 @@ function StackButton(props: {
         className={`stack-btn${shown ? ' on' : ''}${pinned ? ' pinned' : ''}${dragging ? ' dragging' : ''}`}
         data-panel={id}
         aria-label={label}
-        title={`${label}: hover to look, ${what}, double-click to ${pinned ? 'unpin' : 'pin'}, right-click for more, drag to reorder${keys ? ` (${keys})` : ''}`}
+        title={`${label}: hover to look, ${what}, double-click to ${pinned ? 'unpin' : 'pin'}, right-click for more, drag to reorder`}
         onMouseEnter={() => !dragging && peekPanel(id)}
         onPointerDown={press}
         onClick={click}
         onContextMenu={openMenu}
       >
         <Icon size={13} />
-        {running > 0 && <span className="center-count">{running}</span>}
       </button>
       {ctx && <StackMenu id={id} x={ctx.x} y={ctx.y} onClose={() => setCtx(null)} />}
     </div>
@@ -259,7 +248,6 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
   const open = useStore((s) => floating(s) === id)
   const order = useStore((s) => s.panelOrder)
   const at = order.indexOf(id)
-  const keys = keysOf(id)
   const pluginId = id.startsWith('plugin:') ? id.slice('plugin:'.length) : null
   const pluginRunning = useStore((s) => (pluginId ? s.plugins.find((p) => p.id === pluginId)?.status === 'running' : false))
 
@@ -303,8 +291,8 @@ function StackMenu({ id, x, y, onClose }: { id: PanelId; x: number; y: number; o
       ? []
       : [
           open
-            ? { icon: <X size={14} />, label: 'Close', hint: keys, act: () => closeFloat() }
-            : { icon: <PanelTop size={14} />, label: 'Open', hint: keys, act: () => showPanel(id) }
+            ? { icon: <X size={14} />, label: 'Close', act: () => closeFloat() }
+            : { icon: <PanelTop size={14} />, label: 'Open', act: () => showPanel(id) }
         ]),
     'sep',
     { icon: <ArrowLeft size={14} />, label: 'Move left', act: () => movePanel(id, at - 1), off: at <= 0 },
@@ -380,7 +368,7 @@ function useFloatTracking(): void {
       closeFloat()
     }
     window.addEventListener('mousedown', down, true)
-    // focus moving elsewhere (a click into the chat's terminal, Alt+Tab back…) closes it too
+    // focus moving elsewhere (a click into a terminal, Alt+Tab back…) closes it too
     const focus = (e: FocusEvent): void => {
       const t = e.target
       if (t instanceof Element && !t.closest(FLOAT_PARTS)) closeFloat()
@@ -394,13 +382,12 @@ function useFloatTracking(): void {
 }
 
 /**
- * The workbench: pinned drop-downs side by side in the title bar's order, the last one (the chat,
+ * The workbench: pinned drop-downs side by side in the title bar's order, the last one (
  * when it is pinned) stretched over the rest; floating ones over them, under their button. Every
  * drop-down is mounted once, in a fixed place, whatever it does: pinning, floating or reordering
- * only changes its CSS, so the chat's terminals, editors and scroll positions survive.
- * `children` is the chat, shown in the Agent drop-down.
+ * only changes its CSS, so the terminals, editors and scroll positions survive.
  */
-export function StackLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
+export function StackLayout(): React.JSX.Element {
   useFloatTracking()
   const shown = useStore((s) => floating(s) !== null)
   const pinned = useStore((s) => s.pinned)
@@ -408,8 +395,8 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
   const fullscreen = useStore((s) => s.fullscreen)
   const panels: PanelId[] = [...PANEL_IDS, ...order.filter(isPluginPanel)]
   const full = fullscreen && panels.includes(fullscreen) ? fullscreen : null
-  // the one that takes the room left: the chat if pinned, else the last pinned one
-  const fill = pinned.includes('agents') ? 'agents' : [...order].reverse().find((p) => pinned.includes(p))
+  // the one that takes the room left: the last pinned one
+  const fill = [...order].reverse().find((p) => pinned.includes(p))
   /*
    * Who resizes whom. The stretched one has no width to drag. A drop-down left of it is dragged by
    * its own right edge; one right of it is dragged by its left edge, which is the right edge of the
@@ -432,9 +419,7 @@ export function StackLayout({ children }: { children: React.ReactNode }): React.
           controls={!full && pinned.includes(id) ? controls(id) : null}
           full={full === null ? null : full === id ? 'self' : 'behind'}
         >
-          {id === 'agents' ? (
-            <AgentSplit>{children}</AgentSplit>
-          ) : isPluginPanel(id) ? (
+          {isPluginPanel(id) ? (
             <PluginPane id={id.slice('plugin:'.length)} name={metaOf(id).label} />
           ) : (
             <PluginManager />

@@ -1,7 +1,0 @@
-{
-  "name": "ptyd-test",
-  "private": true,
-  "dependencies": {
-    "@xterm/headless": "6.0.0"
-  }
-}

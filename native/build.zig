@@ -42,7 +42,6 @@ pub fn build(b: *std.Build) void {
     const cef_auto_install_override = b.option(bool, "cef-auto-install", "Override app.zon CEF auto-install setting");
     const package_target = b.option(PackageTarget, "package-target", "Package target: macos, windows, linux") orelse .macos;
     const zero_native_path = b.option([]const u8, "zero-native-path", "Path to the zero-native framework checkout") orelse default_zero_native_path;
-    const duckdb_prebuilt = b.option([]const u8, "duckdb-lib", "Link this prebuilt libduckdb.a (from `zig build duckdb`) instead of compiling DuckDB");
     const optimize_name = @tagName(optimize);
     const selected_platform: PlatformOption = switch (platform_option) {
         .auto => if (target.result.os.tag == .macos) .macos else if (target.result.os.tag == .linux) .linux else if (target.result.os.tag == .windows) .windows else .@"null",
@@ -89,17 +88,6 @@ pub fn build(b: *std.Build) void {
     const app_mod = localModule(b, target, optimize, "src/main.zig");
     app_mod.addImport("zero-native", zero_native_mod);
     app_mod.addImport("runner", runner_mod);
-    const duck = duckdbLibrary(b, target, optimize);
-    app_mod.addImport("duckdb_c", duck.header);
-    if (duckdb_prebuilt) |path| {
-        // A libduckdb.a built earlier by `zig build duckdb` (same target and optimize mode): skip compiling DuckDB.
-        app_mod.addObjectFile(.{ .cwd_relative = path });
-        app_mod.link_libcpp = true;
-    } else {
-        app_mod.linkLibrary(duck.lib);
-    }
-    const duckdb_step = b.step("duckdb", "Build libduckdb.a into zig-out/duckdb for -Dduckdb-lib=zig-out/duckdb/libduckdb.a");
-    duckdb_step.dependOn(&b.addInstallArtifact(duck.lib, .{ .dest_dir = .{ .override = .{ .custom = "duckdb" } } }).step);
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,
@@ -456,56 +444,4 @@ fn boolField(source: []const u8, field: []const u8) ?bool {
     if (std.mem.startsWith(u8, source[index..], "true")) return true;
     if (std.mem.startsWith(u8, source[index..], "false")) return false;
     return null;
-}
-
-const duckdb_sources = @embedFile("vendor/duckdb/sources.txt");
-const duckdb_archive = "vendor/duckdb/duckdb-1.10506.1.tar.gz";
-const duckdb_root = ".zig-cache/duckdb";
-
-const DuckDb = struct {
-    lib: *std.Build.Step.Compile,
-    header: *std.Build.Module,
-};
-
-/// DuckDB built from the archive the Tauri build used (same version, same database format), with
-/// the defines libduckdb-sys sets for its bundled build.
-fn duckdbLibrary(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) DuckDb {
-    const extract = b.addSystemCommand(&.{ "sh", "-c", b.fmt("rm -rf {s} && mkdir -p {s} && tar -xzf {s} -C {s}", .{ duckdb_root, duckdb_root, duckdb_archive, duckdb_root }) });
-
-    const mod = b.createModule(.{ .target = target, .optimize = optimize, .link_libc = true, .link_libcpp = true });
-    var files: std.ArrayList([]const u8) = .empty;
-    var lines = std.mem.tokenizeScalar(u8, duckdb_sources, '\n');
-    while (lines.next()) |line| {
-        if (std.mem.startsWith(u8, line, "F ")) {
-            files.append(b.allocator, b.dupe(line[2..])) catch @panic("out of memory");
-        } else if (std.mem.startsWith(u8, line, "I ")) {
-            mod.addIncludePath(.{ .cwd_relative = b.fmt("{s}/duckdb/{s}", .{ duckdb_root, line[2..] }) });
-        }
-    }
-    mod.addIncludePath(.{ .cwd_relative = b.fmt("{s}/duckdb", .{duckdb_root}) });
-    mod.addCSourceFiles(.{
-        .root = .{ .cwd_relative = duckdb_root },
-        .files = files.items,
-        .flags = &.{
-            "-std=c++11",
-            "-w",
-            "-DNDEBUG",
-            "-DDUCKDB_EXTENSION_CORE_FUNCTIONS_LINKED=1",
-            "-DDUCKDB_EXTENSION_AUTOINSTALL_DEFAULT=1",
-            "-DDUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1",
-        },
-        .language = .cpp,
-    });
-
-    const lib = b.addLibrary(.{ .name = "duckdb", .linkage = .static, .root_module = mod });
-    lib.step.dependOn(&extract.step);
-
-    const header = b.addTranslateC(.{
-        .root_source_file = .{ .cwd_relative = b.fmt("{s}/duckdb/src/include/duckdb.h", .{duckdb_root}) },
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-    });
-    header.step.dependOn(&extract.step);
-    return .{ .lib = lib, .header = header.createModule() };
 }

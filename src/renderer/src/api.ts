@@ -1,83 +1,20 @@
 /**
- * `window.api`: the renderer's only door to the Rust backend (src-tauri).
- *
- * Same shape the UI always used; every call is a Tauri command (`invoke`), every `on…` a Tauri
- * event whose payload is the argument list. Terminal output is the hot path, so it streams
- * through one `Channel` per terminal instead of the global event bus.
+ * `window.api`: the renderer's only door to the native backend. Every call is a command (`invoke`), and
+ * every `on…` is an event from the backend.
  */
-import { invoke, listen, openFileDialog, bytesToBase64 } from './nativeBridge'
-import type {
-  AgentInfo,
-  AppSettings,
-  ChatTask,
-  SubAgent,
-  SessionFile,
-  ClaudeInfo,
-  DirEntry,
-  GitCommit,
-  GitBranch,
-  GitCommitFile,
-  GitState,
-  ProjectGroup,
-  PtySpawnOptions,
-  UsageLimit,
-  WindowMode,
-  WindowState,
-  PluginInfo,
-  PluginOffer
-} from '../../shared/types'
+import { invoke, listen } from './nativeBridge'
+import type { AppSettings, PluginInfo, PluginOffer, WindowMode, WindowState } from '../../shared/types'
 
 type Off = () => void
 
-/** Subscribe to a backend event; the payload is the listener's argument list. */
 function on<T extends unknown[]>(channel: string, cb: (...args: T) => void): Off {
-  const off = listen<T>(channel, cb)
-  return off
-}
-
-/* ---------------- terminals: one Channel per process ---------------- */
-
-const ptyData = new Set<(id: string, data: string) => void>()
-const ptyExit = new Set<(id: string, code: number) => void>()
-const exitNow = (id: string, code: number): void => ptyExit.forEach((cb) => cb(id, code))
-// the backend sends terminal output and exits as events, each with the terminal's id
-listen<[string, string]>('pty:data', (id, data) => ptyData.forEach((cb) => cb(id, data)))
-listen<[string, number]>('pty:exit', (id, code) => exitNow(id, code))
-const sub = <F>(set: Set<F>, cb: F): Off => {
-  set.add(cb)
-  return () => set.delete(cb)
-}
-
-export interface DropEvent {
-  kind: 'enter' | 'over' | 'drop' | 'leave'
-  paths: string[]
-  /** CSS pixels in the window */
-  x: number
-  y: number
+  return listen<T>(channel, cb)
 }
 
 const platform: 'win32' | 'darwin' | 'linux' = navigator.userAgent.includes('Windows') ? 'win32' : navigator.userAgent.includes('Mac') ? 'darwin' : 'linux'
 
 export const api = {
   platform,
-  pty: {
-    spawn: (o: PtySpawnOptions): Promise<void> => invoke('pty_spawn', { opts: o }),
-    write: (id: string, data: string): void => {
-      void invoke<boolean>('pty_write', { id, data }).then((ok) => ok || exitNow(id, -1))
-    },
-    resize: (id: string, cols: number, rows: number): void => void invoke('pty_resize', { id, cols, rows }),
-    kill: (id: string): void => void invoke('pty_kill', { id }),
-    /** the page starts: shells left from before stop, chats' terminals wait to be attached to again */
-    pageReset: (): Promise<void> => invoke('pty_page_reset'),
-    /** chats' terminals still running from before the app was closed */
-    list: (): Promise<string[]> => invoke<string[]>('pty_list'),
-    /** the folder each running chat's shell is in now (chats started after this build) */
-    cwds: (): Promise<{ id: string; cwd: string }[]> => invoke('pty_cwds'),
-    /** on screen → output every 5 ms; off screen → batched every 50 ms (far fewer wake-ups) */
-    visible: (id: string, visible: boolean): void => void invoke('pty_visible', { id, visible }),
-    onData: (cb: (id: string, data: string) => void): Off => sub(ptyData, cb),
-    onExit: (cb: (id: string, code: number) => void): Off => sub(ptyExit, cb)
-  },
   plugins: {
     list: (): Promise<PluginInfo[]> => invoke('plugin_list'),
     /** starts the plugin's sidecar if needed; the address of its page */
@@ -96,152 +33,27 @@ export const api = {
     /** the registry address in use (`set` changes it; empty: back to the default) */
     registryUrl: (set?: string): Promise<string> => invoke('plugin_registry_url', { set })
   },
-  claude: {
-    detect: (): Promise<ClaudeInfo> => invoke('claude_detect'),
-    agents: (): Promise<AgentInfo[]> => invoke('agents_detect'),
-    usage: (): Promise<UsageLimit[] | null> => invoke('claude_usage'),
-    memory: (): Promise<{ usedBytes: number; totalBytes: number } | null> => invoke('sys_memory'),
-  },
-  sessions: {
-    list: (): Promise<ProjectGroup[]> => invoke('sessions_list'),
-    /** `since`: the version already shown — then `images` is null unless a picture was added */
-    images: (sessionId: string, since?: number): Promise<{ version: number; images: string[] | null }> => invoke('sessions_images', { sessionId, since }),
-    context: (sessionId: string): Promise<{ used: number; model: string } | null> => invoke('sessions_context', { sessionId }),
-    tasks: (sessionId: string): Promise<ChatTask[]> => invoke('sessions_tasks', { sessionId }),
-    /** the sub-agents a chat started (Agent tool), oldest first */
-    subagents: (sessionId: string): Promise<SubAgent[]> => invoke('sessions_subagents', { sessionId }),
-    changes: (sessionId: string): Promise<SessionFile[]> => invoke('sessions_changes', { sessionId }),
-    /** ids of the sessions whose transcript changed (empty: only project folders came or went) */
-    onChanged: (cb: (ids: string[]) => void): Off => on('sessions:changed', cb),
-    /** a chat's Claude Code reported the session it writes to (on each prompt: it changes on /clear, forks…) */
-    onChatSession: (cb: (chatId: string, sessionId: string) => void): Off => on('chat:session', cb)
-  },
   win: {
     state: (): Promise<WindowState> => invoke('win_state'),
     minimize: (): void => void invoke('win_minimize'),
-    badge: (png: string | null, label: string): void => void invoke('win_badge', { png, label }),
     toggleMaximize: (): void => void invoke('win_toggle_maximize'),
     drag: (button: number, x: number, y: number): void => void invoke('win_drag', { button, x, y }),
     close: (): void => void invoke('win_close'),
-    hide: (): void => void invoke('win_hide'),
     setMode: (mode: WindowMode): void => void invoke('win_set_mode', { mode }),
-    onState: (cb: (s: WindowState) => void): Off => on('win:state', cb),
-    onShown: (cb: () => void): Off => on('win:shown', cb)
-  },
-  fs: {
-    readDir: (dir: string): Promise<DirEntry[]> => invoke('fs_read_dir', { dir }),
-    readFile: (path: string): Promise<{ content: string; binary: boolean; tooLarge: boolean }> => invoke('fs_read_file', { path }),
-    writeFile: (path: string, content: string): Promise<void> => invoke('fs_write_file', { path, content }),
-    listFiles: (root: string): Promise<string[]> => invoke('fs_list_files', { root }),
-    watch: (root: string | null): Promise<void> => invoke('fs_watch', { root }),
-    reveal: (path: string): Promise<void> => invoke('fs_reveal', { path }),
-    openPath: (path: string): Promise<string> => invoke('fs_open_path', { path }),
-    onChanged: (cb: (paths: string[]) => void): Off => on('fs:changed', cb),
-    /** the repository moved: a commit, checkout, pull, staging (or events were lost) */
-    onGitChanged: (cb: () => void): Off => on('git:changed', cb)
-  },
-  git: {
-    state: (folder: string): Promise<GitState> => invoke('git_state', { folder }),
-    /** what .gitignore hides in the repo of `folder`: paths relative to `root` (a folder ends with "/") */
-    ignored: (folder: string): Promise<{ root: string | null; paths: string[] }> => invoke('git_ignored', { folder }),
-    original: (root: string, rel: string): Promise<string> => invoke('git_original', { root, rel }),
-    init: (folder: string): Promise<void> => invoke('git_init', { folder }),
-    show: (root: string, rev: string, rel: string): Promise<string> => invoke('git_show', { root, rev, rel }),
-    /** a file as it was at `rev`, written to a file another editor can open; its path */
-    snapshot: (root: string, rev: string, rel: string, label: string): Promise<string> => invoke('git_snapshot', { root, rev, rel, label }),
-    log: (root: string): Promise<GitCommit[]> => invoke('git_log', { root }),
-    commitFiles: (root: string, hash: string): Promise<GitCommitFile[]> => invoke('git_commit_files', { root, hash }),
-    branches: (root: string): Promise<GitBranch[]> => invoke('git_branches', { root }),
-    checkout: (root: string, name: string, remote: boolean): Promise<void> => invoke('git_checkout', { root, name, remote }),
-    /** commit the folder's changes (every change first when stageAll); the message must not be empty */
-    commit: (root: string, message: string, stageAll: boolean): Promise<void> => invoke('git_commit', { root, message, stageAll }),
-    push: (root: string): Promise<void> => invoke('git_push', { root }),
-    /** a tracked file's changes against HEAD, as a unified diff */
-    diff: (root: string, rel: string): Promise<string> => invoke('git_diff', { root, rel }),
-    /** throws away one file's changes (untracked: removes it) */
-    revertFile: (root: string, rel: string, untracked: boolean): Promise<void> => invoke('git_revert_file', { root, rel, untracked }),
-    /** throws away every change of the folder */
-    revertAll: (root: string): Promise<void> => invoke('git_revert_all', { root })
-  },
-  keybindings: {
-    /** `<userData>/keybindings.json` (it may not exist yet) */
-    path: (): Promise<string> => invoke('keybindings_path'),
-    /** the file's text, null when there is none; starts the watch behind onChanged */
-    read: (): Promise<string | null> => invoke('keybindings_read'),
-    onChanged: (cb: () => void): Off => on('keybindings:changed', cb)
+    onState: (cb: (s: WindowState) => void): Off => on('win:state', cb)
   },
   app: {
     settings: (): Promise<AppSettings> => invoke('app_settings'),
-    /** CPU share (of the whole machine, since the last call; null the first time) and memory of the app and everything it started */
-    usage: (): Promise<{ cpuPercent: number | null; rssBytes: number; processes: number } | null> => invoke('app_usage'),
-    rememberFolder: (folder: string): Promise<AppSettings> => invoke('app_remember_folder', { folder }),
     setSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => invoke('app_set_settings', { patch }),
-    pickFolder: async (): Promise<string | null> => {
-      const picked = await openFileDialog({ title: 'Open folder', allowDirectories: true })
-      return picked?.[0] ?? null
-    },
-    pickFiles: async (defaultPath?: string): Promise<string[]> =>
-      (await openFileDialog({ title: 'Attach files to the chat', allowMultiple: true, defaultPath: defaultPath ?? '' })) ?? [],
-    fileInfo: (paths: string[]): Promise<{ path: string; size: number; dir: boolean; preview?: string }[]> => invoke('app_file_info', { paths }),
     openExternal: (url: string): Promise<void> => invoke('app_open_external', { url }),
-    relaunch: (): Promise<boolean> => invoke('app_relaunch'),
-    saveImage: (data: Uint8Array, ext: string): Promise<string> => invoke('app_save_image', { ext, data: bytesToBase64(data) }),
-    /** paths of files copied in Explorer (Ctrl+C on a file), [] when the clipboard holds none */
-    clipboardFiles: (): Promise<string[]> => invoke('app_clipboard_files'),
-    /** a picture on the clipboard, saved to a temp PNG (Linux), or null */
-    clipboardImage: (): Promise<string | null> => invoke('app_clipboard_image'),
-    /**
-     * A WebView never learns where a dropped file lives on disk; the window does. Files dragged in
-     * from Explorer arrive here with their paths and the drop point, instead of as DOM drop events.
-     */
-    onFileDrop: (cb: (e: DropEvent) => void): Off => {
-      // file drops on the window arrive with the native drop events (native/PLAN.md, step 2)
-      return () => {}
-    }
+    relaunch: (): Promise<boolean> => invoke('app_relaunch')
   }
 }
 
-export type Api = typeof api
-
 declare global {
   interface Window {
-    api: Api
+    api: typeof api
   }
 }
 
 window.api = api
-
-/* ---------------- file drops → the element under the pointer ---------------- */
-
-/** What a `vibe-drop` DOM event carries: `drop` has the dropped files' paths. */
-export interface VibeDrop {
-  kind: 'enter' | 'leave' | 'drop'
-  paths: string[]
-}
-
-/**
- * The window receives drops from Explorer (with real paths); this routes them to the element under
- * the pointer as a bubbling `vibe-drop` CustomEvent, with enter/leave as the pointer moves.
- */
-let hovered: Element | null = null
-const fire = (el: Element | null, detail: VibeDrop): void => {
-  el?.dispatchEvent(new CustomEvent<VibeDrop>('vibe-drop', { bubbles: true, detail }))
-}
-api.app.onFileDrop((e) => {
-  if (e.kind === 'leave') {
-    fire(hovered, { kind: 'leave', paths: e.paths })
-    hovered = null
-    return
-  }
-  const el = document.elementFromPoint(e.x, e.y)
-  if (el !== hovered) {
-    fire(hovered, { kind: 'leave', paths: e.paths })
-    hovered = el
-    fire(el, { kind: 'enter', paths: e.paths })
-  }
-  if (e.kind === 'drop') {
-    fire(el, { kind: 'drop', paths: e.paths })
-    fire(el, { kind: 'leave', paths: e.paths })
-    hovered = null
-  }
-})

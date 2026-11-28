@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Download, ExternalLink, FolderOpen, RefreshCw, ScrollText } from 'lucide-react'
 import { loadPlugins } from '../actions'
+import { openFileDialog } from '../nativeBridge'
 import { panelShown, useStore } from '../store'
 import type { PluginInfo, PluginOffer } from '../../../shared/types'
 import { PluginPane } from './PluginPane'
@@ -157,8 +158,8 @@ function InstallBar({ run, onInstalled }: { run: Run; onInstalled: () => void })
     }
   }
   const choose = async (): Promise<void> => {
-    const dir = await window.api.app.pickFolder().catch(() => null)
-    if (dir) setSource(dir)
+    const dir = await openFileDialog({ title: 'Install a plugin folder', allowDirectories: true }).catch(() => null)
+    if (dir?.[0]) setSource(dir[0])
   }
 
   return (
@@ -296,7 +297,7 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
             {p.mcpName && (
               <>
                 <dt>MCP server</dt>
-                <dd>{p.mcpName} (given to every chat)</dd>
+                <dd>{p.mcpName} (MCP server)</dd>
               </>
             )}
             {p.platforms.length > 0 && (

@@ -1,98 +1,9 @@
-import type { AgentId } from './agents'
-
-export interface DirEntry {
-  name: string
-  path: string
-  isDir: boolean
-}
-
-export type GitFileStatus = 'M' | 'A' | 'D' | 'R' | 'U' | '?' | 'C'
-
-export interface GitFile {
-  /** path relative to repo root, forward slashes */
-  rel: string
-  /** absolute path on disk */
-  abs: string
-  status: GitFileStatus
-  staged: boolean
-  added: number
-  deleted: number
-}
-
-export interface GitState {
-  isRepo: boolean
-  root: string | null
-  branch: string | null
-  files: GitFile[]
-}
-
-export interface GitCommit {
-  hash: string
-  short: string
-  author: string
-  /** unix ms */
-  date: number
-  subject: string
-}
-
-export interface GitBranch {
-  name: string
-  current: boolean
-  /** only on the remote (e.g. `origin/feature`): checking it out makes a local tracking branch */
-  remote: boolean
-}
-
-export interface GitCommitFile {
-  rel: string
-  status: GitFileStatus
-  added: number
-  deleted: number
-}
-
-export interface PtySpawnOptions {
-  id: string
-  cwd: string
-  kind: 'claude' | 'shell'
-  /** which coding agent a chat terminal runs — default Claude Code */
-  agent?: AgentId
-  /** extra args for claude (or the chat's agent), e.g. ['--continue'] or ['--resume', id] */
-  claudeArgs?: string[]
-  cols: number
-  rows: number
-  /**
-   * The terminal may still be running from before the app was closed (it lives in ptyd, see
-   * src-tauri/src/ptyd.rs): attach to it instead of starting another. Only for the first start.
-   */
-  reuse?: boolean
-}
-
-export interface SessionInfo {
-  id: string
-  title: string
-  /** folder the session ran in — `claude --resume` must run from here */
-  cwd: string
-  /** repo the session belongs to (worktree sessions roll up to their repo) */
-  projectCwd: string
-  created: number
-  updated: number
-  cwdExists: boolean
-}
-
-export interface ProjectGroup {
-  key: string
-  cwd: string
-  name: string
-  updated: number
-  sessions: SessionInfo[]
-}
+// Types shared by the native backend (native/src/commands) and the renderer.
 
 export type WindowMode = 'window' | 'dropdown'
 export type ThemePref = 'system' | 'light' | 'dark' | 'blue'
 
 export interface AppSettings {
-  recentFolders: string[]
-  lastFolder: string | null
-  /** 'dropdown' = Guake-style: slides from the top edge on a global hotkey */
   mode: WindowMode
   hotkey: string
   /** drop-down height as a fraction of the screen work area */
@@ -100,17 +11,8 @@ export interface AppSettings {
   dropOpacity: number
   hideOnBlur: boolean
   theme: ThemePref
-  /** defaults for new chats: '' = Claude Code's own default */
-  model: string
-  effort: string
-  /** default | acceptEdits | plan | bypassPermissions — '' = Claude Code's own default */
-  permissionMode: string
   /** Linux-style overlay: transparent window background, text stays solid (needs a relaunch) */
   seeThrough: boolean
-  /** code editor (Monaco): font family name, size in px, ligatures */
-  editorFont: string
-  editorFontSize: number
-  editorLigatures: boolean
   /** start (hidden in the tray) when Windows signs in — undefined = on */
   openAtLogin?: boolean
 }
@@ -120,72 +22,6 @@ export interface WindowState {
   maximized: boolean
   hotkey: string
   hotkeyOk: boolean
-}
-
-/** One plan limit from Claude's usage API (what /usage and the Claude app show). */
-export interface UsageLimit {
-  /** session = 5-hour window, weekly_all = all models this week, weekly_scoped = one model this week */
-  kind: string
-  label: string
-  percent: number
-  severity: string
-  resetsAt: string | null
-}
-
-export interface AgentInfo {
-  id: AgentId
-  found: boolean
-}
-
-export interface ClaudeInfo {
-  found: boolean
-  path: string | null
-  shell: string
-}
-
-/** A background task Claude started in a chat */
-export interface ChatTask {
-  id: string
-  command: string
-  description: string
-  /** running, completed, failed, killed… (as Claude Code reports it) */
-  status: string
-  startedAt: number
-  endedAt?: number
-  outputFile?: string
-  /** the end of its output */
-  output?: string
-}
-
-/** A sub-agent a chat started with the Agent tool. */
-export interface SubAgent {
-  id: string
-  /** the agent type: general-purpose, Explore, a plugin's agent… */
-  kind: string
-  description: string
-  /** running, completed or failed */
-  status: string
-  startedAt: number
-  endedAt?: number
-}
-
-/** One replacement a chat's Claude made to a file (Edit, MultiEdit or Write). */
-export interface FileEdit {
-  id: string
-  tool: string
-  /** text replaced; empty for a Write */
-  old: string
-  /** text put in its place (the whole file for a Write) */
-  new: string
-  whole: boolean
-  at: number
-}
-
-/** A file a chat's Claude edited, with every edit it made, oldest first. */
-export interface SessionFile {
-  /** absolute path */
-  path: string
-  edits: FileEdit[]
 }
 
 /** A plugin found on this machine (plugins/<id>/plugin.json, see docs/plugins.md). */

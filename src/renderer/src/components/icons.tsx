@@ -15,7 +15,6 @@ import {
   Settings2,
   type LucideIcon
 } from 'lucide-react'
-import type { ChatStatus } from '../store'
 
 const byExt: Record<string, [LucideIcon, string]> = {
   ts: [FileCode2, '#4f9cf9'],
@@ -80,10 +79,6 @@ export function FolderIcon({ open, size = 15 }: { open: boolean; size?: number }
   return <Icon size={size} color={open ? '#5aa9ff' : '#8e8e93'} strokeWidth={1.8} className="file-icon" />
 }
 
-export function StatusDot({ status, attention }: { status: ChatStatus; attention?: boolean }): React.JSX.Element {
-  return <span className={`status-dot s-${status}${attention ? ' attention' : ''}`} />
-}
-
 export function Logo({ size = 22 }: { size?: number }): React.JSX.Element {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" className="logo">
@@ -102,13 +97,6 @@ export function Logo({ size = 22 }: { size?: number }): React.JSX.Element {
       <rect x="19.5" y="20.6" width="5.5" height="3.4" rx="1.4" fill="#fff" opacity="0.8" />
     </svg>
   )
-}
-
-export const statusLabel: Record<ChatStatus, string> = {
-  starting: 'Starting…',
-  working: 'Working',
-  idle: 'Waiting for you',
-  exited: 'Ended'
 }
 
 export function timeAgo(t: number): string {
