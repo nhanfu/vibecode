@@ -21,7 +21,6 @@ import {
 import { loadPlugins } from '../actions'
 import { PluginManager } from './PluginManager'
 import { PluginPane } from './PluginPane'
-import { TerminalPane } from './TerminalPane'
 import { userStore } from '../localPref'
 
 /*
@@ -50,7 +49,6 @@ interface FloatSize {
 
 const PANELS: Record<StaticPanelId, PanelMeta> = {
   plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
-  terminal: { label: 'Terminal', icon: Terminal, command: 'viewTerminal', size: { key: 'vibe.terminalWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 360 } }
 }
 
 /** Icons a plugin can name in its manifest (`panel.icon`). */
@@ -424,9 +422,6 @@ export function StackLayout(): React.JSX.Element {
         >
           {isPluginPanel(id) ? (
             <PluginPane id={id.slice('plugin:'.length)} name={metaOf(id).label} />
-          ) : id === 'terminal' ? (
-            // the built-in terminal: the engine (libghostty-vt) runs the user's shell in the app's own process
-            <TerminalPane command={[]} panel="terminal" />
           ) : (
             <PluginManager />
           )}

@@ -47,8 +47,8 @@ export interface PluginInfo {
   hasSidecar: boolean
   /** opens a program of its own (the Open button): see docs/plugins.md, `launch` */
   hasLaunch: boolean
-  /** runs a command in a native terminal pane instead of a web page */
-  terminal: { command: string[] } | null
+  /** a native library the app loads into its process, and the command its panel runs (see docs/plugins.md) */
+  native: { library: string; command: string[] } | null
   /** has a settings file the command palette can open */
   hasSettings: boolean
   /** starts with the app */

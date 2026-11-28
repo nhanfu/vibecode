@@ -60,9 +60,11 @@ const LaunchSpec = struct {
     unsetEnv: []const []const u8 = &.{},
 };
 
-/// The page is a native terminal: the app runs `command` in a pane of its own (no sidecar, no web page).
-const TerminalSpec = struct {
-    command: []const []const u8,
+/// A native library the app loads into its process (ABI in plugins/ghostty/src/vibe_plugin.h): `library` is a
+/// path inside the plugin folder; `command` is the program its panel runs (empty: the user's shell).
+const NativeSpec = struct {
+    library: []const u8,
+    command: []const []const u8 = &.{},
 };
 
 const McpSpec = struct {
@@ -81,7 +83,7 @@ const Manifest = struct {
     panel: ?PanelSpec = null,
     sidecar: ?Sidecar = null,
     launch: ?LaunchSpec = null,
-    terminal: ?TerminalSpec = null,
+    native: ?NativeSpec = null,
     mcp: ?McpSpec = null,
     minAppVersion: []const u8 = "",
     platforms: []const []const u8 = &.{},
@@ -123,6 +125,13 @@ fn fileExists(path: []const u8) bool {
     return stat.kind == .file;
 }
 
+/// The absolute path of an enabled plugin's native library, for the app to load; null when there is none.
+pub fn nativeLibrary(a: Allocator, id: []const u8) !?[]const u8 {
+    const p = (try find(a, id)) orelse return null;
+    const native = p.manifest.native orelse return null;
+    return try std.fs.path.join(a, &.{ p.dir, native.library });
+}
+
 fn dirExists(path: []const u8) bool {
     const stat = std.Io.Dir.cwd().statFile(cmd.io, path, .{}) catch return false;
     return stat.kind == .directory;
@@ -142,9 +151,9 @@ fn problem(a: Allocator, p: Plugin) !?[]const u8 {
         if (launch.command.len == 0) return "its launch command is empty";
         if (try findOnPath(a, launch.command[0]) == null) return try std.fmt.allocPrint(a, "{s} is not installed", .{launch.command[0]});
     }
-    if (m.terminal) |term| {
-        if (term.command.len == 0) return "its terminal command is empty";
-        if (try findOnPath(a, term.command[0]) == null) return try std.fmt.allocPrint(a, "{s} is not installed", .{term.command[0]});
+    if (m.native) |native| {
+        if (native.library.len == 0) return "its native library is not named";
+        if (!fileExists(try std.fs.path.join(a, &.{ p.dir, native.library }))) return "its native library is missing (not built)";
     }
     return null;
 }
@@ -723,8 +732,8 @@ const PluginInfo = struct {
     enabled: bool,
     hasSidecar: bool,
     hasLaunch: bool,
-    /// the command the native terminal pane runs (null when the plugin has no pane)
-    terminal: ?TerminalSpec,
+    /// the native library and the panel's command (null when the plugin is not native)
+    native: ?NativeSpec,
     hasSettings: bool,
     autostart: bool,
     status: []const u8,
@@ -787,7 +796,7 @@ fn info(a: Allocator, p: Plugin) !PluginInfo {
         .enabled = is_enabled,
         .hasSidecar = p.manifest.sidecar != null,
         .hasLaunch = p.manifest.launch != null,
-        .terminal = p.manifest.terminal,
+        .native = p.manifest.native,
         .hasSettings = settingsPath(a, p) != null,
         .autostart = autostarts(p),
         .status = status,

@@ -190,7 +190,7 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
   const [logs, setLogs] = useState(false)
   const [more, setMore] = useState(false)
   const api = window.api.plugins
-  const canOpen = p.enabled && p.available && p.hasSidecar
+  const canOpen = p.enabled && p.available && (p.hasSidecar || p.native !== null)
   const live = p.status === 'running' || p.status === 'starting'
 
   const remove = async (): Promise<void> => {

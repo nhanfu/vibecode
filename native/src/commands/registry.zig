@@ -7,7 +7,7 @@ const appcmds = @import("appcmds.zig");
 const client_log = @import("client_log.zig");
 const windowing = @import("windowing.zig");
 const plugins = @import("plugins.zig");
-const terminal = @import("terminal.zig");
+const native_plugins = @import("native_plugins.zig");
 
 pub const handlers = [_]cmd.Handler{
     cmd.handler("keybindings_path", keybindings.path),
@@ -38,8 +38,8 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("app_set_settings", appcmds.appSetSettings),
     cmd.handler("app_open_external", appcmds.appOpenExternal),
     cmd.handler("app_relaunch", appcmds.appRelaunch),
-    cmd.handler("terminal_open", terminal.open),
-    cmd.handler("terminal_frame", terminal.frame),
+    cmd.handler("plugin_native_open", native_plugins.open),
+    cmd.handler("plugin_native_frame", native_plugins.frame),
 };
 
 pub const names = [_][]const u8{
@@ -71,8 +71,8 @@ pub const names = [_][]const u8{
     "app_set_settings",
     "app_open_external",
     "app_relaunch",
-    "terminal_open",
-    "terminal_frame",
+    "plugin_native_open",
+    "plugin_native_frame",
 };
 
 pub const policy = cmd.policy(&names);

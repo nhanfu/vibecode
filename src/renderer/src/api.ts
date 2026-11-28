@@ -35,12 +35,12 @@ export const api = {
     /** the registry address in use (`set` changes it; empty: back to the default) */
     registryUrl: (set?: string): Promise<string> => invoke('plugin_registry_url', { set })
   },
-  terminal: {
-    /** creates the native terminal pane and starts `command` in it (once: later calls keep the first pane) */
-    open: (command: string[]): Promise<void> => invoke('terminal_open', { command }),
-    /** places the pane over the window at (x, y) with the size, in CSS pixels; hides it when not visible */
-    frame: (rect: { x: number; y: number; width: number; height: number; visible: boolean }): Promise<void> =>
-      invoke('terminal_frame', rect)
+  native: {
+    /** creates the plugin's native panel and starts `command` in it (empty: the user's shell); once per panel */
+    open: (id: string, command: string[]): Promise<void> => invoke('plugin_native_open', { id, command }),
+    /** places the panel over the window at (x, y) with the size, in CSS pixels; hides it when not visible */
+    frame: (id: string, rect: { x: number; y: number; width: number; height: number; visible: boolean }): Promise<void> =>
+      invoke('plugin_native_frame', { id, ...rect })
   },
   win: {
     state: (): Promise<WindowState> => invoke('win_state'),

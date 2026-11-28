@@ -9,11 +9,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "vibe_plugin.h"
 #include <math.h>
 
-// Provided by the vendored GTK host (native/vendor/zero-native).
-void *zero_native_gtk_app_overlay(void);
-void zero_native_gtk_app_eval(const char *script);
+// The app's table (vibe_plugin.h): the overlay the panel sits on, and running script in the page.
+static const vibe_host *host = NULL;
+static void *app_overlay(void) { return host ? host->app_overlay() : NULL; }
+static void app_eval(const char *script) { if (host) host->app_eval(script); }
 
 // Provided by termcore.zig.
 typedef struct {
@@ -40,6 +43,12 @@ void tc_resize(uint16_t cols, uint16_t rows);
 void tc_scroll(int32_t delta);
 int tc_mouse_tracking(void);
 void tc_snapshot(TcFrame *out);
+
+int vibe_plugin_init(const vibe_host *h) {
+  if (!h || h->abi != VIBE_NATIVE_ABI) return -1;
+  host = h;
+  return 0;
+}
 
 static GtkWidget *area = NULL;
 static GtkWidget *overlay = NULL;
@@ -142,6 +151,35 @@ static void on_focus_leave(GtkEventControllerFocus *f, gpointer data) {
   if (im) gtk_im_context_focus_out(im);
 }
 
+// Box-drawing lines (U+2500..U+253C, light weight) are drawn as geometry, not from the font, as Ghostty does:
+// each line runs from the cell's middle to its edges, so neighbouring cells join into one unbroken line.
+// Returns 0 for any other character.
+static int draw_box(cairo_t *cr, uint32_t cp, double x, double y, double w, double h) {
+  int left = 0, right = 0, up = 0, down = 0;
+  switch (cp) {
+    case 0x2500: left = right = 1; break;               // ─
+    case 0x2502: up = down = 1; break;                  // │
+    case 0x250C: right = down = 1; break;               // ┌
+    case 0x2510: left = down = 1; break;                // ┐
+    case 0x2514: right = up = 1; break;                 // └
+    case 0x2518: left = up = 1; break;                  // ┘
+    case 0x251C: up = down = right = 1; break;          // ├
+    case 0x2524: up = down = left = 1; break;           // ┤
+    case 0x252C: left = right = down = 1; break;        // ┬
+    case 0x2534: left = right = up = 1; break;          // ┴
+    case 0x253C: left = right = up = down = 1; break;   // ┼
+    default: return 0;
+  }
+  double mx = floor(x + w / 2) + 0.5, my = floor(y + h / 2) + 0.5;
+  cairo_set_line_width(cr, 1.0);
+  if (left) { cairo_move_to(cr, x, my); cairo_line_to(cr, mx, my); }
+  if (right) { cairo_move_to(cr, mx, my); cairo_line_to(cr, x + w, my); }
+  if (up) { cairo_move_to(cr, mx, y); cairo_line_to(cr, mx, my); }
+  if (down) { cairo_move_to(cr, mx, my); cairo_line_to(cr, mx, y + h); }
+  cairo_stroke(cr);
+  return 1;
+}
+
 static void draw_cb(GtkDrawingArea *da, cairo_t *cr, int width, int height, gpointer data) {
   (void)da;
   (void)data;
@@ -175,7 +213,10 @@ static void draw_cb(GtkDrawingArea *da, cairo_t *cr, int width, int height, gpoi
       cell_colors(first, fg, bg);
       // a run: same colors and attributes, narrow cells only; a wide cell is a run of its own
       int end = x + 1;
-      if (first->wide == 0) {
+      int is_box = first->wide == 0 && first->cp >= 0x2500 && first->cp <= 0x253C && first->cp != 0x2503;
+      if (is_box) {
+        // a line character is a run of its own
+      } else if (first->wide == 0) {
         while (end < f.cols && row[end].wide == 0 && same_style(first, &row[end])) end++;
       } else {
         end = x + 2;
@@ -199,6 +240,10 @@ static void draw_cb(GtkDrawingArea *da, cairo_t *cr, int width, int height, gpoi
       pango_layout_set_font_description(layout, fonts[font]);
       pango_layout_set_text(layout, text, (int)n);
       set_color(cr, fg, (first->flags & 32) ? 0.5 : 1.0);
+      if (is_box && draw_box(cr, first->cp, x * cell_w, base_y, cell_w, cell_h)) {
+        x = end;
+        continue;
+      }
       int pixel_w = 0;
       pango_layout_get_pixel_size(layout, &pixel_w, NULL);
       if (first->wide == 0 && pixel_w != run_cols * (int)cell_w) {
@@ -313,7 +358,7 @@ static void pass_to_app(guint keyval, GdkModifierType state) {
   snprintf(script, sizeof script,
     "window.dispatchEvent(new KeyboardEvent('keydown',{key:'%s',code:'%s',ctrlKey:%s,shiftKey:%s,altKey:false,metaKey:false,bubbles:true,cancelable:true}));",
     key, code, (state & GDK_CONTROL_MASK) ? "true" : "false", (state & GDK_SHIFT_MASK) ? "true" : "false");
-  zero_native_gtk_app_eval(script);
+  app_eval(script);
 }
 
 static void send(const char *bytes, size_t n) { tc_write((const uint8_t *)bytes, n); }
@@ -474,11 +519,17 @@ static void on_motion(GtkEventControllerMotion *m, gdouble x, gdouble y, gpointe
 
 /* ---- the API the app calls (termpane.zig) ---- */
 
-/* Creates the pane (hidden) with the command to run in it. One pane per app; a second call keeps the first. */
-int zt_open(char **argv) {
+int vibe_panel_open(char **argv) {
   if (area) return 0;
-  overlay = zero_native_gtk_app_overlay();
-  if (!overlay || !argv || !argv[0]) return -1;
+  overlay = app_overlay();
+  if (!overlay) return -1;
+  // no command (the plugin's default): the user's shell
+  char *shell_argv[2] = {NULL, NULL};
+  if (!argv || !argv[0]) {
+    const char *shell = getenv("SHELL");
+    shell_argv[0] = (char *)(shell && *shell ? shell : "/bin/sh");
+    argv = shell_argv;
+  }
   int n = 0;
   while (argv[n]) n++;
   child_argv = calloc((size_t)n + 1, sizeof(char *));
@@ -532,9 +583,8 @@ int zt_open(char **argv) {
   return 0;
 }
 
-/* Places the pane over the page (CSS pixels of the window) and shows or hides it. The child starts with the first
-   non-empty frame. */
-void zt_set_frame(double x, double y, double w, double h, int visible) {
+/* The child starts with the first non-empty frame. */
+void vibe_panel_frame(double x, double y, double w, double h, int visible) {
   if (!area) return;
   // a negative position (the pane is partly off the window) cannot be placed: it is hidden instead
   if (!visible || w < 1 || h < 1 || x < 0 || y < 0) {

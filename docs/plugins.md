@@ -141,3 +141,21 @@ export function activate(api) {
 Only modules in the checkout's `plugins/` folder are loaded, and they are bundled into the app at build
 time (`src/renderer/src/rendererPlugins.ts`). A change to `ui.js` reloads the window in dev; the app does
 not restart. Installed (user) plugins and a permission prompt for modules are not done yet.
+
+## `native`: a library the app loads
+
+A plugin can ship a native library. The app loads it into its own process and shows a panel the library
+draws (no sidecar, no web page). The Ghostty terminal (`plugins/ghostty/`) is the first one.
+
+```json
+{
+  "id": "ghostty",
+  "panel":  { "title": "Terminal", "icon": "terminal" },
+  "native": { "library": "bin/libvibe-terminal.so", "command": [] }
+}
+```
+
+`library` is a path inside the plugin folder. `command` is what the panel runs; empty means the user's shell.
+The functions the library exports, and the host table it receives, are in `plugins/ghostty/src/vibe_plugin.h`
+(ABI version 1). The library runs inside the app, so it is built for the same GTK and must be trusted as code.
+Build it with `plugins/ghostty/build.sh`, which needs the libghostty-vt submodule.

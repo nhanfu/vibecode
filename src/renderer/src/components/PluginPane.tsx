@@ -12,11 +12,11 @@ export function PluginPane({ id, name }: { id: string; name: string }): React.JS
   const [attempt, setAttempt] = useState(0)
   // the plugin follows the app's theme: a theme change restarts the page with the new theme in its address
   const theme = useStore((s) => s.themeResolved)
-  const terminal = useStore((s) => s.plugins.find((p) => p.id === id)?.terminal ?? null)
+  const native = useStore((s) => s.plugins.find((p) => p.id === id)?.native ?? null)
 
   useEffect(() => {
     // a terminal plugin has no page to start
-    if (terminal) return
+    if (native) return
     let off = false
     setError(null)
     window.api.plugins.start(id, theme === 'light').then(
@@ -26,7 +26,7 @@ export function PluginPane({ id, name }: { id: string; name: string }): React.JS
     return () => {
       off = true
     }
-  }, [id, attempt, theme, terminal])
+  }, [id, attempt, theme, native])
 
   const src = useMemo(() => {
     if (!page) return null
@@ -36,8 +36,8 @@ export function PluginPane({ id, name }: { id: string; name: string }): React.JS
     return u.toString()
   }, [page])
 
-  // a plugin with a terminal runs its command in a native pane (no page): see TerminalPane
-  if (terminal) return <TerminalPane command={terminal.command} panel={pluginPanelId(id)} />
+  // a native plugin shows its library's panel (no page): see TerminalPane
+  if (native) return <TerminalPane plugin={id} command={native.command} panel={pluginPanelId(id)} />
   if (src) return <iframe className="plugin-frame" src={src} title={name} />
   return (
     <div className="plugin-status">

@@ -262,16 +262,6 @@ fn linkPlatform(b: *std.Build, target: std.Build.ResolvedTarget, app_mod: *std.B
                 app_mod.addCSourceFile(.{ .file = zeroNativePath(b, zero_native_path, "src/platform/linux/gtk_host.c"), .flags = &.{} });
                 app_mod.linkSystemLibrary("gtk4", .{});
                 app_mod.linkSystemLibrary("webkitgtk-6.0", .{});
-                // the native terminal pane (src/terminal): libghostty-vt, built from its vendored source first
-                const vt_dir = "vendor/libghostty-vt";
-                const vt_build = b.addSystemCommand(&.{ "zig", "build", "-Demit-lib-vt", "-Doptimize=ReleaseFast" });
-                vt_build.setCwd(b.path(vt_dir));
-                exe.step.dependOn(&vt_build.step);
-                app_mod.addIncludePath(b.path(vt_dir ++ "/include"));
-                app_mod.addObjectFile(b.path(vt_dir ++ "/zig-out/lib/libghostty-vt.a"));
-                app_mod.addCSourceFile(.{ .file = b.path("src/terminal/term_gtk.c"), .flags = &.{} });
-                app_mod.linkSystemLibrary("pangocairo", .{});
-                app_mod.linkSystemLibrary("util", .{});
             },
             .chromium => {
                 const cef_check = addCefCheck(b, target, cef_dir);

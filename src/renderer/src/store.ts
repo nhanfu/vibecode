@@ -26,15 +26,16 @@ interface State {
  * opened (a click, its key); a double-click pins it into the horizontal stack, where it stays.
  * Dragging the buttons reorders the stack.
  */
-export type StaticPanelId = 'plugins' | 'terminal'
+export type StaticPanelId = 'plugins'
 /** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and its service runs. */
 export type PluginPanelId = `plugin:${string}`
 export type PanelId = StaticPanelId | PluginPanelId
-export const PANEL_IDS: StaticPanelId[] = ['plugins', 'terminal']
+export const PANEL_IDS: StaticPanelId[] = ['plugins']
 export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith('plugin:')
 export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`
 /** The plugins that get a title-bar panel of their own: on, able to run, with a page, and not taking over a built-in panel. */
-export const panelPlugins = (plugins: PluginInfo[]): PluginInfo[] => plugins.filter((p) => p.enabled && p.available && p.hasSidecar && p.panel)
+export const panelPlugins = (plugins: PluginInfo[]): PluginInfo[] =>
+  plugins.filter((p) => p.enabled && p.available && (p.hasSidecar || p.native !== null) && p.panel)
 /** Its service runs (or is starting): the one state in which its title-bar panel stays. */
 export const serviceLive = (p: PluginInfo): boolean => p.status === 'running' || p.status === 'starting'
 
@@ -190,7 +191,7 @@ export const useStore = create<State>((set) => ({
   settings: null,
   themeResolved: 'dark',
   panelOrder: loadOrder(),
-  pinned: loadIds(PINNED_KEY, ['terminal']),
+  pinned: loadIds(PINNED_KEY, []),
   floatOpen: null,
   peek: null,
   fullscreen: null,

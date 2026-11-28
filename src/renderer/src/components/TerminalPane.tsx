@@ -6,7 +6,7 @@ import { panelShown, useStore, type PanelId } from '../store'
  * the place. The pane is shown while the panel is shown (pinned, floating open, or full screen) and this element
  * is on the window; otherwise it is hidden. The program keeps running while the pane is hidden.
  */
-export function TerminalPane({ command, panel }: { command: string[]; panel: PanelId }): React.JSX.Element {
+export function TerminalPane({ plugin, command, panel }: { plugin: string; command: string[]; panel: PanelId }): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   // the CSS of a panel does not hide a native widget: the store says whether the panel is on screen
   const shown = useStore((s) => panelShown(s, panel))
@@ -15,20 +15,20 @@ export function TerminalPane({ command, panel }: { command: string[]; panel: Pan
 
   // the program starts the first time the pane is needed (opening again keeps the same pane)
   useEffect(() => {
-    void window.api.terminal
-      .open(command)
+    void window.api.native
+      .open(plugin, command)
       .then(() => place.current())
       .catch(() => undefined)
     // the command is the pane's identity: a different command is a different pane
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key])
+  }, [plugin, key])
 
   // hidden when the pane goes away (a panel closed for good, or the app's page changed)
   useEffect(() => {
     return () => {
-      void window.api.terminal.frame({ x: 0, y: 0, width: 0, height: 0, visible: false }).catch(() => undefined)
+      void window.api.native.frame(plugin, { x: 0, y: 0, width: 0, height: 0, visible: false }).catch(() => undefined)
     }
-  }, [])
+  }, [plugin])
 
   useEffect(() => {
     const el = ref.current
@@ -48,7 +48,7 @@ export function TerminalPane({ command, panel }: { command: string[]; panel: Pan
       const next = `${rect.x},${rect.y},${rect.width},${rect.height},${visible}`
       if (next === last) return
       last = next
-      void window.api.terminal.frame(rect).catch(() => undefined)
+      void window.api.native.frame(plugin, rect).catch(() => undefined)
     }
     const update = place.current
     update()

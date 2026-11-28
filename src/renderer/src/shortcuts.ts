@@ -24,7 +24,6 @@ export const COMMANDS: Command[] = [
   { id: 'reloadApp', label: 'Reload app (also re-reads keybindings.json)', run: () => window.location.reload() },
   { id: 'theme', label: 'Toggle light / dark theme', run: () => void toggleTheme() },
   { id: 'viewPlugins', label: 'Show / hide Plugins', run: () => togglePanel('plugins') },
-  { id: 'viewTerminal', label: 'Show / hide Terminal', run: () => togglePanel('terminal') },
   { id: 'closeFloat', label: 'Close the floating drop-down', run: () => closeFloat() },
   { id: 'keyboardShortcuts', label: 'Keyboard shortcuts: edit…', run: () => window.dispatchEvent(new Event('open-keybindings')) },
   { id: 'fullscreen', label: 'Mini-app full screen', run: () => toggleFullscreen(currentMiniApp()) },
