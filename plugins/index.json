@@ -1,3 +1,32 @@
 {
-  "plugins": []
+  "plugins": [
+    {
+      "id": "dbx",
+      "name": "DBX",
+      "version": "0.6.72",
+      "description": "Database client (DBX, Apache-2.0): browse schemas, run queries, ER diagrams, many drivers",
+      "license": "Apache-2.0",
+      "homepage": "https://github.com/t8y2/dbx",
+      "url": "https://github.com/nhanfu/vibecode/releases/download/dbx-v0.6.72/dbx-0.6.72-linux-x64.tar.gz",
+      "sha256": "203a023318cebaea9b5027344475aa1abf1bd35c11c636741447b69bc8c3b50e",
+      "minAppVersion": "0.2.0",
+      "platforms": [
+        "linux"
+      ]
+    },
+    {
+      "id": "vscode",
+      "name": "VS Code",
+      "version": "1.109.5",
+      "description": "Visual Studio Code in a panel, served by openvscode-server (MIT, Gitpod)",
+      "license": "MIT",
+      "homepage": "https://github.com/gitpod-io/openvscode-server",
+      "url": "https://github.com/nhanfu/vibecode/releases/download/vscode-v1.109.5/vscode-1.109.5-linux-x64.tar.gz",
+      "sha256": "9846ddd657f0f84ecea290389f897f1d8bbd85896b8842cfc68b792be6a9f80e",
+      "minAppVersion": "0.2.0",
+      "platforms": [
+        "linux"
+      ]
+    }
+  ]
 }
