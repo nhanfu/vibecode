@@ -13,6 +13,7 @@ import {
   showPanel,
   togglePanel,
   togglePin,
+  toggleFullscreen,
   useStore,
   type PanelId,
   type StaticPanelId
@@ -20,6 +21,7 @@ import {
 import { loadPlugins } from '../actions'
 import { PluginManager } from './PluginManager'
 import { PluginPane } from './PluginPane'
+import { TerminalPane } from './TerminalPane'
 import { userStore } from '../localPref'
 
 /*
@@ -47,7 +49,8 @@ interface FloatSize {
 }
 
 const PANELS: Record<StaticPanelId, PanelMeta> = {
-  plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } }
+  plugins: { label: 'Plugins', icon: Puzzle, command: 'viewPlugins', size: { key: 'vibe.pluginsWidth', initial: () => Math.round(window.innerWidth * 0.4), min: 340 } },
+  terminal: { label: 'Terminal', icon: Terminal, command: 'viewTerminal', size: { key: 'vibe.terminalWidth', initial: () => Math.round(window.innerWidth * 0.5), min: 360 } }
 }
 
 /** Icons a plugin can name in its manifest (`panel.icon`). */
@@ -421,11 +424,20 @@ export function StackLayout(): React.JSX.Element {
         >
           {isPluginPanel(id) ? (
             <PluginPane id={id.slice('plugin:'.length)} name={metaOf(id).label} />
+          ) : id === 'terminal' ? (
+            // the built-in terminal: the engine (libghostty-vt) runs the user's shell in the app's own process
+            <TerminalPane command={[]} panel="terminal" />
           ) : (
             <PluginManager />
           )}
         </StackPanel>
       ))}
+      {/* the way out of full screen that never depends on a key: a plugin's page takes the keys while it has focus */}
+      {full && (
+        <button className="stack-exit-full" onClick={() => toggleFullscreen(full)} title="Leave full screen (F11 or Escape)">
+          Exit full screen
+        </button>
+      )}
       {!fill && !full && <div className="stack-empty">Hover a button in the title bar to look at it, double-click it to pin it here.</div>}
       {/* dims what is behind a floating drop-down; a click on it closes it (useFloatTracking) */}
       <div className={`stack-backdrop${shown ? ' shown' : ''}`} />

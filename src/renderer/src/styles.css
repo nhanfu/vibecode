@@ -2033,3 +2033,168 @@ kbd {
 
 
 
+.btn-sm {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+.kb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.palette-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  height: 48px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.palette-input input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+}
+.icon-btn.tiny {
+  width: 22px;
+  height: 22px;
+}
+.kb-editor {
+  width: min(1040px, 94vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-strong);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 30px 80px -10px #000d, 0 0 0 1px #0006;
+  overflow: hidden;
+  animation: pop 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.kb-editor .palette-input input {
+  flex: 1;
+}
+.kb-note {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  min-height: 18px;
+}
+.kb-head,
+.kb-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) 150px minmax(120px, 1fr) 80px 128px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+}
+.kb-head {
+  height: 26px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+.kb-list {
+  overflow-y: auto;
+}
+.kb-row {
+  min-height: 32px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.kb-row:hover {
+  background: var(--bg-hover);
+}
+.kb-row.editing {
+  background: var(--accent-soft);
+}
+.kb-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kb-keys kbd {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+.kb-sort {
+  all: unset;
+  cursor: pointer;
+  color: inherit;
+}
+.kb-sort:hover {
+  color: var(--text);
+}
+.kb-name small {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.kb-when code {
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: text;
+}
+.kb-when input {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--text);
+  outline: none;
+}
+.kb-source {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.kb-keys em {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.kb-actions {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+}
+
+/* the exit button over a mini-app shown full screen */
+.stack-exit-full {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 60;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--w-14);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.stack-exit-full:hover {
+  background: var(--w-0f);
+}

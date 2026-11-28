@@ -28,4 +28,5 @@ cp "$WORK/dbx/target/release/$EXE" "$OUT/bin/$EXE"
 cp "$WORK/dbx/LICENSE" "$OUT/LICENSE-dbx"
 # DBX follows the app's theme (see patch-theme.py)
 python3 "$OUT/patch-theme.py" "$OUT/dist/index.html"
+python3 "$OUT/../patch-keys.py" "$OUT/dist/index.html"
 echo "DBX built into $OUT"

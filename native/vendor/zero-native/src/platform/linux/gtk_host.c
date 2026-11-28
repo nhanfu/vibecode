@@ -1063,6 +1063,9 @@ static void on_activate(GtkApplication *app, gpointer data) {
     host->frame_timer = g_timeout_add(16, zero_native_frame_tick, host);
 }
 
+/* The host of this process (one app, one host): the app's native panes find the app window through it. */
+static zero_native_gtk_host_t *zn_singleton_host = NULL;
+
 zero_native_gtk_host_t *zero_native_gtk_create(
     const char *app_name, size_t app_name_len,
     const char *window_title, size_t window_title_len,
@@ -1074,6 +1077,7 @@ zero_native_gtk_host_t *zero_native_gtk_create(
 {
     zero_native_gtk_host_t *host = calloc(1, sizeof(zero_native_gtk_host_t));
     if (!host) return NULL;
+    zn_singleton_host = host;
 
     host->app_name = app_name_len > 0 ? zero_native_strndup(app_name, app_name_len) : zero_native_strndup("zero-native", 11);
     host->window_title = window_title_len > 0 ? zero_native_strndup(window_title, window_title_len) : zero_native_strndup(host->app_name, strlen(host->app_name));
@@ -1849,4 +1853,14 @@ int zero_native_gtk_web_mute(zero_native_gtk_host_t *host, uint64_t window_id, c
     if (!webview) return 0;
     g_object_set(webview->web_view, "is-muted", muted != 0, NULL);
     return 1;
+}
+
+void *zero_native_gtk_app_overlay(void) {
+    zero_native_gtk_window_t *win = zn_singleton_host ? zero_native_app_window(zn_singleton_host) : NULL;
+    return win && win->stack_root ? (void *)win->stack_root : NULL;
+}
+
+void zero_native_gtk_app_eval(const char *script) {
+    zero_native_gtk_window_t *win = zn_singleton_host ? zero_native_app_window(zn_singleton_host) : NULL;
+    if (win && win->web_view && script) webkit_web_view_evaluate_javascript(win->web_view, script, -1, NULL, NULL, NULL, NULL, NULL);
 }

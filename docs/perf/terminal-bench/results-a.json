@@ -1,0 +1,63 @@
+{
+ "case1_ghostty_web_panel_headless_chromium": {
+  "ms_median": 1139.5999999940395,
+  "ms_all": [
+   1140,
+   1215,
+   1080
+  ],
+  "cpuSec_median": 1.53,
+  "peakRssMB_median": 626
+ },
+ "case3_ghostty_desktop_app": {
+  "ms_median": 561,
+  "ms_all": [
+   561,
+   579,
+   560
+  ],
+  "cpuSec_median": 1.32,
+  "peakRssMB_median": 180
+ },
+ "bytes": 50000000,
+ "raw1": [
+  {
+   "ms": 1139.5999999940395,
+   "bytes": 50000000,
+   "msgs": 671,
+   "cpuSec": 1.53,
+   "peakRssMB": 592
+  },
+  {
+   "ms": 1214.7000000178814,
+   "bytes": 50000000,
+   "msgs": 689,
+   "cpuSec": 1.55,
+   "peakRssMB": 626
+  },
+  {
+   "ms": 1079.5999999940395,
+   "bytes": 50000000,
+   "msgs": 759,
+   "cpuSec": 1.48,
+   "peakRssMB": 648
+  }
+ ],
+ "raw3": [
+  {
+   "ms": 561,
+   "cpuSec": 1.32,
+   "peakRssMB": 180
+  },
+  {
+   "ms": 579,
+   "cpuSec": 1.31,
+   "peakRssMB": 180
+  },
+  {
+   "ms": 560,
+   "cpuSec": 1.33,
+   "peakRssMB": 180
+  }
+ ]
+}

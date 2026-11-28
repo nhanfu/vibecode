@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><title>bench</title>
+<style>html,body{margin:0;background:#000}#term{width:1000px;height:600px}</style></head>
+<body><div id="term"></div>
+<script type="module">
+import { Ghostty, Terminal } from '/vendor/ghostty-web.js'
+const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+window.runBench = async (wsUrl) => {
+  const ghostty = await Ghostty.load('/vendor/ghostty-vt.wasm')
+  const term = new Terminal({ cols: 120, rows: 40, ghostty, scrollback: 5000 })
+  term.open(document.getElementById('term'))
+  await frame()
+  let bytes = 0, msgs = 0
+  const ws = new WebSocket(wsUrl)
+  ws.binaryType = 'arraybuffer'
+  const closed = new Promise((r) => (ws.onclose = r))
+  const t0 = performance.now()
+  ws.onmessage = (e) => {
+    const u = new Uint8Array(e.data)
+    bytes += u.length
+    msgs++
+    term.write(u)
+  }
+  await closed
+  await frame()
+  return { ms: performance.now() - t0, bytes, msgs }
+}
+window.ready = true
+</script></body></html>

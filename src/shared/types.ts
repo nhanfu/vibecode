@@ -45,6 +45,10 @@ export interface PluginInfo {
   overrides: boolean
   enabled: boolean
   hasSidecar: boolean
+  /** opens a program of its own (the Open button): see docs/plugins.md, `launch` */
+  hasLaunch: boolean
+  /** runs a command in a native terminal pane instead of a web page */
+  terminal: { command: string[] } | null
   /** has a settings file the command palette can open */
   hasSettings: boolean
   /** starts with the app */

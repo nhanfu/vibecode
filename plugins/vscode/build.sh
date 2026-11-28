@@ -69,4 +69,5 @@ cp -r "$BUILT"/. "$OUT/server/"
 bash "$OUT/prune-extensions.sh" "$OUT/server/extensions"
 # the page follows the app's theme and settings (see patch-theme.py)
 python3 "$OUT/patch-theme.py" "$OUT/server/out/vs/code/browser/workbench/workbench.html"
+python3 "$OUT/../patch-keys.py" "$OUT/server/out/vs/code/browser/workbench/workbench.html"
 echo "server ready in $OUT/server"

@@ -50,6 +50,7 @@ The sidecar `command` must stay inside the plugin's folder.
   title-bar button while it is on and can run: `title` is its label and `icon` one of `code`, `database`,
   `globe`, `folder`, `bot`, `terminal`, `puzzle` (default). The panel shows while the plugin is on and its
   page is up. `"folder": true` opens the page on the project folder the sidebar shows (`?folder=`).
+- **`launch`** — a program the app opens in its own window, with the plugin's **Open in window** button: `command` is the argv (the first item is looked up on `PATH`; the plugin is not available without it), and `unsetEnv` lists environment prefixes not to pass on (for example `"HERDR_"` inside a herdr pane). The program is detached: it is not stopped with the app.
 - **`sidecar.theme`** — `{ file, key, dark, light }`: before the sidecar starts, and when the app's theme
   changes, the setting `key` in `file` (relative to the plugin's data folder) is set to the `dark` or `light`
   value, keeping the rest of the file. The file must be plain JSON (no comments).
@@ -112,6 +113,10 @@ the manager only offers an entry that fits this system.
 - `src-tauri/src/mcp.rs`: adds each plugin's MCP server to a chat's config.
 - `src/renderer/src/components/PluginManager.tsx`: the Plugins panel.
 - `src/renderer/src/components/PluginPane.tsx`: the frame, shown in the plugin's own panel (`Stack.tsx`).
+
+## Keys in a plugin's page
+
+A plugin's page is a frame on its own address, so the app's keys (F11, Ctrl+Shift+←/→, Ctrl+Shift+R) do not reach the app while the page has the focus. A page passes them up with the script in `docs/plugin-keys-forward.js` (a `<script>` in the page's HTML). The app accepts these messages only from `http://127.0.0.1:<port>`, the address of a plugin's sidecar. Pages that do not include the script keep those keys to themselves; "Exit full screen" in the app's full-screen mode works without a key.
 
 ## Not yet
 

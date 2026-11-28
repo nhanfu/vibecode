@@ -220,6 +220,16 @@ function PluginCard({ p, busy, run, open }: { p: PluginInfo; busy: boolean; run:
       {p.description && <div className="pm-desc">{p.description}</div>}
       {p.error && <div className="pm-error">{p.error}</div>}
       <div className="pm-actions">
+        {p.hasLaunch && p.enabled && p.available && (
+          <button
+            className="pm-btn primary"
+            disabled={busy}
+            onClick={() => void run(p.id, () => api.launch(p.id), `${p.name} opened.`)}
+            title="Open it in its own window"
+          >
+            <ExternalLink size={13} /> Open in window
+          </button>
+        )}
         {canOpen && (
           <button
             className="pm-btn primary"

@@ -26,11 +26,11 @@ interface State {
  * opened (a click, its key); a double-click pins it into the horizontal stack, where it stays.
  * Dragging the buttons reorders the stack.
  */
-export type StaticPanelId = 'plugins'
+export type StaticPanelId = 'plugins' | 'terminal'
 /** A plugin's own panel (its manifest's `panel`): `plugin:<id>`. Shown while the plugin is on and its service runs. */
 export type PluginPanelId = `plugin:${string}`
 export type PanelId = StaticPanelId | PluginPanelId
-export const PANEL_IDS: StaticPanelId[] = ['plugins']
+export const PANEL_IDS: StaticPanelId[] = ['plugins', 'terminal']
 export const isPluginPanel = (id: PanelId): id is PluginPanelId => id.startsWith('plugin:')
 export const pluginPanelId = (plugin: string): PluginPanelId => `plugin:${plugin}`
 /** The plugins that get a title-bar panel of their own: on, able to run, with a page, and not taking over a built-in panel. */
@@ -190,7 +190,7 @@ export const useStore = create<State>((set) => ({
   settings: null,
   themeResolved: 'dark',
   panelOrder: loadOrder(),
-  pinned: loadIds(PINNED_KEY, []),
+  pinned: loadIds(PINNED_KEY, ['terminal']),
   floatOpen: null,
   peek: null,
   fullscreen: null,

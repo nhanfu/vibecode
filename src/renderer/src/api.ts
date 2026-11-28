@@ -21,6 +21,8 @@ export const api = {
     start: (id: string, light?: boolean): Promise<{ url: string; settings?: string }> => invoke('plugin_start', { id, light: light ?? null }),
     /** the plugin's settings file (created when missing) */
     settingsFile: (id: string): Promise<string> => invoke('plugin_settings_file', { id }),
+    /** opens the plugin's launch command in its own window (detached from the app) */
+    launch: (id: string): Promise<void> => invoke('plugin_launch', { id }),
     stop: (id: string): Promise<void> => invoke('plugin_stop', { id }),
     restart: (id: string): Promise<void> => invoke('plugin_restart', { id }),
     /** turn on / off, or choose whether it starts with the app */
@@ -33,6 +35,13 @@ export const api = {
     /** the registry address in use (`set` changes it; empty: back to the default) */
     registryUrl: (set?: string): Promise<string> => invoke('plugin_registry_url', { set })
   },
+  terminal: {
+    /** creates the native terminal pane and starts `command` in it (once: later calls keep the first pane) */
+    open: (command: string[]): Promise<void> => invoke('terminal_open', { command }),
+    /** places the pane over the window at (x, y) with the size, in CSS pixels; hides it when not visible */
+    frame: (rect: { x: number; y: number; width: number; height: number; visible: boolean }): Promise<void> =>
+      invoke('terminal_frame', rect)
+  },
   win: {
     state: (): Promise<WindowState> => invoke('win_state'),
     minimize: (): void => void invoke('win_minimize'),
@@ -41,6 +50,13 @@ export const api = {
     close: (): void => void invoke('win_close'),
     setMode: (mode: WindowMode): void => void invoke('win_set_mode', { mode }),
     onState: (cb: (s: WindowState) => void): Off => on('win:state', cb)
+  },
+  keybindings: {
+    /** the file in the app's data folder (keybindings.json) as text, or null when there is none */
+    read: (): Promise<string | null> => invoke('keybindings_read'),
+    /** replaces the whole file with `text` */
+    write: (text: string): Promise<void> => invoke('keybindings_write', { text }),
+    path: (): Promise<string> => invoke('keybindings_path')
   },
   app: {
     settings: (): Promise<AppSettings> => invoke('app_settings'),

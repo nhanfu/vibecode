@@ -2,12 +2,17 @@
 //! added here once it is wired up.
 
 const cmd = @import("root.zig");
+const keybindings = @import("keybindings.zig");
 const appcmds = @import("appcmds.zig");
 const client_log = @import("client_log.zig");
 const windowing = @import("windowing.zig");
 const plugins = @import("plugins.zig");
+const terminal = @import("terminal.zig");
 
 pub const handlers = [_]cmd.Handler{
+    cmd.handler("keybindings_path", keybindings.path),
+    cmd.handler("keybindings_read", keybindings.read),
+    cmd.handler("keybindings_write", keybindings.write),
     cmd.handler("client_log", client_log.log),
     cmd.handler("win_state", windowing.winState),
     cmd.handler("win_minimize", windowing.minimize),
@@ -28,13 +33,19 @@ pub const handlers = [_]cmd.Handler{
     cmd.handler("plugin_uninstall", plugins.uninstall),
     cmd.handler("plugin_registry", plugins.registry),
     cmd.handler("plugin_registry_url", plugins.registryUrlCommand),
+    cmd.handler("plugin_launch", plugins.launchCommand),
     cmd.handler("app_settings", appcmds.appSettings),
     cmd.handler("app_set_settings", appcmds.appSetSettings),
     cmd.handler("app_open_external", appcmds.appOpenExternal),
     cmd.handler("app_relaunch", appcmds.appRelaunch),
+    cmd.handler("terminal_open", terminal.open),
+    cmd.handler("terminal_frame", terminal.frame),
 };
 
 pub const names = [_][]const u8{
+    "keybindings_path",
+    "keybindings_read",
+    "keybindings_write",
     "client_log",
     "win_state",
     "win_minimize",
@@ -55,10 +66,13 @@ pub const names = [_][]const u8{
     "plugin_uninstall",
     "plugin_registry",
     "plugin_registry_url",
+    "plugin_launch",
     "app_settings",
     "app_set_settings",
     "app_open_external",
     "app_relaunch",
+    "terminal_open",
+    "terminal_frame",
 };
 
 pub const policy = cmd.policy(&names);

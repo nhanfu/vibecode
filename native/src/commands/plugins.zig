@@ -18,6 +18,8 @@ const Allocator = std.mem.Allocator;
 
 extern "c" fn fork() c_int;
 extern "c" fn socket(domain: c_int, sock_type: c_int, protocol: c_int) c_int;
+extern "c" fn setsid() c_int;
+extern "c" fn waitpid(pid: c_int, status: ?*c_int, options: c_int) c_int;
 extern "c" fn close(fd: c_int) c_int;
 
 /// The app's version, for `minAppVersion` checks (src-tauri/Cargo.toml).
@@ -51,6 +53,18 @@ const Sidecar = struct {
     autostart: bool = false,
 };
 
+/// A program the app opens in its own window or terminal (the plugin's button "Open"): `command` is the argv,
+/// `unsetEnv` the prefixes of environment variables it must not inherit (e.g. "HERDR_" inside a herdr pane).
+const LaunchSpec = struct {
+    command: []const []const u8,
+    unsetEnv: []const []const u8 = &.{},
+};
+
+/// The page is a native terminal: the app runs `command` in a pane of its own (no sidecar, no web page).
+const TerminalSpec = struct {
+    command: []const []const u8,
+};
+
 const McpSpec = struct {
     name: []const u8,
     path: []const u8,
@@ -66,6 +80,8 @@ const Manifest = struct {
     homepage: []const u8 = "",
     panel: ?PanelSpec = null,
     sidecar: ?Sidecar = null,
+    launch: ?LaunchSpec = null,
+    terminal: ?TerminalSpec = null,
     mcp: ?McpSpec = null,
     minAppVersion: []const u8 = "",
     platforms: []const []const u8 = &.{},
@@ -121,6 +137,27 @@ fn problem(a: Allocator, p: Plugin) !?[]const u8 {
     }
     if (m.sidecar) |side| {
         if (try programPath(a, p.dir, side.command) == null) return "its program is missing (not built or installed)";
+    }
+    if (m.launch) |launch| {
+        if (launch.command.len == 0) return "its launch command is empty";
+        if (try findOnPath(a, launch.command[0]) == null) return try std.fmt.allocPrint(a, "{s} is not installed", .{launch.command[0]});
+    }
+    if (m.terminal) |term| {
+        if (term.command.len == 0) return "its terminal command is empty";
+        if (try findOnPath(a, term.command[0]) == null) return try std.fmt.allocPrint(a, "{s} is not installed", .{term.command[0]});
+    }
+    return null;
+}
+
+/// The full path of `name` on $PATH (or `name` itself when it has a folder in it), null when not found.
+fn findOnPath(a: Allocator, name: []const u8) !?[]const u8 {
+    if (std.mem.indexOfScalar(u8, name, '/') != null) return if (fileExists(name)) name else null;
+    const path_env = std.mem.span(std.c.getenv("PATH") orelse return null);
+    var dirs = std.mem.splitScalar(u8, path_env, ':');
+    while (dirs.next()) |dir| {
+        if (dir.len == 0) continue;
+        const candidate = try std.fmt.allocPrint(a, "{s}/{s}", .{ dir, name });
+        if (fileExists(candidate)) return candidate;
     }
     return null;
 }
@@ -685,6 +722,9 @@ const PluginInfo = struct {
     overrides: bool,
     enabled: bool,
     hasSidecar: bool,
+    hasLaunch: bool,
+    /// the command the native terminal pane runs (null when the plugin has no pane)
+    terminal: ?TerminalSpec,
     hasSettings: bool,
     autostart: bool,
     status: []const u8,
@@ -746,6 +786,8 @@ fn info(a: Allocator, p: Plugin) !PluginInfo {
         .overrides = p.overrides,
         .enabled = is_enabled,
         .hasSidecar = p.manifest.sidecar != null,
+        .hasLaunch = p.manifest.launch != null,
+        .terminal = p.manifest.terminal,
         .hasSettings = settingsPath(a, p) != null,
         .autostart = autostarts(p),
         .status = status,
@@ -816,6 +858,60 @@ fn applyTheme(a: Allocator, id: []const u8, t: ThemeSpec, light: bool) !void {
 }
 
 /// `{ id, light? }`: starts the plugin's sidecar if needed and returns its page address.
+/// `{ id }`: opens the plugin's launch command (a program in its own window, e.g. a terminal running it). The
+/// program is detached: it is not stopped with the app, and the app keeps none of its output.
+pub fn launchCommand(invocation: cmd.Invocation, output: []u8) ![]const u8 {
+    var arena = std.heap.ArenaAllocator.init(cmd.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const args = try cmd.args(struct { id: []const u8 }, a, invocation);
+    const p = (try find(a, args.id)) orelse return cmd.fail(output, try std.fmt.allocPrint(a, "no plugin \"{s}\"", .{args.id}));
+    if (!isEnabled(args.id)) return cmd.fail(output, try std.fmt.allocPrint(a, "{s} is disabled (turn it on in Plugins)", .{p.manifest.name}));
+    if (try problem(a, p)) |why| return cmd.fail(output, why);
+    const launch = p.manifest.launch orelse return cmd.fail(output, "this plugin has no launch command");
+    spawnDetached(a, launch.command, launch.unsetEnv) catch |err| return cmd.fail(output, @errorName(err));
+    return cmd.json(output, null);
+}
+
+/// Runs `argv` in its own session, without the app's stdio, and does not wait for it: the child is
+/// re-parented to init by a second fork, so no zombie is left behind.
+fn spawnDetached(a: Allocator, argv_list: []const []const u8, unset: []const []const u8) !void {
+    const program = (try findOnPath(a, argv_list[0])) orelse return error.ProgramNotFound;
+    const program_z = try cString(a, program);
+    var argv: std.ArrayList(?[*:0]const u8) = .empty;
+    for (argv_list) |arg| try argv.append(a, (try cString(a, arg)).ptr);
+    try argv.append(a, null);
+    const argv_z: [*:null]const ?[*:0]const u8 = @ptrCast((try argv.toOwnedSlice(a)).ptr);
+
+    var envp: std.ArrayList(?[*:0]const u8) = .empty;
+    var i: usize = 0;
+    while (std.c.environ[i]) |entry| : (i += 1) {
+        const text = std.mem.span(entry);
+        var skip = false;
+        for (unset) |prefix| {
+            if (std.mem.startsWith(u8, text, prefix)) skip = true;
+        }
+        if (!skip) try envp.append(a, (try a.dupeZ(u8, text)).ptr);
+    }
+    try envp.append(a, null);
+    const envp_z: [*:null]const ?[*:0]const u8 = @ptrCast((try envp.toOwnedSlice(a)).ptr);
+
+    const pid = fork();
+    if (pid < 0) return error.ForkFailed;
+    if (pid == 0) {
+        if (fork() != 0) std.c._exit(0);
+        _ = setsid();
+        _ = close(0);
+        _ = close(1);
+        _ = close(2);
+        // the program starts in the home folder, not in wherever the app was started from
+        if (std.c.getenv("HOME")) |home| _ = std.c.chdir(home);
+        _ = std.c.execve(program_z.ptr, @ptrCast(argv_z), @ptrCast(envp_z));
+        std.c._exit(127);
+    }
+    _ = waitpid(pid, null, 0);
+}
+
 pub fn start(invocation: cmd.Invocation, output: []u8) ![]const u8 {
     var arena = std.heap.ArenaAllocator.init(cmd.gpa);
     defer arena.deinit();
